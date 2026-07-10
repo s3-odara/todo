@@ -1,4 +1,4 @@
-import gleam/option.{None}
+import gleam/option.{None, Some}
 import gleeunit/should
 import tasks/domain/model.{AddRequest, DoneRequest, ListRequest, Pending, Todo}
 import todo_app/cli
@@ -23,6 +23,19 @@ pub fn grammar_matrix_test() {
   |> should.equal(Error("invalid command or arguments"))
   cli.parse(["add", "x", "--unknown", "y"])
   |> should.equal(Error("invalid, duplicate, or missing option"))
+  cli.parse(["add", "x", "--estimate"])
+  |> should.equal(Error("invalid, duplicate, or missing option"))
+  cli.parse([
+    "add",
+    "x",
+    "--due",
+    "2026-01-01",
+    "--priority",
+    "5",
+    "--estimate",
+    "2h",
+  ])
+  |> should.equal(Ok(cli.Add(AddRequest("x", "2h", "5", Some("2026-01-01")))))
   cli.parse(["done"]) |> should.equal(Error("invalid command or arguments"))
   cli.parse(["done", "1", "extra"])
   |> should.equal(Error("invalid command or arguments"))

@@ -19,6 +19,14 @@ pub type Outcome {
   Outcome(code: Int, stdout_lines: List(String), stderr_lines: List(String))
 }
 
+type AddOptions {
+  AddOptions(
+    estimate: Option(String),
+    priority: Option(String),
+    due: Option(String),
+  )
+}
+
 pub fn parse(args: List(String)) -> Result(Command, String) {
   case args {
     [] | ["--help"] -> Ok(Help)
@@ -28,41 +36,30 @@ pub fn parse(args: List(String)) -> Result(Command, String) {
     ["done", id] -> Ok(RunDone(DoneRequest(id)))
     ["add", title, ..flags] ->
       flags
-      |> add_flags("0m", "3", None, False, False, False)
-      |> result.map(fn(values) {
-        let #(estimate, priority, due) = values
-        Add(AddRequest(title, estimate, priority, due))
+      |> add_flags(AddOptions(None, None, None))
+      |> result.map(fn(options) {
+        let AddOptions(estimate, priority, due) = options
+        Add(AddRequest(
+          title,
+          option.unwrap(estimate, or: "0m"),
+          option.unwrap(priority, or: "3"),
+          due,
+        ))
       })
     _ -> Error("invalid command or arguments")
   }
 }
 
-fn add_flags(
-  flags,
-  estimate,
-  priority,
-  due,
-  estimate_seen,
-  priority_seen,
-  due_seen,
-) -> Result(#(String, String, Option(String)), String) {
-  case flags {
-    [] -> Ok(#(estimate, priority, due))
-    ["--estimate", value, ..rest] if !estimate_seen ->
-      add_flags(rest, value, priority, due, True, priority_seen, due_seen)
-    ["--priority", value, ..rest] if !priority_seen ->
-      add_flags(rest, estimate, value, due, estimate_seen, True, due_seen)
-    ["--due", value, ..rest] if !due_seen ->
-      add_flags(
-        rest,
-        estimate,
-        priority,
-        Some(value),
-        estimate_seen,
-        priority_seen,
-        True,
-      )
-    _ -> Error("invalid, duplicate, or missing option")
+fn add_flags(flags, options: AddOptions) -> Result(AddOptions, String) {
+  case flags, options {
+    [], _ -> Ok(options)
+    ["--estimate", value, ..rest], AddOptions(estimate: None, ..) ->
+      add_flags(rest, AddOptions(..options, estimate: Some(value)))
+    ["--priority", value, ..rest], AddOptions(priority: None, ..) ->
+      add_flags(rest, AddOptions(..options, priority: Some(value)))
+    ["--due", value, ..rest], AddOptions(due: None, ..) ->
+      add_flags(rest, AddOptions(..options, due: Some(value)))
+    _, _ -> Error("invalid, duplicate, or missing option")
   }
 }
 
