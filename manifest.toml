@@ -14,7 +14,6 @@ packages = [
   { name = "gleam_stdlib", version = "1.0.3", build_tools = ["gleam"], requirements = [], otp_app = "gleam_stdlib", source = "hex", outer_checksum = "1F543AFBA5D33DA493E6087F4E4C4F20D899411343512686C98A8ABB2963CF22" },
   { name = "gleeunit", version = "1.11.0", build_tools = ["gleam"], requirements = ["gleam_stdlib"], otp_app = "gleeunit", source = "hex", outer_checksum = "EC31ABA74256AEA531EDF8169931D775BBB384FED0A8A1BDC4DD9354E3E21826" },
   { name = "simplifile", version = "2.5.0", build_tools = ["gleam"], requirements = ["filepath", "gleam_stdlib"], otp_app = "simplifile", source = "hex", outer_checksum = "6C72DCCDF25C38A5931740B30E823969F33106831FD1637719B5EDBCA30027A4" },
-  { name = "taffy", version = "1.1.1", build_tools = ["gleam"], requirements = ["gleam_json", "gleam_stdlib"], otp_app = "taffy", source = "hex", outer_checksum = "085F12749945954E02136BD5FD1F352753FC14065903168399591325A8161A3A" },
 ]
 
 [requirements]
@@ -24,4 +23,4 @@ filepath = { version = "~> 1.1" }
 gleam_stdlib = { version = ">= 1.0.0 and < 2.0.0" }
 gleeunit = { version = ">= 1.0.0 and < 2.0.0" }
 simplifile = { version = "~> 2.5" }
-taffy = { version = "~> 1.0" }
+gleam_json = { version = "~> 3.1" }

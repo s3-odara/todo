@@ -12,7 +12,7 @@ type Recorder {
 
 fn ok_ops() -> FileOps {
   FileOps(
-    fn(_) { Ok("tasks: []\n") },
+    fn(_) { Ok("[]") },
     fn(_, _) { Ok(Nil) },
     fn(_, _) { Ok(Nil) },
     fn(_) { Ok(Nil) },
@@ -63,7 +63,7 @@ pub fn injected_read_failure_test() {
 
 pub fn injected_write_failure_records_cleanup_paths_order_and_bytes_test() {
   let root = fixture_root("write")
-  let destination = root <> "/todo/tasks.yaml"
+  let destination = root <> "/todo/tasks.json"
   let original = "existing destination bytes"
   let assert Ok(Nil) = simplifile.create_directory_all(root <> "/todo")
   let assert Ok(Nil) = simplifile.write(to: destination, contents: original)
@@ -100,7 +100,7 @@ pub fn injected_write_failure_records_cleanup_paths_order_and_bytes_test() {
   string.starts_with(temporary, destination <> ".tmp.") |> should.equal(True)
   cleanup_path |> should.equal(temporary)
   simplifile.read(from: root <> "/write-bytes")
-  |> should.equal(Ok("tasks: []\n"))
+  |> should.equal(Ok("[]"))
   simplifile.read(from: destination) |> should.equal(Ok(original))
   simplifile.read(from: temporary) |> should.equal(Error(simplifile.Enoent))
   cleanup(root)
@@ -108,7 +108,7 @@ pub fn injected_write_failure_records_cleanup_paths_order_and_bytes_test() {
 
 pub fn injected_rename_failure_records_cleanup_paths_order_and_bytes_test() {
   let root = fixture_root("rename")
-  let destination = root <> "/todo/tasks.yaml"
+  let destination = root <> "/todo/tasks.json"
   let original = "existing destination bytes"
   let assert Ok(Nil) = simplifile.create_directory_all(root <> "/todo")
   let assert Ok(Nil) = simplifile.write(to: destination, contents: original)
@@ -152,7 +152,7 @@ pub fn injected_rename_failure_records_cleanup_paths_order_and_bytes_test() {
   to |> should.equal(destination)
   cleanup_path |> should.equal(temporary)
   simplifile.read(from: root <> "/write-bytes")
-  |> should.equal(Ok("tasks: []\n"))
+  |> should.equal(Ok("[]"))
   simplifile.read(from: destination) |> should.equal(Ok(original))
   simplifile.read(from: temporary) |> should.equal(Error(simplifile.Enoent))
   cleanup(root)
@@ -167,14 +167,14 @@ fn drop_last(items: List(String)) -> List(String) {
 }
 
 pub fn injected_load_empty_test() {
-  load_with(ok_ops(), "/x/tasks.yaml") |> should.equal(Ok([]))
+  load_with(ok_ops(), "/x/tasks.json") |> should.equal(Ok([]))
 }
 
 pub fn injected_mkdir_failure_test() {
   let FileOps(read, write, rename, delete, _) = ok_ops()
   save_with(
     FileOps(read, write, rename, delete, fn(_) { Error("mkdir denied") }),
-    "/x/new/tasks.yaml",
+    "/x/new/tasks.json",
     [],
   )
   |> should.equal(Error("create directory failed: mkdir denied"))

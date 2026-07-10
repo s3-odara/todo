@@ -4,7 +4,7 @@ import gleam/result
 import simplifile
 import tasks/domain/model.{type Todo}
 import tasks/runtime
-import tasks/store/yaml
+import tasks/store/json
 
 pub type FileOps {
   FileOps(
@@ -32,7 +32,7 @@ pub fn load_with(ops: FileOps, path: String) -> Result(List(Todo), String) {
   let FileOps(read, ..) = ops
   read(path)
   |> result.map_error(fn(e) { "read failed: " <> e })
-  |> result.try(yaml.decode)
+  |> result.try(json.decode)
 }
 
 pub fn save_with(
@@ -43,7 +43,7 @@ pub fn save_with(
   let FileOps(_, write, rename, delete, mkdir) = ops
   let parent = filepath.directory_name(path)
   let temporary = path <> ".tmp." <> int.to_string(runtime.unique_integer())
-  let contents = yaml.encode(tasks)
+  let contents = json.encode(tasks)
   case mkdir(parent) {
     Error(e) -> Error("create directory failed: " <> e)
     Ok(_) ->
@@ -67,7 +67,7 @@ pub fn save_with(
 fn read_file(path: String) -> Result(String, String) {
   case simplifile.read(path) {
     Ok(text) -> Ok(text)
-    Error(simplifile.Enoent) -> Ok("tasks: []\n")
+    Error(simplifile.Enoent) -> Ok("[]")
     Error(e) -> Error(simplifile.describe_error(e))
   }
 }

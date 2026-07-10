@@ -24,7 +24,7 @@ pub fn resolve(
 }
 
 fn tasks_file(data_home: String) -> String {
-  filepath.join(filepath.join(data_home, "todo"), "tasks.yaml")
+  filepath.join(filepath.join(data_home, "todo"), "tasks.json")
 }
 
 fn nonempty(value: Option(String)) -> Option(String) {
