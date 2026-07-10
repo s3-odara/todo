@@ -1,9 +1,7 @@
-import gleam/option.{type Option, None, Some}
 import gleam/result
-import tasks/domain/due
 import tasks/domain/model.{
-  type AddRequest, type DoneRequest, type Due, type Error, type ListRequest,
-  type Todo, AddRequest, DoneRequest, InvalidInput, ListRequest, Pending, Todo,
+  type AddRequest, type DoneRequest, type Error, type ListRequest, type Todo,
+  ListRequest,
 }
 import tasks/domain/tasks
 import tasks/domain/validation
@@ -15,27 +13,10 @@ pub type ServiceError {
 }
 
 pub fn add(store: Store, request: AddRequest) -> Result(Todo, ServiceError) {
-  let AddRequest(title, estimate, priority, raw_due) = request
-  case
-    validation.title(title),
-    validation.estimate(estimate),
-    validation.priority(priority),
-    parse_due(raw_due)
-  {
-    Ok(clean), Ok(minutes), Ok(rank), Ok(due_value) -> {
-      let Store(load, save) = store
-      case load() {
-        Error(e) -> Error(Persisted(e))
-        Ok(items) -> {
-          let added =
-            Todo(tasks.next_id(items), clean, minutes, rank, due_value, Pending)
-          save([added, ..items])
-          |> result.map(fn(_) { added })
-          |> result.map_error(Persisted)
-        }
-      }
-    }
-    _, _, _, _ -> Error(Domain(InvalidInput))
+  case validation.add(request) {
+    Error(error) -> Error(Domain(error))
+    Ok(values) ->
+      persist_transition(store, fn(items) { Ok(tasks.add(items, values)) })
   }
 }
 
@@ -51,29 +32,27 @@ pub fn list(
 }
 
 pub fn done(store: Store, request: DoneRequest) -> Result(Todo, ServiceError) {
-  let DoneRequest(raw_id) = request
-  case validation.id(raw_id) {
-    Error(e) -> Error(Domain(e))
-    Ok(id) -> {
-      let Store(load, save) = store
-      case load() {
-        Error(e) -> Error(Persisted(e))
-        Ok(items) ->
-          case tasks.complete(items, id) {
-            Error(e) -> Error(Domain(e))
-            Ok(#(updated, completed)) ->
-              save(updated)
-              |> result.map(fn(_) { completed })
-              |> result.map_error(Persisted)
-          }
-      }
-    }
+  case validation.done(request) {
+    Error(error) -> Error(Domain(error))
+    Ok(id) -> persist_transition(store, fn(items) { tasks.complete(items, id) })
   }
 }
 
-fn parse_due(raw: Option(String)) -> Result(Option(Due), Error) {
-  case raw {
-    None -> Ok(None)
-    Some(value) -> due.input(value) |> result.map(Some)
+fn persist_transition(
+  store: Store,
+  transition: fn(List(Todo)) -> Result(#(List(Todo), Todo), Error),
+) -> Result(Todo, ServiceError) {
+  // Keep the read-write sequence here so domain transitions never receive a Store.
+  let Store(load, save) = store
+  case load() {
+    Error(error) -> Error(Persisted(error))
+    Ok(items) ->
+      case transition(items) {
+        Error(error) -> Error(Domain(error))
+        Ok(#(updated, selected)) ->
+          save(updated)
+          |> result.map(fn(_) { selected })
+          |> result.map_error(Persisted)
+      }
   }
 }

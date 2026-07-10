@@ -3,7 +3,8 @@ import gleam/string
 import gleeunit/should
 import tasks/domain/due
 import tasks/domain/model.{
-  AlreadyDone, Done, Due, InvalidInput, NotFound, Pending, Todo,
+  AddRequest, AlreadyDone, Done, Due, InvalidInput, NotFound, Pending, Todo,
+  ValidatedAdd,
 }
 import tasks/domain/tasks
 import tasks/domain/validation
@@ -61,6 +62,28 @@ pub fn due_calendar_and_rejection_matrix_test() {
   due.input("2026-01-01T12:00.1") |> should.equal(Error(InvalidInput))
   due.input("2026-01-01t12:00") |> should.equal(Error(InvalidInput))
   due.input("2026-01-01 12:00") |> should.equal(Error(InvalidInput))
+}
+
+pub fn validated_add_is_a_pure_transition_test() {
+  let request = AddRequest(" write report ", "2h", "4", Some("2026-07-15"))
+  let assert Ok(values) = validation.add(request)
+  values
+  |> should.equal(ValidatedAdd(
+    "write report",
+    120,
+    4,
+    Some(Due("2026-07-15T23:59")),
+  ))
+
+  let existing = Todo(2, "old", 0, 3, None, Pending)
+  tasks.add([existing], values)
+  |> should.equal(#(
+    [
+      Todo(3, "write report", 120, 4, Some(Due("2026-07-15T23:59")), Pending),
+      existing,
+    ],
+    Todo(3, "write report", 120, 4, Some(Due("2026-07-15T23:59")), Pending),
+  ))
 }
 
 pub fn sorts_by_id_ascending_test() {

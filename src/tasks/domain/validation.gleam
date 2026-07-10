@@ -1,7 +1,32 @@
 import gleam/int
 import gleam/list
+import gleam/option.{type Option, None, Some}
+import gleam/result
 import gleam/string
-import tasks/domain/model.{type Error, InvalidInput}
+import tasks/domain/due
+import tasks/domain/model.{
+  type AddRequest, type DoneRequest, type Due, type Error, type ValidatedAdd,
+  AddRequest, DoneRequest, InvalidInput, ValidatedAdd,
+}
+
+pub fn add(request: AddRequest) -> Result(ValidatedAdd, Error) {
+  let AddRequest(raw_title, raw_estimate, raw_priority, raw_due) = request
+  case
+    title(raw_title),
+    estimate(raw_estimate),
+    priority(raw_priority),
+    optional_due(raw_due)
+  {
+    Ok(clean), Ok(minutes), Ok(rank), Ok(due_value) ->
+      Ok(ValidatedAdd(clean, minutes, rank, due_value))
+    _, _, _, _ -> Error(InvalidInput)
+  }
+}
+
+pub fn done(request: DoneRequest) -> Result(Int, Error) {
+  let DoneRequest(raw_id) = request
+  id(raw_id)
+}
 
 pub fn title(value: String) -> Result(String, Error) {
   // Check the supplied value before trimming: controls are never whitespace
@@ -46,6 +71,13 @@ pub fn estimate(value: String) -> Result(Int, Error) {
         _, _ -> Error(InvalidInput)
       }
     [] -> Error(InvalidInput)
+  }
+}
+
+fn optional_due(raw: Option(String)) -> Result(Option(Due), Error) {
+  case raw {
+    None -> Ok(None)
+    Some(value) -> due.input(value) |> result.map(Some)
   }
 }
 

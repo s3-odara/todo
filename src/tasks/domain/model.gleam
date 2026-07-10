@@ -29,6 +29,16 @@ pub type AddRequest {
   )
 }
 
+/// Values accepted by domain validation and ready for a pure task transition.
+pub type ValidatedAdd {
+  ValidatedAdd(
+    title: String,
+    estimate_minutes: Int,
+    priority: Int,
+    due: Option(Due),
+  )
+}
+
 pub type ListRequest {
   ListRequest(include_all: Bool)
 }
