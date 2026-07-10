@@ -43,7 +43,6 @@ pub type Error {
   InvalidPriority
   InvalidDue
   InvalidId
-  IdExhausted
   NotFound
   AlreadyDone
 }

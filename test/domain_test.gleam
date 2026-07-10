@@ -79,7 +79,7 @@ pub fn ids_completion_and_sort_test() {
     Todo(3, "early-low", 0, 1, Some(Due("2026-01-01T00:00")), Pending),
     Todo(1, "early-high", 0, 5, Some(Due("2026-01-01T00:00")), Pending),
   ]
-  tasks.next_id(values) |> should.equal(Ok(2_147_483_648))
+  tasks.next_id(values) |> should.equal(2_147_483_648)
   tasks.visible_sorted(values, True)
   |> should.equal([
     Todo(1, "early-high", 0, 5, Some(Due("2026-01-01T00:00")), Pending),

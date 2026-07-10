@@ -4,21 +4,11 @@ import tasks/domain/model.{
   type Error, type Todo, AlreadyDone, Done, NotFound, Pending, Todo,
 }
 
-pub fn next_id(todos: List(Todo)) -> Result(Int, Error) {
-  max_id(todos, 0)
-}
-
-fn max_id(todos: List(Todo), current: Int) -> Result(Int, Error) {
-  case todos {
-    [] -> Ok(current + 1)
-    [Todo(id: id, ..), ..rest] ->
-      // Erlang integers are arbitrary precision, so every valid persisted ID
-      // has a representable successor on this target.
-      max_id(rest, case id > current {
-        True -> id
-        False -> current
-      })
-  }
+// BEAM integers are arbitrary precision, so max + 1 cannot overflow.
+pub fn next_id(todos: List(Todo)) -> Int {
+  todos
+  |> list.fold(0, fn(current, task) { int.max(current, task.id) })
+  |> int.add(1)
 }
 
 pub fn complete(

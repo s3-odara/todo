@@ -3,7 +3,7 @@ import gleam/result
 import tasks/domain/due
 import tasks/domain/model.{
   type AddRequest, type DoneRequest, type Due, type Error, type ListRequest,
-  type Todo, AddRequest, DoneRequest, IdExhausted, ListRequest, Pending, Todo,
+  type Todo, AddRequest, DoneRequest, ListRequest, Pending, Todo,
 }
 import tasks/domain/tasks
 import tasks/domain/validation
@@ -58,17 +58,13 @@ pub fn add(
       let Store(load, save) = store
       case load() {
         Error(e) -> Error(Persisted(e))
-        Ok(items) ->
-          case tasks.next_id(items) {
-            Error(IdExhausted) -> Error(Persisted("task ID space exhausted"))
-            Error(e) -> Error(Input(e))
-            Ok(id) -> {
-              let added = Todo(id, clean, minutes, rank, due_value, Pending)
-              save([added, ..items])
-              |> result.map(fn(_) { Added(added) })
-              |> result.map_error(Persisted)
-            }
-          }
+        Ok(items) -> {
+          let added =
+            Todo(tasks.next_id(items), clean, minutes, rank, due_value, Pending)
+          save([added, ..items])
+          |> result.map(fn(_) { Added(added) })
+          |> result.map_error(Persisted)
+        }
       }
     }
     Error(e), _, _, _ -> Error(Input(e))
