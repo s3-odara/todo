@@ -10,19 +10,21 @@ pub fn resolve(
     Some(path) -> Ok(path)
     None ->
       case nonempty(xdg_data_home) {
-        Some(path) ->
-          Ok(filepath.join(filepath.join(path, "todo"), "tasks.yaml"))
+        Some(path) -> Ok(tasks_file(path))
         None ->
           case nonempty(home) {
             Some(path) ->
-              Ok(filepath.join(
-                filepath.join(filepath.join(path, ".local"), "share"),
-                "todo/tasks.yaml",
-              ))
+              Ok(
+                tasks_file(filepath.join(filepath.join(path, ".local"), "share")),
+              )
             None -> Error("TODO_FILE, XDG_DATA_HOME, or HOME is required")
           }
       }
   }
+}
+
+fn tasks_file(data_home: String) -> String {
+  filepath.join(filepath.join(data_home, "todo"), "tasks.yaml")
 }
 
 fn nonempty(value: Option(String)) -> Option(String) {

@@ -82,6 +82,10 @@ pub fn grammar_error(message: String) -> Outcome {
   Outcome(2, [], ["Error: " <> message])
 }
 
+pub fn persistence_error(message: String) -> Outcome {
+  Outcome(1, [], ["Error: " <> message])
+}
+
 pub fn service_error(error: ServiceError) -> Outcome {
   case error {
     Persisted(message) -> Outcome(1, [], ["Error: " <> message])

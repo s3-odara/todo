@@ -3,20 +3,24 @@ import gleam/list
 import gleam/string
 import tasks/domain/model.{type Due, type Error, Due, InvalidDue}
 
+// CLI input accepts date-only as end of day; persisted values must be canonical.
 pub fn input(value: String) -> Result(Due, Error) {
-  let canonical = case string.length(value) {
-    10 -> value <> "T23:59"
-    16 -> value
-    _ -> ""
-  }
-  case valid_shape(canonical) && valid_date(canonical) {
-    True -> Ok(Due(canonical))
-    False -> Error(InvalidDue)
+  case string.length(value) {
+    10 -> validate(value <> "T23:59")
+    16 -> validate(value)
+    _ -> Error(InvalidDue)
   }
 }
 
 pub fn persisted(value: String) -> Result(Due, Error) {
-  case string.length(value) == 16 && valid_shape(value) && valid_date(value) {
+  case string.length(value) == 16 {
+    True -> validate(value)
+    False -> Error(InvalidDue)
+  }
+}
+
+fn validate(value: String) -> Result(Due, Error) {
+  case valid_shape(value) && valid_date(value) {
     True -> Ok(Due(value))
     False -> Error(InvalidDue)
   }
@@ -31,13 +35,10 @@ fn valid_shape(s: String) -> Bool {
   }
 }
 
-fn digits(xs: List(String)) -> Bool {
-  case xs {
-    [] -> True
-    [x, ..rest] ->
-      list.contains(["0", "1", "2", "3", "4", "5", "6", "7", "8", "9"], x)
-      && digits(rest)
-  }
+fn digits(values: List(String)) -> Bool {
+  list.all(values, fn(value) {
+    list.contains(["0", "1", "2", "3", "4", "5", "6", "7", "8", "9"], value)
+  })
 }
 
 fn valid_date(s: String) -> Bool {

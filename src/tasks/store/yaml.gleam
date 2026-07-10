@@ -24,22 +24,15 @@ fn decode_root(value) -> Result(List(Todo), String) {
   case taffy.as_pairs(value) {
     Some([#("tasks", tasks)]) ->
       case taffy.as_list(tasks) {
-        Some(items) -> decode_tasks(items, [])
+        Some(items) -> decode_tasks(items)
         None -> Error("tasks must be a sequence")
       }
     _ -> Error("YAML top level must contain only tasks")
   }
 }
 
-fn decode_tasks(items, acc: List(Todo)) -> Result(List(Todo), String) {
-  case items {
-    [] -> unique(list.reverse(acc))
-    [item, ..rest] ->
-      case decode_task(item) {
-        Ok(task) -> decode_tasks(rest, [task, ..acc])
-        Error(e) -> Error(e)
-      }
-  }
+fn decode_tasks(items) -> Result(List(Todo), String) {
+  list.try_map(items, decode_task) |> result.try(unique)
 }
 
 // Mapping order is intentionally irrelevant. validate_unique_keys above keeps
@@ -74,7 +67,7 @@ fn decode_task(value) -> Result(Todo, String) {
               Some(String(status))
             ->
               case
-                validation.id(int_to_string(id)),
+                validation.id(int.to_string(id)),
                 validation.title(title),
                 decode_due(raw_due)
               {
@@ -115,10 +108,6 @@ fn decode_task(value) -> Result(Todo, String) {
   }
 }
 
-fn int_to_string(value: Int) -> String {
-  int.to_string(value)
-}
-
 fn exact_keys(pairs, expected: List(String)) -> Bool {
   list.length(pairs) == list.length(expected)
   && list.all(expected, fn(key) {
@@ -130,14 +119,7 @@ fn exact_keys(pairs, expected: List(String)) -> Bool {
 }
 
 fn get(pairs, wanted: String) {
-  case pairs {
-    [] -> None
-    [#(key, value), ..rest] ->
-      case key == wanted {
-        True -> Some(value)
-        False -> get(rest, wanted)
-      }
-  }
+  list.key_find(pairs, wanted) |> option.from_result
 }
 
 fn decode_due(value) -> Result(Option(Due), String) {
@@ -152,13 +134,11 @@ fn decode_due(value) -> Result(Option(Due), String) {
 }
 
 fn unique(todos: List(Todo)) -> Result(List(Todo), String) {
-  case todos {
-    [] -> Ok([])
-    [Todo(id: id, ..), ..rest] ->
-      case list.any(rest, fn(task) { task.id == id }) {
-        True -> Error("duplicate task id")
-        False -> unique(rest) |> result.map(fn(_) { todos })
-      }
+  // Compare counts instead of silently discarding tasks with duplicate IDs.
+  let ids = list.map(todos, fn(task) { task.id })
+  case list.length(list.unique(ids)) == list.length(ids) {
+    True -> Ok(todos)
+    False -> Error("duplicate task id")
   }
 }
 

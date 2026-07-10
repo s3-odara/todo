@@ -39,7 +39,7 @@ fn run_with_path(args: List(String)) -> Nil {
       environment("HOME"),
     )
   {
-    Error(message) -> emit(cli.grammar_error(message) |> path_error)
+    Error(message) -> emit(cli.persistence_error(message))
     Ok(filename) ->
       emit(runtime.run(
         args,
@@ -48,11 +48,6 @@ fn run_with_path(args: List(String)) -> Nil {
         }),
       ))
   }
-}
-
-fn path_error(outcome: Outcome) -> Outcome {
-  let Outcome(_, stdout, stderr) = outcome
-  Outcome(1, stdout, stderr)
 }
 
 fn environment(name: String) {
