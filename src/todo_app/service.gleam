@@ -1,0 +1,46 @@
+import gleam/result
+import tasks/domain/model.{type TaskError, type Todo, type ValidatedAdd}
+import tasks/domain/tasks
+import todo_app/store.{type Store, Store}
+
+pub type ServiceError {
+  Domain(TaskError)
+  Persisted(String)
+}
+
+pub fn add(store: Store, values: ValidatedAdd) -> Result(Todo, ServiceError) {
+  persist_transition(store, fn(items) { Ok(tasks.add(items, values)) })
+}
+
+pub fn list(
+  store: Store,
+  include_all: Bool,
+) -> Result(List(Todo), ServiceError) {
+  let Store(load, _) = store
+  load()
+  |> result.map(fn(items) { tasks.visible_sorted(items, include_all) })
+  |> result.map_error(Persisted)
+}
+
+pub fn done(store: Store, id: Int) -> Result(Todo, ServiceError) {
+  persist_transition(store, fn(items) { tasks.complete(items, id) })
+}
+
+fn persist_transition(
+  store: Store,
+  transition: fn(List(Todo)) -> Result(#(List(Todo), Todo), TaskError),
+) -> Result(Todo, ServiceError) {
+  // This is the single read-transform-write boundary; transitions stay pure.
+  let Store(load, save) = store
+  case load() {
+    Error(error) -> Error(Persisted(error))
+    Ok(items) ->
+      case transition(items) {
+        Error(error) -> Error(Domain(error))
+        Ok(#(updated, selected)) ->
+          save(updated)
+          |> result.map(fn(_) { selected })
+          |> result.map_error(Persisted)
+      }
+  }
+}
