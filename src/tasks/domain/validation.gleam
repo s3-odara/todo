@@ -1,9 +1,7 @@
 import gleam/int
 import gleam/list
 import gleam/string
-import tasks/domain/model.{
-  type Error, InvalidEstimate, InvalidId, InvalidPriority, InvalidTitle,
-}
+import tasks/domain/model.{type Error, InvalidInput}
 
 pub fn title(value: String) -> Result(String, Error) {
   // Check the supplied value before trimming: controls are never whitespace
@@ -19,21 +17,21 @@ pub fn title(value: String) -> Result(String, Error) {
     && !string.contains(value, "\u{0}")
   {
     True -> Ok(clean)
-    False -> Error(InvalidTitle)
+    False -> Error(InvalidInput)
   }
 }
 
 pub fn id(value: String) -> Result(Int, Error) {
   case strict_number(value) {
     Ok(n) if n > 0 -> Ok(n)
-    _ -> Error(InvalidId)
+    _ -> Error(InvalidInput)
   }
 }
 
 pub fn priority(value: String) -> Result(Int, Error) {
   case strict_number(value) {
     Ok(n) if n >= 1 && n <= 5 -> Ok(n)
-    _ -> Error(InvalidPriority)
+    _ -> Error(InvalidInput)
   }
 }
 
@@ -45,9 +43,9 @@ pub fn estimate(value: String) -> Result(Int, Error) {
       case strict_number(string.concat(list.reverse(reversed_number))), unit {
         Ok(n), "m" if n <= 525_600 -> Ok(n)
         Ok(n), "h" if n <= 8760 -> Ok(n * 60)
-        _, _ -> Error(InvalidEstimate)
+        _, _ -> Error(InvalidInput)
       }
-    [] -> Error(InvalidEstimate)
+    [] -> Error(InvalidInput)
   }
 }
 

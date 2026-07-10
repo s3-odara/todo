@@ -38,11 +38,7 @@ pub type DoneRequest {
 }
 
 pub type Error {
-  InvalidTitle
-  InvalidEstimate
-  InvalidPriority
-  InvalidDue
-  InvalidId
+  InvalidInput
   NotFound
   AlreadyDone
 }

@@ -1,8 +1,8 @@
 import gleam/option.{None}
 import gleeunit/should
 import tasks/domain/model.{
-  AddRequest, AlreadyDone, Done, DoneRequest, InvalidId, InvalidTitle,
-  ListRequest, NotFound, Pending, Todo,
+  AddRequest, AlreadyDone, Done, DoneRequest, InvalidInput, ListRequest,
+  NotFound, Pending, Todo,
 }
 import todo_app/service
 import todo_app/store.{Store}
@@ -13,9 +13,9 @@ pub fn invalid_add_and_done_do_not_need_store_test() {
       Error("save must not run")
     })
   service.add(store, AddRequest("bad\n", "0m", "3", None))
-  |> should.equal(Error(service.Input(InvalidTitle)))
+  |> should.equal(Error(service.Domain(InvalidInput)))
   service.done(store, DoneRequest("01"))
-  |> should.equal(Error(service.Input(InvalidId)))
+  |> should.equal(Error(service.Domain(InvalidInput)))
 }
 
 pub fn add_defaults_max_plus_one_and_failures_test() {
@@ -40,9 +40,9 @@ pub fn done_rejects_title_and_does_not_prefix_match_ids_test() {
       Error("save must not run")
     })
   service.done(store, DoneRequest("ten"))
-  |> should.equal(Error(service.Input(InvalidId)))
+  |> should.equal(Error(service.Domain(InvalidInput)))
   service.done(store, DoneRequest("1"))
-  |> should.equal(Error(service.Input(NotFound)))
+  |> should.equal(Error(service.Domain(NotFound)))
   let exact_store =
     Store(fn() { Ok([id_ten, id_one_hundred]) }, fn(items) {
       items |> should.equal([Todo(10, "ten", 0, 3, None, Done), id_one_hundred])
@@ -60,9 +60,9 @@ pub fn list_done_and_no_save_cases_test() {
   let assert Ok(items) = service.list(no_save, ListRequest(False))
   items |> should.equal([pending])
   service.done(no_save, DoneRequest("99"))
-  |> should.equal(Error(service.Input(NotFound)))
+  |> should.equal(Error(service.Domain(NotFound)))
   service.done(no_save, DoneRequest("2"))
-  |> should.equal(Error(service.Input(AlreadyDone)))
+  |> should.equal(Error(service.Domain(AlreadyDone)))
   let save_failure = Store(fn() { Ok([pending]) }, fn(_) { Error("rename") })
   service.done(save_failure, DoneRequest("1"))
   |> should.equal(Error(service.Persisted("rename")))

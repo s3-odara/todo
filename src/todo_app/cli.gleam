@@ -4,9 +4,9 @@ import gleam/option.{type Option, None, Some}
 import gleam/result
 import tasks/domain/model.{
   type AddRequest, type DoneRequest, type ListRequest, type Todo, AddRequest,
-  AlreadyDone, Done, DoneRequest, ListRequest, NotFound, Pending,
+  AlreadyDone, Done, DoneRequest, InvalidInput, ListRequest, NotFound, Pending,
 }
-import todo_app/service.{type ServiceError, Input, Persisted}
+import todo_app/service.{type ServiceError, Domain, Persisted}
 
 pub type Command {
   Help
@@ -89,9 +89,9 @@ pub fn persistence_error(message: String) -> Outcome {
 pub fn service_error(error: ServiceError) -> Outcome {
   case error {
     Persisted(message) -> Outcome(1, [], ["Error: " <> message])
-    Input(AlreadyDone) -> Outcome(2, [], ["Error: task is already completed"])
-    Input(NotFound) -> Outcome(2, [], ["Error: task not found"])
-    Input(_) -> Outcome(2, [], ["Error: invalid input"])
+    Domain(AlreadyDone) -> Outcome(2, [], ["Error: task is already completed"])
+    Domain(NotFound) -> Outcome(2, [], ["Error: task not found"])
+    Domain(InvalidInput) -> Outcome(2, [], ["Error: invalid input"])
   }
 }
 

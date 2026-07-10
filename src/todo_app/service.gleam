@@ -3,14 +3,14 @@ import gleam/result
 import tasks/domain/due
 import tasks/domain/model.{
   type AddRequest, type DoneRequest, type Due, type Error, type ListRequest,
-  type Todo, AddRequest, DoneRequest, ListRequest, Pending, Todo,
+  type Todo, AddRequest, DoneRequest, InvalidInput, ListRequest, Pending, Todo,
 }
 import tasks/domain/tasks
 import tasks/domain/validation
 import todo_app/store.{type Store, Store}
 
 pub type ServiceError {
-  Input(Error)
+  Domain(Error)
   Persisted(String)
 }
 
@@ -35,10 +35,7 @@ pub fn add(store: Store, request: AddRequest) -> Result(Todo, ServiceError) {
         }
       }
     }
-    Error(e), _, _, _ -> Error(Input(e))
-    _, Error(e), _, _ -> Error(Input(e))
-    _, _, Error(e), _ -> Error(Input(e))
-    _, _, _, Error(e) -> Error(Input(e))
+    _, _, _, _ -> Error(Domain(InvalidInput))
   }
 }
 
@@ -56,14 +53,14 @@ pub fn list(
 pub fn done(store: Store, request: DoneRequest) -> Result(Todo, ServiceError) {
   let DoneRequest(raw_id) = request
   case validation.id(raw_id) {
-    Error(e) -> Error(Input(e))
+    Error(e) -> Error(Domain(e))
     Ok(id) -> {
       let Store(load, save) = store
       case load() {
         Error(e) -> Error(Persisted(e))
         Ok(items) ->
           case tasks.complete(items, id) {
-            Error(e) -> Error(Input(e))
+            Error(e) -> Error(Domain(e))
             Ok(#(updated, completed)) ->
               save(updated)
               |> result.map(fn(_) { completed })

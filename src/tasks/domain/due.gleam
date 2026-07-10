@@ -1,28 +1,28 @@
 import gleam/int
 import gleam/list
 import gleam/string
-import tasks/domain/model.{type Due, type Error, Due, InvalidDue}
+import tasks/domain/model.{type Due, type Error, Due, InvalidInput}
 
 // CLI input accepts date-only as end of day; persisted values must be canonical.
 pub fn input(value: String) -> Result(Due, Error) {
   case string.length(value) {
     10 -> validate(value <> "T23:59")
     16 -> validate(value)
-    _ -> Error(InvalidDue)
+    _ -> Error(InvalidInput)
   }
 }
 
 pub fn persisted(value: String) -> Result(Due, Error) {
   case string.length(value) == 16 {
     True -> validate(value)
-    False -> Error(InvalidDue)
+    False -> Error(InvalidInput)
   }
 }
 
 fn validate(value: String) -> Result(Due, Error) {
   case valid_shape(value) && valid_date(value) {
     True -> Ok(Due(value))
-    False -> Error(InvalidDue)
+    False -> Error(InvalidInput)
   }
 }
 
