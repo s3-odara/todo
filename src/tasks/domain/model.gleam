@@ -20,29 +20,17 @@ pub type Todo {
   )
 }
 
-pub type AddRequest {
-  AddRequest(
+/// Values accepted by domain validation and ready for a pure task transition.
+pub type ValidatedAdd {
+  ValidatedAdd(
     title: String,
-    estimate: String,
-    priority: String,
-    due: Option(String),
+    estimate_minutes: Int,
+    priority: Int,
+    due: Option(Due),
   )
 }
 
-pub type ListRequest {
-  ListRequest(include_all: Bool)
-}
-
-pub type DoneRequest {
-  DoneRequest(id: String)
-}
-
-pub type Error {
-  InvalidTitle
-  InvalidEstimate
-  InvalidPriority
-  InvalidDue
-  InvalidId
+pub type TaskError {
   NotFound
   AlreadyDone
 }

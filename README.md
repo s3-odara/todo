@@ -23,15 +23,15 @@ Due values are timezone-free local values. `YYYY-MM-DD` becomes `YYYY-MM-DDT23:5
 
 ## Storage
 
-The path is selected by non-empty `TODO_FILE`, then `$XDG_DATA_HOME/todo/tasks.yaml`, then `$HOME/.local/share/todo/tasks.yaml`. The YAML document has only `tasks` and no schema/version field. Unknown, duplicate, missing, or incorrectly typed keys are corruption errors.
+The path is selected by non-empty `TODO_FILE`, then `$XDG_DATA_HOME/todo/tasks.json`, then `$HOME/.local/share/todo/tasks.json`. Tasks are stored as a JSON array.
 
-Writes encode fully to a unique sibling temporary file and rename it into place. There is no locking, fsync, concurrent-writer guarantee, or comment/layout preservation.
+Writes use a fixed sibling `.tmp` file and then rename it into place. Failed writes may leave that temporary file behind. There is no locking, fsync, or concurrent-writer guarantee. Reads validate the JSON structure and field types but trust domain values because the file is app-owned.
 
 Exit code 0 is success/help, 1 is path/I/O/corrupt data, and 2 is command grammar, invalid input, missing ID, or already-completed ID. Diagnostics go to stderr and begin with `Error:`.
 
 ## Implementation notes
 
-CLI grammar and Gregorian calendar validation are deliberately implemented as small pure modules so exact ASCII grammar and timezone-free due semantics remain explicit. Consequently, the previously planned but unused `glint` and `gleam_time` dependencies are not included; this also avoids their unnecessary transitive ANSI/regex packages. YAML uses Taffy's pure Gleam backend.
+CLI grammar and Gregorian calendar validation are deliberately implemented as small pure modules so exact ASCII grammar and timezone-free due semantics remain explicit. Consequently, the previously planned but unused `glint` and `gleam_time` dependencies are not included; this also avoids their unnecessary transitive ANSI/regex packages.
 
 ## Development
 

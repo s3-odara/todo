@@ -5,33 +5,22 @@ import gleam/list
 import gleam/option.{None, Some}
 import tasks/runtime as process
 import tasks/store/file
-import todo_app/cli.{type Outcome, Add, Help, Outcome, RunDone}
+import todo_app/cli.{type Command, type Outcome, Help, Outcome}
 import todo_app/runtime
-import todo_app/service
 import todo_app/store.{Store}
 import todo_app/store/path
 
 pub fn main() -> Nil {
   let args = argv.load().arguments
-  // Help is parsed before this boundary is constructed, so it never reads env.
+  // Help and grammar errors do not depend on persistence configuration.
   case cli.parse(args) {
     Ok(Help) -> emit(cli.help())
-    Ok(Add(request)) ->
-      case service.validate_add(request) {
-        Error(error) -> emit(cli.service_error(error))
-        Ok(_) -> run_with_path(args)
-      }
-    Ok(RunDone(request)) ->
-      case service.validate_done(request) {
-        Error(error) -> emit(cli.service_error(error))
-        Ok(_) -> run_with_path(args)
-      }
-    Ok(_) -> run_with_path(args)
+    Ok(command) -> run_with_path(command)
     Error(message) -> emit(cli.grammar_error(message))
   }
 }
 
-fn run_with_path(args: List(String)) -> Nil {
+fn run_with_path(command: Command) -> Nil {
   case
     path.resolve(
       environment("TODO_FILE"),
@@ -42,7 +31,7 @@ fn run_with_path(args: List(String)) -> Nil {
     Error(message) -> emit(cli.persistence_error(message))
     Ok(filename) ->
       emit(runtime.run(
-        args,
+        command,
         Store(fn() { file.load(filename) }, fn(tasks) {
           file.save(filename, tasks)
         }),

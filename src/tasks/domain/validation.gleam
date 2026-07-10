@@ -1,11 +1,34 @@
 import gleam/int
 import gleam/list
+import gleam/option.{type Option, None, Some}
+import gleam/result
 import gleam/string
-import tasks/domain/model.{
-  type Error, InvalidEstimate, InvalidId, InvalidPriority, InvalidTitle,
+import tasks/domain/due
+import tasks/domain/model.{type Due, type ValidatedAdd, ValidatedAdd}
+
+pub fn add(
+  raw_title: String,
+  raw_estimate: String,
+  raw_priority: String,
+  raw_due: Option(String),
+) -> Result(ValidatedAdd, Nil) {
+  case
+    title(raw_title),
+    estimate(raw_estimate),
+    priority(raw_priority),
+    optional_due(raw_due)
+  {
+    Ok(clean), Ok(minutes), Ok(rank), Ok(due_value) ->
+      Ok(ValidatedAdd(clean, minutes, rank, due_value))
+    _, _, _, _ -> Error(Nil)
+  }
 }
 
-pub fn title(value: String) -> Result(String, Error) {
+pub fn done(raw_id: String) -> Result(Int, Nil) {
+  id(raw_id)
+}
+
+fn title(value: String) -> Result(String, Nil) {
   // Check the supplied value before trimming: controls are never whitespace
   // that the CLI is permitted to silently normalise away.
   let clean = string.trim(value)
@@ -19,35 +42,54 @@ pub fn title(value: String) -> Result(String, Error) {
     && !string.contains(value, "\u{0}")
   {
     True -> Ok(clean)
-    False -> Error(InvalidTitle)
+    False -> Error(Nil)
   }
 }
 
-pub fn id(value: String) -> Result(Int, Error) {
+fn id(value: String) -> Result(Int, Nil) {
   case strict_number(value) {
     Ok(n) if n > 0 -> Ok(n)
-    _ -> Error(InvalidId)
+    _ -> Error(Nil)
   }
 }
 
-pub fn priority(value: String) -> Result(Int, Error) {
-  case strict_number(value) {
-    Ok(n) if n >= 1 && n <= 5 -> Ok(n)
-    _ -> Error(InvalidPriority)
-  }
+fn priority(value: String) -> Result(Int, Nil) {
+  number_between(value, 1, 5)
 }
 
-pub fn estimate(value: String) -> Result(Int, Error) {
+fn estimate(value: String) -> Result(Int, Nil) {
   // Split the final ASCII unit, not the first grapheme: durations may have
   // more than one digit.
   case list.reverse(string.to_graphemes(value)) {
-    [unit, ..reversed_number] ->
-      case strict_number(string.concat(list.reverse(reversed_number))), unit {
-        Ok(n), "m" if n <= 525_600 -> Ok(n)
-        Ok(n), "h" if n <= 8760 -> Ok(n * 60)
-        _, _ -> Error(InvalidEstimate)
+    [unit, ..reversed_number] -> {
+      let number = string.concat(list.reverse(reversed_number))
+      case unit {
+        "m" -> number_between(number, 0, 525_600)
+        "h" ->
+          number_between(number, 0, 8760)
+          |> result.map(fn(hours) { hours * 60 })
+        _ -> Error(Nil)
       }
-    [] -> Error(InvalidEstimate)
+    }
+    [] -> Error(Nil)
+  }
+}
+
+fn optional_due(raw: Option(String)) -> Result(Option(Due), Nil) {
+  case raw {
+    None -> Ok(None)
+    Some(value) -> due.input(value) |> result.map(Some)
+  }
+}
+
+fn number_between(
+  value: String,
+  minimum: Int,
+  maximum: Int,
+) -> Result(Int, Nil) {
+  case strict_number(value) {
+    Ok(number) if number >= minimum && number <= maximum -> Ok(number)
+    _ -> Error(Nil)
   }
 }
 
