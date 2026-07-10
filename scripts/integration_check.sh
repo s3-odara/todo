@@ -8,6 +8,7 @@ TODO_FILE="$tmp/missing/tasks.json" gleam run --no-print-progress -- list >/dev/
 [ ! -e "$tmp/missing/tasks.json" ]
 [ "$(run add 'first' --estimate 3h --priority 5 --due 2026-07-15)" = "Added task 1: first" ]
 [ -f "$tmp/nested/tasks.json" ]
+[ ! -e "$tmp/nested/tasks.json.tmp" ]
 [ "$(run add 'second')" = "Added task 2: second" ]
 [ "$(run list)" = "ID	STATUS	PRIORITY	ESTIMATE	DUE	TITLE
 1	pending	5	180m	2026-07-15T23:59	first
