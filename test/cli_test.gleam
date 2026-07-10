@@ -5,6 +5,13 @@ import todo_app/cli
 import todo_app/runtime
 import todo_app/store.{Store}
 
+fn run(args, store) {
+  case cli.parse(args) {
+    Ok(command) -> runtime.run(command, store)
+    Error(message) -> cli.grammar_error(message)
+  }
+}
+
 pub fn grammar_matrix_test() {
   cli.parse(["add", "x", "--estimate", "0m", "--estimate", "1h"])
   |> should.equal(Error("invalid, duplicate, or missing option"))
@@ -27,18 +34,18 @@ pub fn grammar_matrix_test() {
 
 pub fn exact_outcome_and_rendering_matrix_test() {
   let empty = Store(fn() { Ok([]) }, fn(_) { Ok(Nil) })
-  runtime.run([], empty) |> should.equal(cli.help())
-  runtime.run(["wat"], empty)
+  run([], empty) |> should.equal(cli.help())
+  run(["wat"], empty)
   |> should.equal(cli.Outcome(2, [], ["Error: invalid command or arguments"]))
-  runtime.run(["add", "x", "--priority", "9"], empty)
+  run(["add", "x", "--priority", "9"], empty)
   |> should.equal(cli.Outcome(2, [], ["Error: invalid input"]))
-  runtime.run(["list"], empty)
+  run(["list"], empty)
   |> should.equal(cli.Outcome(0, ["No pending tasks."], []))
-  runtime.run(["list", "--all"], empty)
+  run(["list", "--all"], empty)
   |> should.equal(cli.Outcome(0, ["No tasks."], []))
   let one =
     Store(fn() { Ok([Todo(1, "x", 5, 3, None, Pending)]) }, fn(_) { Ok(Nil) })
-  runtime.run(["list"], one)
+  run(["list"], one)
   |> should.equal(
     cli.Outcome(
       0,
@@ -46,17 +53,17 @@ pub fn exact_outcome_and_rendering_matrix_test() {
       [],
     ),
   )
-  runtime.run(["done", "99"], one)
+  run(["done", "99"], one)
   |> should.equal(cli.Outcome(2, [], ["Error: task not found"]))
 }
 
 pub fn success_defaults_and_done_outcomes_test() {
   let add_store = Store(fn() { Ok([]) }, fn(_) { Ok(Nil) })
-  runtime.run(["add", "x"], add_store)
+  run(["add", "x"], add_store)
   |> should.equal(cli.Outcome(0, ["Added task 1: x"], []))
   let done_store =
     Store(fn() { Ok([Todo(1, "x", 0, 3, None, Pending)]) }, fn(_) { Ok(Nil) })
-  runtime.run(["done", "1"], done_store)
+  run(["done", "1"], done_store)
   |> should.equal(cli.Outcome(0, ["Completed task 1: x"], []))
   cli.parse(["add", "x"])
   |> should.equal(Ok(cli.Add(AddRequest("x", "0m", "3", None))))

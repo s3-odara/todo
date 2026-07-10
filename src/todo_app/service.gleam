@@ -14,27 +14,6 @@ pub type ServiceError {
   Persisted(String)
 }
 
-pub fn validate_add(request: AddRequest) -> Result(Nil, ServiceError) {
-  let AddRequest(title, estimate, priority, raw_due) = request
-  case
-    validation.title(title),
-    validation.estimate(estimate),
-    validation.priority(priority),
-    parse_due(raw_due)
-  {
-    Ok(_), Ok(_), Ok(_), Ok(_) -> Ok(Nil)
-    Error(e), _, _, _ -> Error(Input(e))
-    _, Error(e), _, _ -> Error(Input(e))
-    _, _, Error(e), _ -> Error(Input(e))
-    _, _, _, Error(e) -> Error(Input(e))
-  }
-}
-
-pub fn validate_done(request: DoneRequest) -> Result(Nil, ServiceError) {
-  let DoneRequest(raw_id) = request
-  validation.id(raw_id) |> result.map(fn(_) { Nil }) |> result.map_error(Input)
-}
-
 pub fn add(store: Store, request: AddRequest) -> Result(Todo, ServiceError) {
   let AddRequest(title, estimate, priority, raw_due) = request
   case

@@ -55,7 +55,7 @@ fi
 [ ! -s "$tmp/out" ]
 [ "$(<"$tmp/err")" = 'Error: invalid input' ]
 [ "$before" = "$(cksum "$exact")" ]
-# Semantic input must win over missing path configuration and be code 2.
+# Persistence is configured before semantic values are validated.
 if env -u TODO_FILE -u XDG_DATA_HOME -u HOME gleam run --no-print-progress -- add x --priority 9 >/dev/null 2>/dev/null; then exit 1; else
-  [ "$?" -eq 2 ]
+  [ "$?" -eq 1 ]
 fi
