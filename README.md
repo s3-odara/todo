@@ -25,7 +25,7 @@ Due values are timezone-free local values. `YYYY-MM-DD` becomes `YYYY-MM-DDT23:5
 
 The path is selected by non-empty `TODO_FILE`, then `$XDG_DATA_HOME/todo/tasks.json`, then `$HOME/.local/share/todo/tasks.json`. Tasks are stored as a JSON array.
 
-Writes use a fixed sibling `.tmp` file and then rename it into place. Failed writes may leave that temporary file behind. There is no locking, fsync, or concurrent-writer guarantee.
+Writes use a fixed sibling `.tmp` file and then rename it into place. Failed writes may leave that temporary file behind. There is no locking, fsync, or concurrent-writer guarantee. Reads validate the JSON structure and field types but trust domain values because the file is app-owned.
 
 Exit code 0 is success/help, 1 is path/I/O/corrupt data, and 2 is command grammar, invalid input, missing ID, or already-completed ID. Diagnostics go to stderr and begin with `Error:`.
 

@@ -11,7 +11,7 @@ pub fn round_trip_test() {
   json.encode([]) |> should.equal("[]")
 }
 
-pub fn app_owned_values_and_unknown_fields_decode_test() {
+pub fn trusted_app_owned_values_and_unknown_fields_decode_test() {
   json.decode(
     "[{\"id\":-1,\"title\":\"\",\"estimate_minutes\":-2,\"priority\":9,\"due\":\"not-a-date\",\"status\":\"pending\",\"ignored\":true}]",
   )

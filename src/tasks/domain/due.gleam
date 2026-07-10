@@ -3,19 +3,12 @@ import gleam/list
 import gleam/string
 import tasks/domain/model.{type Due, type Error, Due, InvalidInput}
 
-// CLI input accepts date-only as end of day; persisted values must be canonical.
+// CLI input accepts date-only as end of day.
 pub fn input(value: String) -> Result(Due, Error) {
   case string.length(value) {
     10 -> validate(value <> "T23:59")
     16 -> validate(value)
     _ -> Error(InvalidInput)
-  }
-}
-
-pub fn persisted(value: String) -> Result(Due, Error) {
-  case string.length(value) == 16 {
-    True -> validate(value)
-    False -> Error(InvalidInput)
   }
 }
 
