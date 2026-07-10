@@ -28,7 +28,7 @@ pub fn done(request: DoneRequest) -> Result(Int, Error) {
   id(raw_id)
 }
 
-pub fn title(value: String) -> Result(String, Error) {
+fn title(value: String) -> Result(String, Error) {
   // Check the supplied value before trimming: controls are never whitespace
   // that the CLI is permitted to silently normalise away.
   let clean = string.trim(value)
@@ -46,21 +46,21 @@ pub fn title(value: String) -> Result(String, Error) {
   }
 }
 
-pub fn id(value: String) -> Result(Int, Error) {
+fn id(value: String) -> Result(Int, Error) {
   case strict_number(value) {
     Ok(n) if n > 0 -> Ok(n)
     _ -> Error(InvalidInput)
   }
 }
 
-pub fn priority(value: String) -> Result(Int, Error) {
+fn priority(value: String) -> Result(Int, Error) {
   case strict_number(value) {
     Ok(n) if n >= 1 && n <= 5 -> Ok(n)
     _ -> Error(InvalidInput)
   }
 }
 
-pub fn estimate(value: String) -> Result(Int, Error) {
+fn estimate(value: String) -> Result(Int, Error) {
   // Split the final ASCII unit, not the first grapheme: durations may have
   // more than one digit.
   case list.reverse(string.to_graphemes(value)) {

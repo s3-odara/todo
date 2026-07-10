@@ -6,7 +6,7 @@ import tasks/domain/model.{
 }
 
 // BEAM integers are arbitrary precision, so max + 1 cannot overflow.
-pub fn next_id(todos: List(Todo)) -> Int {
+fn next_id(todos: List(Todo)) -> Int {
   todos
   |> list.fold(0, fn(current, task) { int.max(current, task.id) })
   |> int.add(1)

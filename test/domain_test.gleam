@@ -1,52 +1,70 @@
+import gleam/list
 import gleam/option.{None, Some}
 import gleam/string
 import gleeunit/should
 import tasks/domain/due
 import tasks/domain/model.{
-  AddRequest, AlreadyDone, Done, Due, InvalidInput, NotFound, Pending, Todo,
-  ValidatedAdd,
+  AddRequest, AlreadyDone, Done, DoneRequest, Due, InvalidInput, NotFound,
+  Pending, Todo, ValidatedAdd,
 }
 import tasks/domain/tasks
 import tasks/domain/validation
 
-pub fn title_boundaries_and_controls_test() {
-  validation.title(" clean ") |> should.equal(Ok("clean"))
-  validation.title("") |> should.equal(Error(InvalidInput))
-  validation.title("   ") |> should.equal(Error(InvalidInput))
-  validation.title("\tclean") |> should.equal(Error(InvalidInput))
-  validation.title("clean\n") |> should.equal(Error(InvalidInput))
-  validation.title("clean\r") |> should.equal(Error(InvalidInput))
-  validation.title("clean\u{0}") |> should.equal(Error(InvalidInput))
-  validation.title("a") |> should.equal(Ok("a"))
-  validation.title(string.repeat("a", 200))
-  |> should.equal(Ok(string.repeat("a", 200)))
-  validation.title(string.repeat("a", 201)) |> should.equal(Error(InvalidInput))
+fn validated_add(title: String, estimate: String, priority: String) {
+  validation.add(AddRequest(title, estimate, priority, None))
 }
 
-pub fn estimate_priority_and_id_matrix_test() {
-  validation.estimate("0m") |> should.equal(Ok(0))
-  validation.estimate("0h") |> should.equal(Ok(0))
-  validation.estimate("8760h") |> should.equal(Ok(525_600))
-  validation.estimate("525600m") |> should.equal(Ok(525_600))
-  validation.estimate("525601m") |> should.equal(Error(InvalidInput))
-  validation.estimate("8761h") |> should.equal(Error(InvalidInput))
-  validation.estimate("01m") |> should.equal(Error(InvalidInput))
-  validation.estimate("1h30m") |> should.equal(Error(InvalidInput))
-  validation.estimate("1.5h") |> should.equal(Error(InvalidInput))
-  validation.estimate("3H") |> should.equal(Error(InvalidInput))
-  validation.estimate("-1m") |> should.equal(Error(InvalidInput))
-  validation.estimate("1") |> should.equal(Error(InvalidInput))
-  validation.priority("1") |> should.equal(Ok(1))
-  validation.priority("5") |> should.equal(Ok(5))
-  validation.priority("0") |> should.equal(Error(InvalidInput))
-  validation.priority("6") |> should.equal(Error(InvalidInput))
-  validation.priority("01") |> should.equal(Error(InvalidInput))
-  validation.priority("x") |> should.equal(Error(InvalidInput))
-  validation.id("1") |> should.equal(Ok(1))
-  validation.id("2147483648") |> should.equal(Ok(2_147_483_648))
-  validation.id("0") |> should.equal(Error(InvalidInput))
-  validation.id("01") |> should.equal(Error(InvalidInput))
-  validation.id("1x") |> should.equal(Error(InvalidInput))
+pub fn title_validation_test() {
+  validated_add(" clean ", "0m", "3")
+  |> should.equal(Ok(ValidatedAdd("clean", 0, 3, None)))
+  validated_add("", "0m", "3") |> should.equal(Error(InvalidInput))
+  validated_add("   ", "0m", "3") |> should.equal(Error(InvalidInput))
+  validated_add("\tclean", "0m", "3") |> should.equal(Error(InvalidInput))
+  validated_add("clean\n", "0m", "3") |> should.equal(Error(InvalidInput))
+  validated_add("clean\r", "0m", "3") |> should.equal(Error(InvalidInput))
+  validated_add("clean\u{0}", "0m", "3") |> should.equal(Error(InvalidInput))
+  validated_add("a", "0m", "3")
+  |> should.equal(Ok(ValidatedAdd("a", 0, 3, None)))
+  validated_add(string.repeat("a", 200), "0m", "3")
+  |> should.equal(Ok(ValidatedAdd(string.repeat("a", 200), 0, 3, None)))
+  validated_add(string.repeat("a", 201), "0m", "3")
+  |> should.equal(Error(InvalidInput))
+}
+
+pub fn estimate_validation_test() {
+  validated_add("x", "0m", "3")
+  |> should.equal(Ok(ValidatedAdd("x", 0, 3, None)))
+  validated_add("x", "0h", "3")
+  |> should.equal(Ok(ValidatedAdd("x", 0, 3, None)))
+  validated_add("x", "8760h", "3")
+  |> should.equal(Ok(ValidatedAdd("x", 525_600, 3, None)))
+  validated_add("x", "525600m", "3")
+  |> should.equal(Ok(ValidatedAdd("x", 525_600, 3, None)))
+  ["525601m", "8761h", "01m", "1h30m", "1.5h", "3H", "-1m", "1"]
+  |> list.each(fn(value) {
+    validated_add("x", value, "3") |> should.equal(Error(InvalidInput))
+  })
+}
+
+pub fn priority_validation_test() {
+  validated_add("x", "0m", "1")
+  |> should.equal(Ok(ValidatedAdd("x", 0, 1, None)))
+  validated_add("x", "0m", "5")
+  |> should.equal(Ok(ValidatedAdd("x", 0, 5, None)))
+  ["0", "6", "01", "x"]
+  |> list.each(fn(value) {
+    validated_add("x", "0m", value) |> should.equal(Error(InvalidInput))
+  })
+}
+
+pub fn id_validation_test() {
+  validation.done(DoneRequest("1")) |> should.equal(Ok(1))
+  validation.done(DoneRequest("2147483648"))
+  |> should.equal(Ok(2_147_483_648))
+  ["0", "01", "1x"]
+  |> list.each(fn(value) {
+    validation.done(DoneRequest(value)) |> should.equal(Error(InvalidInput))
+  })
 }
 
 pub fn due_calendar_and_rejection_matrix_test() {
@@ -101,7 +119,6 @@ pub fn ids_completion_and_sort_test() {
     Todo(3, "early-low", 0, 1, Some(Due("2026-01-01T00:00")), Pending),
     Todo(1, "early-high", 0, 5, Some(Due("2026-01-01T00:00")), Pending),
   ]
-  tasks.next_id(values) |> should.equal(2_147_483_648)
   tasks.visible_sorted(values, True)
   |> should.equal([
     Todo(1, "early-high", 0, 5, Some(Due("2026-01-01T00:00")), Pending),
