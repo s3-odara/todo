@@ -15,34 +15,21 @@ pub fn complete(
   todos: List(Todo),
   wanted: Int,
 ) -> Result(#(List(Todo), Todo), Error) {
-  complete_loop(todos, wanted, [])
-}
-
-fn complete_loop(
-  todos: List(Todo),
-  wanted: Int,
-  before: List(Todo),
-) -> Result(#(List(Todo), Todo), Error) {
-  case todos {
-    [] -> Error(NotFound)
-    [Todo(id: id, status: Done, ..), ..] if id == wanted -> Error(AlreadyDone)
-    [
-      Todo(
-        id: id,
-        title: title,
-        estimate_minutes: estimate,
-        priority: priority,
-        due: due,
-        ..,
-      ),
-      ..rest
-    ]
-      if id == wanted
-    -> {
-      let completed = Todo(id, title, estimate, priority, due, Done)
-      Ok(#(list.reverse(before) |> list.append([completed, ..rest]), completed))
+  case list.find(todos, fn(task) { task.id == wanted }) {
+    Error(_) -> Error(NotFound)
+    Ok(Todo(status: Done, ..)) -> Error(AlreadyDone)
+    Ok(task) -> {
+      let completed = Todo(..task, status: Done)
+      // IDs created by the app are unique; replacing by ID keeps the update clear.
+      let updated =
+        list.map(todos, fn(current) {
+          case current.id == wanted {
+            True -> completed
+            False -> current
+          }
+        })
+      Ok(#(updated, completed))
     }
-    [task, ..rest] -> complete_loop(rest, wanted, [task, ..before])
   }
 }
 
