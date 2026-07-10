@@ -14,14 +14,6 @@ pub type ServiceError {
   Persisted(String)
 }
 
-pub type AddResult {
-  Added(Todo)
-}
-
-pub type DoneResult {
-  Completed(Todo)
-}
-
 pub fn validate_add(request: AddRequest) -> Result(Nil, ServiceError) {
   let AddRequest(title, estimate, priority, raw_due) = request
   case
@@ -43,10 +35,7 @@ pub fn validate_done(request: DoneRequest) -> Result(Nil, ServiceError) {
   validation.id(raw_id) |> result.map(fn(_) { Nil }) |> result.map_error(Input)
 }
 
-pub fn add(
-  store: Store,
-  request: AddRequest,
-) -> Result(AddResult, ServiceError) {
+pub fn add(store: Store, request: AddRequest) -> Result(Todo, ServiceError) {
   let AddRequest(title, estimate, priority, raw_due) = request
   case
     validation.title(title),
@@ -62,7 +51,7 @@ pub fn add(
           let added =
             Todo(tasks.next_id(items), clean, minutes, rank, due_value, Pending)
           save([added, ..items])
-          |> result.map(fn(_) { Added(added) })
+          |> result.map(fn(_) { added })
           |> result.map_error(Persisted)
         }
       }
@@ -85,10 +74,7 @@ pub fn list(
   |> result.map_error(Persisted)
 }
 
-pub fn done(
-  store: Store,
-  request: DoneRequest,
-) -> Result(DoneResult, ServiceError) {
+pub fn done(store: Store, request: DoneRequest) -> Result(Todo, ServiceError) {
   let DoneRequest(raw_id) = request
   case validation.id(raw_id) {
     Error(e) -> Error(Input(e))
@@ -101,7 +87,7 @@ pub fn done(
             Error(e) -> Error(Input(e))
             Ok(#(updated, completed)) ->
               save(updated)
-              |> result.map(fn(_) { Completed(completed) })
+              |> result.map(fn(_) { completed })
               |> result.map_error(Persisted)
           }
       }

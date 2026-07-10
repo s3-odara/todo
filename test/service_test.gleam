@@ -22,9 +22,7 @@ pub fn add_defaults_max_plus_one_and_failures_test() {
   let items = [Todo(2_147_483_647, "old", 0, 3, None, Done)]
   let store = Store(fn() { Ok(items) }, fn(_) { Ok(Nil) })
   service.add(store, AddRequest("new", "0m", "3", None))
-  |> should.equal(
-    Ok(service.Added(Todo(2_147_483_648, "new", 0, 3, None, Pending))),
-  )
+  |> should.equal(Ok(Todo(2_147_483_648, "new", 0, 3, None, Pending)))
   let load_failure =
     Store(fn() { Error("corrupt") }, fn(_) { Error("save must not run") })
   service.add(load_failure, AddRequest("x", "0m", "3", None))
@@ -51,7 +49,7 @@ pub fn done_rejects_title_and_does_not_prefix_match_ids_test() {
       Ok(Nil)
     })
   service.done(exact_store, DoneRequest("10"))
-  |> should.equal(Ok(service.Completed(Todo(10, "ten", 0, 3, None, Done))))
+  |> should.equal(Ok(Todo(10, "ten", 0, 3, None, Done)))
 }
 
 pub fn list_done_and_no_save_cases_test() {

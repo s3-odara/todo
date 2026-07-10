@@ -7,30 +7,19 @@ pub fn run(args: List(String), store: Store) -> Outcome {
   case cli.parse(args) {
     Error(message) -> cli.grammar_error(message)
     Ok(Help) -> cli.help()
-    Ok(Add(request)) -> service.add(store, request) |> add_outcome
+    Ok(Add(request)) ->
+      service.add(store, request) |> service_outcome(cli.added)
     Ok(List(request)) ->
-      service.list(store, request) |> list_outcome(request.include_all)
-    Ok(RunDone(request)) -> service.done(store, request) |> done_outcome
+      service.list(store, request)
+      |> service_outcome(fn(items) { cli.listed(items, request.include_all) })
+    Ok(RunDone(request)) ->
+      service.done(store, request) |> service_outcome(cli.completed)
   }
 }
 
-fn add_outcome(result) {
+fn service_outcome(result, on_success) {
   case result {
-    Ok(value) -> cli.added(value)
-    Error(error) -> cli.service_error(error)
-  }
-}
-
-fn done_outcome(result) {
-  case result {
-    Ok(value) -> cli.completed(value)
-    Error(error) -> cli.service_error(error)
-  }
-}
-
-fn list_outcome(result, all) {
-  case result {
-    Ok(value) -> cli.listed(value, all)
+    Ok(value) -> on_success(value)
     Error(error) -> cli.service_error(error)
   }
 }

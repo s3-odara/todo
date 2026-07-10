@@ -6,10 +6,7 @@ import tasks/domain/model.{
   type AddRequest, type DoneRequest, type ListRequest, type Todo, AddRequest,
   AlreadyDone, Done, DoneRequest, ListRequest, NotFound, Pending,
 }
-import todo_app/service.{
-  type AddResult, type DoneResult, type ServiceError, Added, Completed, Input,
-  Persisted,
-}
+import todo_app/service.{type ServiceError, Input, Persisted}
 
 pub type Command {
   Help
@@ -94,8 +91,7 @@ pub fn service_error(error: ServiceError) -> Outcome {
   }
 }
 
-pub fn added(result: AddResult) -> Outcome {
-  let Added(task) = result
+pub fn added(task: Todo) -> Outcome {
   Outcome(
     0,
     ["Added task " <> int.to_string(task.id) <> ": " <> task.title],
@@ -103,8 +99,7 @@ pub fn added(result: AddResult) -> Outcome {
   )
 }
 
-pub fn completed(result: DoneResult) -> Outcome {
-  let Completed(task) = result
+pub fn completed(task: Todo) -> Outcome {
   Outcome(
     0,
     ["Completed task " <> int.to_string(task.id) <> ": " <> task.title],
