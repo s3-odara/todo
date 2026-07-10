@@ -1,10 +1,10 @@
 import gleam/result
-import tasks/domain/model.{type Error, type Todo, type ValidatedAdd}
+import tasks/domain/model.{type TaskError, type Todo, type ValidatedAdd}
 import tasks/domain/tasks
 import todo_app/store.{type Store, Store}
 
 pub type ServiceError {
-  Domain(Error)
+  Domain(TaskError)
   Persisted(String)
 }
 
@@ -28,7 +28,7 @@ pub fn done(store: Store, id: Int) -> Result(Todo, ServiceError) {
 
 fn persist_transition(
   store: Store,
-  transition: fn(List(Todo)) -> Result(#(List(Todo), Todo), Error),
+  transition: fn(List(Todo)) -> Result(#(List(Todo), Todo), TaskError),
 ) -> Result(Todo, ServiceError) {
   // This is the single read-transform-write boundary; transitions stay pure.
   let Store(load, save) = store

@@ -1,8 +1,8 @@
 import gleam/int
 import gleam/list
 import tasks/domain/model.{
-  type Error, type Todo, type ValidatedAdd, AlreadyDone, Done, NotFound, Pending,
-  Todo, ValidatedAdd,
+  type TaskError, type Todo, type ValidatedAdd, AlreadyDone, Done, NotFound,
+  Pending, Todo, ValidatedAdd,
 }
 
 // BEAM integers are arbitrary precision, so max + 1 cannot overflow.
@@ -21,7 +21,7 @@ pub fn add(todos: List(Todo), values: ValidatedAdd) -> #(List(Todo), Todo) {
 pub fn complete(
   todos: List(Todo),
   wanted: Int,
-) -> Result(#(List(Todo), Todo), Error) {
+) -> Result(#(List(Todo), Todo), TaskError) {
   case list.find(todos, fn(task) { task.id == wanted }) {
     Error(_) -> Error(NotFound)
     Ok(Todo(status: Done, ..)) -> Error(AlreadyDone)

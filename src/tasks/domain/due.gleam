@@ -1,21 +1,21 @@
 import gleam/int
 import gleam/list
 import gleam/string
-import tasks/domain/model.{type Due, type Error, Due, InvalidInput}
+import tasks/domain/model.{type Due, Due}
 
 // CLI input accepts date-only as end of day.
-pub fn input(value: String) -> Result(Due, Error) {
+pub fn input(value: String) -> Result(Due, Nil) {
   case string.length(value) {
     10 -> validate(value <> "T23:59")
     16 -> validate(value)
-    _ -> Error(InvalidInput)
+    _ -> Error(Nil)
   }
 }
 
-fn validate(value: String) -> Result(Due, Error) {
+fn validate(value: String) -> Result(Due, Nil) {
   case valid_shape(value) && valid_date(value) {
     True -> Ok(Due(value))
-    False -> Error(InvalidInput)
+    False -> Error(Nil)
   }
 }
 

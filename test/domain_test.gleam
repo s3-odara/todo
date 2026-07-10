@@ -4,7 +4,7 @@ import gleam/string
 import gleeunit/should
 import tasks/domain/due
 import tasks/domain/model.{
-  AlreadyDone, Done, Due, InvalidInput, NotFound, Pending, Todo, ValidatedAdd,
+  AlreadyDone, Done, Due, NotFound, Pending, Todo, ValidatedAdd,
 }
 import tasks/domain/tasks
 import tasks/domain/validation
@@ -29,7 +29,7 @@ pub fn empty_controlled_or_excessive_titles_are_rejected_test() {
     string.repeat("a", 201),
   ]
   |> list.each(fn(title) {
-    validated_add(title, "0m", "3") |> should.equal(Error(InvalidInput))
+    validated_add(title, "0m", "3") |> should.equal(Error(Nil))
   })
 }
 
@@ -53,7 +53,7 @@ pub fn minute_and_hour_estimates_are_normalized_to_minutes_test() {
 pub fn malformed_or_excessive_estimates_are_rejected_test() {
   ["525601m", "8761h", "01m", "1h30m", "1.5h", "3H", "-1m", "1"]
   |> list.each(fn(estimate) {
-    validated_add("x", estimate, "3") |> should.equal(Error(InvalidInput))
+    validated_add("x", estimate, "3") |> should.equal(Error(Nil))
   })
 }
 
@@ -67,7 +67,7 @@ pub fn priority_must_be_between_one_and_five_test() {
 
   ["0", "6", "01", "x"]
   |> list.each(fn(priority) {
-    validated_add("x", "0m", priority) |> should.equal(Error(InvalidInput))
+    validated_add("x", "0m", priority) |> should.equal(Error(Nil))
   })
 }
 
@@ -77,9 +77,7 @@ pub fn task_id_must_be_a_positive_ascii_decimal_test() {
   |> should.equal(Ok(2_147_483_648))
 
   ["0", "01", "1x"]
-  |> list.each(fn(id) {
-    validation.done(id) |> should.equal(Error(InvalidInput))
-  })
+  |> list.each(fn(id) { validation.done(id) |> should.equal(Error(Nil)) })
 }
 
 pub fn date_only_due_is_normalized_to_end_of_day_test() {
@@ -104,9 +102,7 @@ pub fn invalid_calendar_or_datetime_values_are_rejected_test() {
     "2026-01-01t12:00",
     "2026-01-01 12:00",
   ]
-  |> list.each(fn(value) {
-    due.input(value) |> should.equal(Error(InvalidInput))
-  })
+  |> list.each(fn(value) { due.input(value) |> should.equal(Error(Nil)) })
 }
 
 pub fn adding_a_task_assigns_an_id_greater_than_every_existing_id_test() {

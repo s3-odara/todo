@@ -4,8 +4,8 @@ import gleam/option.{type Option, None, Some}
 import gleam/result
 import gleam/string
 import tasks/domain/model.{
-  type Due, type Error, type Status, type Todo, type ValidatedAdd, AlreadyDone,
-  Done, InvalidInput, NotFound, Pending,
+  type Due, type Status, type TaskError, type Todo, type ValidatedAdd,
+  AlreadyDone, Done, NotFound, Pending,
 }
 import tasks/domain/validation
 
@@ -89,12 +89,10 @@ pub fn persistence_error(message: String) -> Outcome {
   Outcome(1, [], ["Error: " <> message])
 }
 
-pub fn domain_error(error: Error) -> Outcome {
+pub fn domain_error(error: TaskError) -> Outcome {
   case error {
     AlreadyDone -> grammar_error("task is already completed")
     NotFound -> grammar_error("task not found")
-    // Commands are validated before execution, so this cannot originate here.
-    InvalidInput -> grammar_error("invalid input")
   }
 }
 

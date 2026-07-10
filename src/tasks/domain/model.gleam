@@ -30,8 +30,7 @@ pub type ValidatedAdd {
   )
 }
 
-pub type Error {
-  InvalidInput
+pub type TaskError {
   NotFound
   AlreadyDone
 }
