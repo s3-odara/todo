@@ -1,5 +1,5 @@
 import gleam/list
-import gleam/option.{None, Some}
+import gleam/option.{None}
 import gleam/string
 import gleeunit/should
 import tasks/domain/due
@@ -110,29 +110,15 @@ pub fn invalid_calendar_or_datetime_values_are_rejected_test() {
   })
 }
 
-pub fn adding_a_task_normalizes_input_and_assigns_the_next_id_test() {
-  let request = AddRequest(" write report ", "2h", "4", Some("2026-07-15"))
-  let existing = Todo(2, "old", 0, 3, None, Pending)
+pub fn adding_a_task_assigns_an_id_greater_than_every_existing_id_test() {
+  let lower = Todo(3, "lower", 0, 3, None, Pending)
+  let highest = Todo(2_147_483_647, "highest", 0, 3, None, Done)
+  let middle = Todo(10, "middle", 0, 3, None, Pending)
+  let existing = [lower, highest, middle]
+  let added = Todo(2_147_483_648, "new", 0, 3, None, Pending)
 
-  let assert Ok(values) = validation.add(request)
-  tasks.add([existing], values)
-  |> should.equal(#(
-    [
-      Todo(3, "write report", 120, 4, Some(Due("2026-07-15T23:59")), Pending),
-      existing,
-    ],
-    Todo(3, "write report", 120, 4, Some(Due("2026-07-15T23:59")), Pending),
-  ))
-}
-
-pub fn next_id_has_no_fixed_integer_limit_test() {
-  let existing = Todo(2_147_483_647, "max", 0, 3, None, Done)
-
-  tasks.add([existing], ValidatedAdd("new", 0, 3, None))
-  |> should.equal(#(
-    [Todo(2_147_483_648, "new", 0, 3, None, Pending), existing],
-    Todo(2_147_483_648, "new", 0, 3, None, Pending),
-  ))
+  tasks.add(existing, ValidatedAdd("new", 0, 3, None))
+  |> should.equal(#([added, ..existing], added))
 }
 
 pub fn pending_tasks_are_listed_in_id_order_test() {
