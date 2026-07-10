@@ -4,17 +4,16 @@ import gleam/option.{type Option, None, Some}
 import gleam/result
 import gleam/string
 import tasks/domain/model.{
-  type AddRequest, type DoneRequest, type Due, type ListRequest, type Status,
-  type Todo, AddRequest, AlreadyDone, Done, DoneRequest, InvalidInput,
-  ListRequest, NotFound, Pending,
+  type Due, type Error, type Status, type Todo, type ValidatedAdd, AlreadyDone,
+  Done, InvalidInput, NotFound, Pending,
 }
-import todo_app/service.{type ServiceError, Domain, Persisted}
+import tasks/domain/validation
 
 pub type Command {
   Help
-  Add(AddRequest)
-  List(ListRequest)
-  RunDone(DoneRequest)
+  Add(ValidatedAdd)
+  List(include_all: Bool)
+  RunDone(id: Int)
 }
 
 pub type Outcome {
@@ -33,21 +32,26 @@ pub fn parse(args: List(String)) -> Result(Command, String) {
   case args {
     [] | ["--help"] -> Ok(Help)
     ["add", "--help"] | ["list", "--help"] | ["done", "--help"] -> Ok(Help)
-    ["list"] -> Ok(List(ListRequest(False)))
-    ["list", "--all"] -> Ok(List(ListRequest(True)))
-    ["done", id] -> Ok(RunDone(DoneRequest(id)))
+    ["list"] -> Ok(List(False))
+    ["list", "--all"] -> Ok(List(True))
+    ["done", id] ->
+      validation.done(id)
+      |> result.map(RunDone)
+      |> result.map_error(fn(_) { "invalid input" })
     ["add", title, ..flags] ->
       flags
       |> add_flags(AddOptions(None, None, None))
-      |> result.map(fn(options) {
+      |> result.try(fn(options) {
         let AddOptions(estimate, priority, due) = options
-        Add(AddRequest(
+        validation.add(
           title,
           option.unwrap(estimate, or: "0m"),
           option.unwrap(priority, or: "3"),
           due,
-        ))
+        )
+        |> result.map_error(fn(_) { "invalid input" })
       })
+      |> result.map(Add)
     _ -> Error("invalid command or arguments")
   }
 }
@@ -85,12 +89,12 @@ pub fn persistence_error(message: String) -> Outcome {
   Outcome(1, [], ["Error: " <> message])
 }
 
-pub fn service_error(error: ServiceError) -> Outcome {
+pub fn domain_error(error: Error) -> Outcome {
   case error {
-    Persisted(message) -> Outcome(1, [], ["Error: " <> message])
-    Domain(AlreadyDone) -> Outcome(2, [], ["Error: task is already completed"])
-    Domain(NotFound) -> Outcome(2, [], ["Error: task not found"])
-    Domain(InvalidInput) -> Outcome(2, [], ["Error: invalid input"])
+    AlreadyDone -> grammar_error("task is already completed")
+    NotFound -> grammar_error("task not found")
+    // Commands are validated before execution, so this cannot originate here.
+    InvalidInput -> grammar_error("invalid input")
   }
 }
 

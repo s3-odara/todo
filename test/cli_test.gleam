@@ -1,7 +1,7 @@
 import gleam/list
 import gleam/option.{None, Some}
 import gleeunit/should
-import tasks/domain/model.{AddRequest, Done, DoneRequest, Pending, Todo}
+import tasks/domain/model.{Done, Due, Pending, Todo, ValidatedAdd}
 import todo_app/cli
 import todo_app/runtime
 import todo_app/store.{Store}
@@ -39,7 +39,7 @@ pub fn help_lists_the_available_commands_test() {
 
 pub fn add_uses_default_estimate_and_priority_test() {
   cli.parse(["add", "x"])
-  |> should.equal(Ok(cli.Add(AddRequest("x", "0m", "3", None))))
+  |> should.equal(Ok(cli.Add(ValidatedAdd("x", 0, 3, None))))
 }
 
 pub fn add_options_can_be_given_in_any_order_test() {
@@ -53,7 +53,9 @@ pub fn add_options_can_be_given_in_any_order_test() {
     "--estimate",
     "2h",
   ])
-  |> should.equal(Ok(cli.Add(AddRequest("x", "2h", "5", Some("2026-01-01")))))
+  |> should.equal(
+    Ok(cli.Add(ValidatedAdd("x", 120, 5, Some(Due("2026-01-01T23:59"))))),
+  )
 }
 
 pub fn duplicate_add_options_are_rejected_test() {
@@ -91,7 +93,7 @@ pub fn invalid_command_shapes_are_rejected_test() {
 
 pub fn done_parses_its_id_test() {
   cli.parse(["done", "1"])
-  |> should.equal(Ok(cli.RunDone(DoneRequest("1"))))
+  |> should.equal(Ok(cli.RunDone(1)))
 }
 
 pub fn an_empty_list_reports_whether_completed_tasks_were_requested_test() {

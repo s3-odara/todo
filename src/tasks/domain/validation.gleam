@@ -5,12 +5,15 @@ import gleam/result
 import gleam/string
 import tasks/domain/due
 import tasks/domain/model.{
-  type AddRequest, type DoneRequest, type Due, type Error, type ValidatedAdd,
-  AddRequest, DoneRequest, InvalidInput, ValidatedAdd,
+  type Due, type Error, type ValidatedAdd, InvalidInput, ValidatedAdd,
 }
 
-pub fn add(request: AddRequest) -> Result(ValidatedAdd, Error) {
-  let AddRequest(raw_title, raw_estimate, raw_priority, raw_due) = request
+pub fn add(
+  raw_title: String,
+  raw_estimate: String,
+  raw_priority: String,
+  raw_due: Option(String),
+) -> Result(ValidatedAdd, Error) {
   case
     title(raw_title),
     estimate(raw_estimate),
@@ -23,8 +26,7 @@ pub fn add(request: AddRequest) -> Result(ValidatedAdd, Error) {
   }
 }
 
-pub fn done(request: DoneRequest) -> Result(Int, Error) {
-  let DoneRequest(raw_id) = request
+pub fn done(raw_id: String) -> Result(Int, Error) {
   id(raw_id)
 }
 

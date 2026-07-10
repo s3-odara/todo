@@ -4,14 +4,13 @@ import gleam/string
 import gleeunit/should
 import tasks/domain/due
 import tasks/domain/model.{
-  AddRequest, AlreadyDone, Done, DoneRequest, Due, InvalidInput, NotFound,
-  Pending, Todo, ValidatedAdd,
+  AlreadyDone, Done, Due, InvalidInput, NotFound, Pending, Todo, ValidatedAdd,
 }
 import tasks/domain/tasks
 import tasks/domain/validation
 
 fn validated_add(title: String, estimate: String, priority: String) {
-  validation.add(AddRequest(title, estimate, priority, None))
+  validation.add(title, estimate, priority, None)
 }
 
 pub fn title_is_trimmed_test() {
@@ -73,13 +72,13 @@ pub fn priority_must_be_between_one_and_five_test() {
 }
 
 pub fn task_id_must_be_a_positive_ascii_decimal_test() {
-  validation.done(DoneRequest("1")) |> should.equal(Ok(1))
-  validation.done(DoneRequest("2147483648"))
+  validation.done("1") |> should.equal(Ok(1))
+  validation.done("2147483648")
   |> should.equal(Ok(2_147_483_648))
 
   ["0", "01", "1x"]
   |> list.each(fn(id) {
-    validation.done(DoneRequest(id)) |> should.equal(Error(InvalidInput))
+    validation.done(id) |> should.equal(Error(InvalidInput))
   })
 }
 

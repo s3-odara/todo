@@ -1,10 +1,6 @@
 import gleam/result
-import tasks/domain/model.{
-  type AddRequest, type DoneRequest, type Error, type ListRequest, type Todo,
-  ListRequest,
-}
+import tasks/domain/model.{type Error, type Todo, type ValidatedAdd}
 import tasks/domain/tasks
-import tasks/domain/validation
 import todo_app/store.{type Store, Store}
 
 pub type ServiceError {
@@ -12,37 +8,29 @@ pub type ServiceError {
   Persisted(String)
 }
 
-pub fn add(store: Store, request: AddRequest) -> Result(Todo, ServiceError) {
-  case validation.add(request) {
-    Error(error) -> Error(Domain(error))
-    Ok(values) ->
-      persist_transition(store, fn(items) { Ok(tasks.add(items, values)) })
-  }
+pub fn add(store: Store, values: ValidatedAdd) -> Result(Todo, ServiceError) {
+  persist_transition(store, fn(items) { Ok(tasks.add(items, values)) })
 }
 
 pub fn list(
   store: Store,
-  request: ListRequest,
+  include_all: Bool,
 ) -> Result(List(Todo), ServiceError) {
   let Store(load, _) = store
-  let ListRequest(all) = request
   load()
-  |> result.map(fn(items) { tasks.visible_sorted(items, all) })
+  |> result.map(fn(items) { tasks.visible_sorted(items, include_all) })
   |> result.map_error(Persisted)
 }
 
-pub fn done(store: Store, request: DoneRequest) -> Result(Todo, ServiceError) {
-  case validation.done(request) {
-    Error(error) -> Error(Domain(error))
-    Ok(id) -> persist_transition(store, fn(items) { tasks.complete(items, id) })
-  }
+pub fn done(store: Store, id: Int) -> Result(Todo, ServiceError) {
+  persist_transition(store, fn(items) { tasks.complete(items, id) })
 }
 
 fn persist_transition(
   store: Store,
   transition: fn(List(Todo)) -> Result(#(List(Todo), Todo), Error),
 ) -> Result(Todo, ServiceError) {
-  // Keep the read-write sequence here so domain transitions never receive a Store.
+  // This is the single read-transform-write boundary; transitions stay pure.
   let Store(load, save) = store
   case load() {
     Error(error) -> Error(Persisted(error))
