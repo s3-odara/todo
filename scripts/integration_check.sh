@@ -16,8 +16,8 @@ TODO_FILE="$tmp/missing/tasks.yaml" gleam run --no-print-progress -- list >/dev/
 [ "$(run list)" = "ID	STATUS	PRIORITY	ESTIMATE	DUE	TITLE
 2	pending	3	0m	-	second" ]
 [ "$(run list --all)" = "ID	STATUS	PRIORITY	ESTIMATE	DUE	TITLE
-2	pending	3	0m	-	second
-1	done	5	180m	2026-07-15T23:59	first" ]
+1	done	5	180m	2026-07-15T23:59	first
+2	pending	3	0m	-	second" ]
 # A corrupt existing document must fail and leave destination bytes unchanged.
 printf 'tasks: [\n' > "$tmp/corrupt.yaml"
 before=$(cksum "$tmp/corrupt.yaml")

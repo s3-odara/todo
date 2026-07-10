@@ -64,15 +64,14 @@ pub fn due_calendar_and_rejection_matrix_test() {
   due.input("2026-01-01 12:00") |> should.equal(Error(InvalidDue))
 }
 
-pub fn final_id_tie_break_sorts_ascending_test() {
+pub fn sorts_by_id_ascending_test() {
   let due = Some(Due("2026-03-01T12:00"))
   let lower = Todo(8, "lower", 0, 2, due, Pending)
   let higher = Todo(9, "higher", 0, 2, due, Pending)
-  // Input is deliberately reversed; all earlier sort keys are identical.
   tasks.visible_sorted([higher, lower], True) |> should.equal([lower, higher])
 }
 
-pub fn ids_completion_and_compound_sort_test() {
+pub fn ids_completion_and_sort_test() {
   let values = [
     Todo(2_147_483_647, "max", 0, 3, None, Done),
     Todo(2, "none", 0, 5, None, Pending),
@@ -84,17 +83,17 @@ pub fn ids_completion_and_compound_sort_test() {
   tasks.visible_sorted(values, True)
   |> should.equal([
     Todo(1, "early-high", 0, 5, Some(Due("2026-01-01T00:00")), Pending),
+    Todo(2, "none", 0, 5, None, Pending),
     Todo(3, "early-low", 0, 1, Some(Due("2026-01-01T00:00")), Pending),
     Todo(4, "late", 0, 1, Some(Due("2026-02-01T00:00")), Pending),
-    Todo(2, "none", 0, 5, None, Pending),
     Todo(2_147_483_647, "max", 0, 3, None, Done),
   ])
   tasks.visible_sorted(values, False)
   |> should.equal([
     Todo(1, "early-high", 0, 5, Some(Due("2026-01-01T00:00")), Pending),
+    Todo(2, "none", 0, 5, None, Pending),
     Todo(3, "early-low", 0, 1, Some(Due("2026-01-01T00:00")), Pending),
     Todo(4, "late", 0, 1, Some(Due("2026-02-01T00:00")), Pending),
-    Todo(2, "none", 0, 5, None, Pending),
   ])
   tasks.complete(values, 2)
   |> should.equal(
