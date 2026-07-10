@@ -14,86 +14,107 @@ fn validated_add(title: String, estimate: String, priority: String) {
   validation.add(AddRequest(title, estimate, priority, None))
 }
 
-pub fn title_validation_test() {
+pub fn title_is_trimmed_test() {
   validated_add(" clean ", "0m", "3")
   |> should.equal(Ok(ValidatedAdd("clean", 0, 3, None)))
-  validated_add("", "0m", "3") |> should.equal(Error(InvalidInput))
-  validated_add("   ", "0m", "3") |> should.equal(Error(InvalidInput))
-  validated_add("\tclean", "0m", "3") |> should.equal(Error(InvalidInput))
-  validated_add("clean\n", "0m", "3") |> should.equal(Error(InvalidInput))
-  validated_add("clean\r", "0m", "3") |> should.equal(Error(InvalidInput))
-  validated_add("clean\u{0}", "0m", "3") |> should.equal(Error(InvalidInput))
-  validated_add("a", "0m", "3")
-  |> should.equal(Ok(ValidatedAdd("a", 0, 3, None)))
-  validated_add(string.repeat("a", 200), "0m", "3")
-  |> should.equal(Ok(ValidatedAdd(string.repeat("a", 200), 0, 3, None)))
-  validated_add(string.repeat("a", 201), "0m", "3")
-  |> should.equal(Error(InvalidInput))
 }
 
-pub fn estimate_validation_test() {
-  validated_add("x", "0m", "3")
-  |> should.equal(Ok(ValidatedAdd("x", 0, 3, None)))
-  validated_add("x", "0h", "3")
-  |> should.equal(Ok(ValidatedAdd("x", 0, 3, None)))
-  validated_add("x", "8760h", "3")
-  |> should.equal(Ok(ValidatedAdd("x", 525_600, 3, None)))
-  validated_add("x", "525600m", "3")
-  |> should.equal(Ok(ValidatedAdd("x", 525_600, 3, None)))
+pub fn empty_controlled_or_excessive_titles_are_rejected_test() {
+  [
+    "",
+    "   ",
+    "\tclean",
+    "clean\n",
+    "clean\r",
+    "clean\u{0}",
+    string.repeat("a", 201),
+  ]
+  |> list.each(fn(title) {
+    validated_add(title, "0m", "3") |> should.equal(Error(InvalidInput))
+  })
+}
+
+pub fn titles_may_contain_up_to_two_hundred_codepoints_test() {
+  ["a", string.repeat("a", 200)]
+  |> list.each(fn(title) {
+    validated_add(title, "0m", "3")
+    |> should.equal(Ok(ValidatedAdd(title, 0, 3, None)))
+  })
+}
+
+pub fn minute_and_hour_estimates_are_normalized_to_minutes_test() {
+  [#("0m", 0), #("0h", 0), #("8760h", 525_600), #("525600m", 525_600)]
+  |> list.each(fn(example) {
+    let #(input, minutes) = example
+    validated_add("x", input, "3")
+    |> should.equal(Ok(ValidatedAdd("x", minutes, 3, None)))
+  })
+}
+
+pub fn malformed_or_excessive_estimates_are_rejected_test() {
   ["525601m", "8761h", "01m", "1h30m", "1.5h", "3H", "-1m", "1"]
-  |> list.each(fn(value) {
-    validated_add("x", value, "3") |> should.equal(Error(InvalidInput))
+  |> list.each(fn(estimate) {
+    validated_add("x", estimate, "3") |> should.equal(Error(InvalidInput))
   })
 }
 
-pub fn priority_validation_test() {
-  validated_add("x", "0m", "1")
-  |> should.equal(Ok(ValidatedAdd("x", 0, 1, None)))
-  validated_add("x", "0m", "5")
-  |> should.equal(Ok(ValidatedAdd("x", 0, 5, None)))
+pub fn priority_must_be_between_one_and_five_test() {
+  [#("1", 1), #("5", 5)]
+  |> list.each(fn(example) {
+    let #(input, priority) = example
+    validated_add("x", "0m", input)
+    |> should.equal(Ok(ValidatedAdd("x", 0, priority, None)))
+  })
+
   ["0", "6", "01", "x"]
-  |> list.each(fn(value) {
-    validated_add("x", "0m", value) |> should.equal(Error(InvalidInput))
+  |> list.each(fn(priority) {
+    validated_add("x", "0m", priority) |> should.equal(Error(InvalidInput))
   })
 }
 
-pub fn id_validation_test() {
+pub fn task_id_must_be_a_positive_ascii_decimal_test() {
   validation.done(DoneRequest("1")) |> should.equal(Ok(1))
   validation.done(DoneRequest("2147483648"))
   |> should.equal(Ok(2_147_483_648))
+
   ["0", "01", "1x"]
-  |> list.each(fn(value) {
-    validation.done(DoneRequest(value)) |> should.equal(Error(InvalidInput))
+  |> list.each(fn(id) {
+    validation.done(DoneRequest(id)) |> should.equal(Error(InvalidInput))
   })
 }
 
-pub fn due_calendar_and_rejection_matrix_test() {
+pub fn date_only_due_is_normalized_to_end_of_day_test() {
   due.input("2024-02-29") |> should.equal(Ok(Due("2024-02-29T23:59")))
-  due.input("2023-02-29") |> should.equal(Error(InvalidInput))
-  due.input("2026-04-31") |> should.equal(Error(InvalidInput))
-  due.input("2026-12-31T23:59") |> should.equal(Ok(Due("2026-12-31T23:59")))
-  due.input("2026-01-01T24:00") |> should.equal(Error(InvalidInput))
-  due.input("2026-01-01T12:60") |> should.equal(Error(InvalidInput))
-  due.input("2026-01-01T12:00Z") |> should.equal(Error(InvalidInput))
-  due.input("2026-01-01T12:00+09:00") |> should.equal(Error(InvalidInput))
-  due.input("2026-01-01T12:00:01") |> should.equal(Error(InvalidInput))
-  due.input("2026-01-01T12:00.1") |> should.equal(Error(InvalidInput))
-  due.input("2026-01-01t12:00") |> should.equal(Error(InvalidInput))
-  due.input("2026-01-01 12:00") |> should.equal(Error(InvalidInput))
 }
 
-pub fn validated_add_is_a_pure_transition_test() {
-  let request = AddRequest(" write report ", "2h", "4", Some("2026-07-15"))
-  let assert Ok(values) = validation.add(request)
-  values
-  |> should.equal(ValidatedAdd(
-    "write report",
-    120,
-    4,
-    Some(Due("2026-07-15T23:59")),
-  ))
+pub fn local_datetime_due_is_retained_test() {
+  due.input("2026-12-31T23:59")
+  |> should.equal(Ok(Due("2026-12-31T23:59")))
+}
 
+pub fn invalid_calendar_or_datetime_values_are_rejected_test() {
+  [
+    "2023-02-29",
+    "2026-04-31",
+    "2026-01-01T24:00",
+    "2026-01-01T12:60",
+    "2026-01-01T12:00Z",
+    "2026-01-01T12:00+09:00",
+    "2026-01-01T12:00:01",
+    "2026-01-01T12:00.1",
+    "2026-01-01t12:00",
+    "2026-01-01 12:00",
+  ]
+  |> list.each(fn(value) {
+    due.input(value) |> should.equal(Error(InvalidInput))
+  })
+}
+
+pub fn adding_a_task_normalizes_input_and_assigns_the_next_id_test() {
+  let request = AddRequest(" write report ", "2h", "4", Some("2026-07-15"))
   let existing = Todo(2, "old", 0, 3, None, Pending)
+
+  let assert Ok(values) = validation.add(request)
   tasks.add([existing], values)
   |> should.equal(#(
     [
@@ -104,8 +125,9 @@ pub fn validated_add_is_a_pure_transition_test() {
   ))
 }
 
-pub fn next_id_uses_the_largest_existing_id_test() {
+pub fn next_id_has_no_fixed_integer_limit_test() {
   let existing = Todo(2_147_483_647, "max", 0, 3, None, Done)
+
   tasks.add([existing], ValidatedAdd("new", 0, 3, None))
   |> should.equal(#(
     [Todo(2_147_483_648, "new", 0, 3, None, Pending), existing],
@@ -113,52 +135,44 @@ pub fn next_id_uses_the_largest_existing_id_test() {
   ))
 }
 
-pub fn visible_tasks_filter_and_sort_test() {
-  let values = [
-    Todo(2_147_483_647, "max", 0, 3, None, Done),
-    Todo(2, "none", 0, 5, None, Pending),
-    Todo(4, "late", 0, 1, Some(Due("2026-02-01T00:00")), Pending),
-    Todo(3, "early-low", 0, 1, Some(Due("2026-01-01T00:00")), Pending),
-    Todo(1, "early-high", 0, 5, Some(Due("2026-01-01T00:00")), Pending),
-  ]
-  tasks.visible_sorted(values, True)
-  |> should.equal([
-    Todo(1, "early-high", 0, 5, Some(Due("2026-01-01T00:00")), Pending),
-    Todo(2, "none", 0, 5, None, Pending),
-    Todo(3, "early-low", 0, 1, Some(Due("2026-01-01T00:00")), Pending),
-    Todo(4, "late", 0, 1, Some(Due("2026-02-01T00:00")), Pending),
-    Todo(2_147_483_647, "max", 0, 3, None, Done),
-  ])
-  tasks.visible_sorted(values, False)
-  |> should.equal([
-    Todo(1, "early-high", 0, 5, Some(Due("2026-01-01T00:00")), Pending),
-    Todo(2, "none", 0, 5, None, Pending),
-    Todo(3, "early-low", 0, 1, Some(Due("2026-01-01T00:00")), Pending),
-    Todo(4, "late", 0, 1, Some(Due("2026-02-01T00:00")), Pending),
-  ])
+pub fn pending_tasks_are_listed_in_id_order_test() {
+  let first = Todo(1, "first", 0, 5, None, Pending)
+  let second = Todo(2, "second", 0, 1, None, Pending)
+  let completed = Todo(3, "completed", 0, 3, None, Done)
+
+  tasks.visible_sorted([completed, second, first], False)
+  |> should.equal([first, second])
 }
 
-pub fn completion_test() {
-  let values = [
-    Todo(2_147_483_647, "max", 0, 3, None, Done),
-    Todo(2, "none", 0, 5, None, Pending),
-    Todo(4, "late", 0, 1, Some(Due("2026-02-01T00:00")), Pending),
-    Todo(3, "early-low", 0, 1, Some(Due("2026-01-01T00:00")), Pending),
-    Todo(1, "early-high", 0, 5, Some(Due("2026-01-01T00:00")), Pending),
-  ]
-  tasks.complete(values, 2)
+pub fn completed_tasks_are_included_when_requested_test() {
+  let pending = Todo(1, "pending", 0, 3, None, Pending)
+  let completed = Todo(2, "completed", 0, 3, None, Done)
+
+  tasks.visible_sorted([completed, pending], True)
+  |> should.equal([pending, completed])
+}
+
+pub fn completing_a_pending_task_preserves_the_other_tasks_test() {
+  let selected = Todo(2, "selected", 0, 5, None, Pending)
+  let other = Todo(1, "other", 0, 3, None, Pending)
+
+  tasks.complete([selected, other], 2)
   |> should.equal(
     Ok(#(
-      [
-        Todo(2_147_483_647, "max", 0, 3, None, Done),
-        Todo(2, "none", 0, 5, None, Done),
-        Todo(4, "late", 0, 1, Some(Due("2026-02-01T00:00")), Pending),
-        Todo(3, "early-low", 0, 1, Some(Due("2026-01-01T00:00")), Pending),
-        Todo(1, "early-high", 0, 5, Some(Due("2026-01-01T00:00")), Pending),
-      ],
-      Todo(2, "none", 0, 5, None, Done),
+      [Todo(2, "selected", 0, 5, None, Done), other],
+      Todo(2, "selected", 0, 5, None, Done),
     )),
   )
-  tasks.complete(values, 2_147_483_647) |> should.equal(Error(AlreadyDone))
-  tasks.complete(values, 20) |> should.equal(Error(NotFound))
+}
+
+pub fn a_completed_task_cannot_be_completed_again_test() {
+  let completed = Todo(1, "done", 0, 3, None, Done)
+
+  tasks.complete([completed], 1) |> should.equal(Error(AlreadyDone))
+}
+
+pub fn an_unknown_task_cannot_be_completed_test() {
+  let task = Todo(1, "existing", 0, 3, None, Pending)
+
+  tasks.complete([task], 2) |> should.equal(Error(NotFound))
 }

@@ -7,82 +7,108 @@ import tasks/domain/model.{
 import todo_app/service
 import todo_app/store.{Store}
 
-pub fn invalid_requests_do_not_load_the_store_test() {
-  let store =
-    Store(fn() { Error("load must not run") }, fn(_) {
-      Error("save must not run")
-    })
-  service.add(store, AddRequest("bad\n", "0m", "3", None))
-  |> should.equal(Error(service.Domain(InvalidInput)))
-  service.done(store, DoneRequest("01"))
+fn store_with(tasks) {
+  Store(fn() { Ok(tasks) }, fn(_) { Ok(Nil) })
+}
+
+fn inaccessible_store() {
+  Store(fn() { Error("load must not run") }, fn(_) {
+    Error("save must not run")
+  })
+}
+
+pub fn invalid_add_is_rejected_without_accessing_persistence_test() {
+  service.add(inaccessible_store(), AddRequest("bad\n", "0m", "3", None))
   |> should.equal(Error(service.Domain(InvalidInput)))
 }
 
-pub fn add_uses_the_next_id_test() {
-  let items = [Todo(2_147_483_647, "old", 0, 3, None, Done)]
-  let store = Store(fn() { Ok(items) }, fn(_) { Ok(Nil) })
-  service.add(store, AddRequest("new", "0m", "3", None))
+pub fn invalid_done_is_rejected_without_accessing_persistence_test() {
+  service.done(inaccessible_store(), DoneRequest("01"))
+  |> should.equal(Error(service.Domain(InvalidInput)))
+}
+
+pub fn adding_a_task_uses_the_next_id_test() {
+  let existing = Todo(2_147_483_647, "old", 0, 3, None, Done)
+
+  service.add(store_with([existing]), AddRequest("new", "0m", "3", None))
   |> should.equal(Ok(Todo(2_147_483_648, "new", 0, 3, None, Pending)))
 }
 
-pub fn add_reports_load_and_save_failures_test() {
-  let load_failure =
+pub fn an_add_load_failure_is_reported_test() {
+  let store =
     Store(fn() { Error("corrupt") }, fn(_) { Error("save must not run") })
-  service.add(load_failure, AddRequest("x", "0m", "3", None))
-  |> should.equal(Error(service.Persisted("corrupt")))
 
-  let save_failure = Store(fn() { Ok([]) }, fn(_) { Error("disk") })
-  service.add(save_failure, AddRequest("x", "0m", "3", None))
+  service.add(store, AddRequest("x", "0m", "3", None))
+  |> should.equal(Error(service.Persisted("corrupt")))
+}
+
+pub fn an_add_save_failure_is_reported_test() {
+  let store = Store(fn() { Ok([]) }, fn(_) { Error("disk") })
+
+  service.add(store, AddRequest("x", "0m", "3", None))
   |> should.equal(Error(service.Persisted("disk")))
 }
 
-pub fn done_requires_an_exact_numeric_id_test() {
-  let id_ten = Todo(10, "ten", 0, 3, None, Pending)
-  let id_one_hundred = Todo(100, "one hundred", 0, 3, None, Pending)
-  let store =
-    Store(fn() { Ok([id_ten, id_one_hundred]) }, fn(_) {
-      Error("save must not run")
-    })
-  service.done(store, DoneRequest("ten"))
+pub fn done_requires_a_numeric_id_test() {
+  let task = Todo(10, "ten", 0, 3, None, Pending)
+
+  service.done(store_with([task]), DoneRequest("ten"))
   |> should.equal(Error(service.Domain(InvalidInput)))
-  service.done(store, DoneRequest("1"))
+}
+
+pub fn done_does_not_match_an_id_prefix_test() {
+  let ten = Todo(10, "ten", 0, 3, None, Pending)
+  let hundred = Todo(100, "one hundred", 0, 3, None, Pending)
+
+  service.done(store_with([ten, hundred]), DoneRequest("1"))
   |> should.equal(Error(service.Domain(NotFound)))
 }
 
-pub fn done_saves_the_completed_task_test() {
-  let id_ten = Todo(10, "ten", 0, 3, None, Pending)
-  let id_one_hundred = Todo(100, "one hundred", 0, 3, None, Pending)
+pub fn done_saves_and_returns_the_completed_task_test() {
+  let ten = Todo(10, "ten", 0, 3, None, Pending)
+  let hundred = Todo(100, "one hundred", 0, 3, None, Pending)
   let store =
-    Store(fn() { Ok([id_ten, id_one_hundred]) }, fn(items) {
-      items |> should.equal([Todo(10, "ten", 0, 3, None, Done), id_one_hundred])
+    Store(fn() { Ok([ten, hundred]) }, fn(tasks) {
+      tasks |> should.equal([Todo(10, "ten", 0, 3, None, Done), hundred])
       Ok(Nil)
     })
+
   service.done(store, DoneRequest("10"))
   |> should.equal(Ok(Todo(10, "ten", 0, 3, None, Done)))
 }
 
-pub fn list_filters_without_saving_test() {
+pub fn list_returns_pending_tasks_without_saving_test() {
   let pending = Todo(1, "x", 0, 3, None, Pending)
-  let done = Todo(2, "y", 0, 3, None, Done)
+  let completed = Todo(2, "y", 0, 3, None, Done)
   let store =
-    Store(fn() { Ok([pending, done]) }, fn(_) { Error("save must not run") })
+    Store(fn() { Ok([pending, completed]) }, fn(_) {
+      Error("save must not run")
+    })
+
   service.list(store, ListRequest(False)) |> should.equal(Ok([pending]))
 }
 
-pub fn done_does_not_save_missing_or_completed_tasks_test() {
-  let pending = Todo(1, "x", 0, 3, None, Pending)
-  let done = Todo(2, "y", 0, 3, None, Done)
-  let store =
-    Store(fn() { Ok([pending, done]) }, fn(_) { Error("save must not run") })
+pub fn a_missing_task_is_not_saved_test() {
+  let task = Todo(1, "x", 0, 3, None, Pending)
+  let store = Store(fn() { Ok([task]) }, fn(_) { Error("save must not run") })
+
   service.done(store, DoneRequest("99"))
   |> should.equal(Error(service.Domain(NotFound)))
+}
+
+pub fn an_already_completed_task_is_not_saved_test() {
+  let completed = Todo(2, "y", 0, 3, None, Done)
+  let store =
+    Store(fn() { Ok([completed]) }, fn(_) { Error("save must not run") })
+
   service.done(store, DoneRequest("2"))
   |> should.equal(Error(service.Domain(AlreadyDone)))
 }
 
-pub fn done_reports_save_failure_test() {
+pub fn a_done_save_failure_is_reported_test() {
   let pending = Todo(1, "x", 0, 3, None, Pending)
   let store = Store(fn() { Ok([pending]) }, fn(_) { Error("rename") })
+
   service.done(store, DoneRequest("1"))
   |> should.equal(Error(service.Persisted("rename")))
 }

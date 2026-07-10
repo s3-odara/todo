@@ -1,6 +1,7 @@
+import gleam/list
 import gleam/option.{None, Some}
 import gleeunit/should
-import tasks/domain/model.{AddRequest, DoneRequest, ListRequest, Pending, Todo}
+import tasks/domain/model.{AddRequest, DoneRequest, Pending, Todo}
 import todo_app/cli
 import todo_app/runtime
 import todo_app/store.{Store}
@@ -12,19 +13,21 @@ fn run(args, store) {
   }
 }
 
-pub fn grammar_matrix_test() {
-  cli.parse(["add", "x", "--estimate", "0m", "--estimate", "1h"])
-  |> should.equal(Error("invalid, duplicate, or missing option"))
-  cli.parse(["add", "x", "--priority", "3", "--priority", "4"])
-  |> should.equal(Error("invalid, duplicate, or missing option"))
-  cli.parse(["add", "x", "--due", "2026-01-01", "--due", "2026-01-02"])
-  |> should.equal(Error("invalid, duplicate, or missing option"))
-  cli.parse(["list", "--help", "extra"])
-  |> should.equal(Error("invalid command or arguments"))
-  cli.parse(["add", "x", "--unknown", "y"])
-  |> should.equal(Error("invalid, duplicate, or missing option"))
-  cli.parse(["add", "x", "--estimate"])
-  |> should.equal(Error("invalid, duplicate, or missing option"))
+fn store_with(tasks) {
+  Store(fn() { Ok(tasks) }, fn(_) { Ok(Nil) })
+}
+
+pub fn help_is_selected_when_no_command_or_a_help_flag_is_given_test() {
+  [[], ["--help"], ["add", "--help"], ["list", "--help"], ["done", "--help"]]
+  |> list.each(fn(args) { cli.parse(args) |> should.equal(Ok(cli.Help)) })
+}
+
+pub fn add_uses_default_estimate_and_priority_test() {
+  cli.parse(["add", "x"])
+  |> should.equal(Ok(cli.Add(AddRequest("x", "0m", "3", None))))
+}
+
+pub fn add_options_can_be_given_in_any_order_test() {
   cli.parse([
     "add",
     "x",
@@ -36,29 +39,59 @@ pub fn grammar_matrix_test() {
     "2h",
   ])
   |> should.equal(Ok(cli.Add(AddRequest("x", "2h", "5", Some("2026-01-01")))))
-  cli.parse(["done"]) |> should.equal(Error("invalid command or arguments"))
-  cli.parse(["done", "1", "extra"])
-  |> should.equal(Error("invalid command or arguments"))
-  cli.parse(["list", "--all", "extra"])
-  |> should.equal(Error("invalid command or arguments"))
-  cli.parse(["add", "--help"]) |> should.equal(Ok(cli.Help))
-  cli.parse(["list", "--all"]) |> should.equal(Ok(cli.List(ListRequest(True))))
 }
 
-pub fn exact_outcome_and_rendering_matrix_test() {
-  let empty = Store(fn() { Ok([]) }, fn(_) { Ok(Nil) })
-  run([], empty) |> should.equal(cli.help())
-  run(["wat"], empty)
-  |> should.equal(cli.Outcome(2, [], ["Error: invalid command or arguments"]))
-  run(["add", "x", "--priority", "9"], empty)
-  |> should.equal(cli.Outcome(2, [], ["Error: invalid input"]))
+pub fn duplicate_add_options_are_rejected_test() {
+  [
+    ["add", "x", "--estimate", "0m", "--estimate", "1h"],
+    ["add", "x", "--priority", "3", "--priority", "4"],
+    ["add", "x", "--due", "2026-01-01", "--due", "2026-01-02"],
+  ]
+  |> list.each(fn(args) {
+    cli.parse(args)
+    |> should.equal(Error("invalid, duplicate, or missing option"))
+  })
+}
+
+pub fn unknown_or_incomplete_add_options_are_rejected_test() {
+  [["add", "x", "--unknown", "y"], ["add", "x", "--estimate"]]
+  |> list.each(fn(args) {
+    cli.parse(args)
+    |> should.equal(Error("invalid, duplicate, or missing option"))
+  })
+}
+
+pub fn invalid_command_shapes_are_rejected_test() {
+  [
+    ["wat"],
+    ["done"],
+    ["done", "1", "extra"],
+    ["list", "--all", "extra"],
+    ["list", "--help", "extra"],
+  ]
+  |> list.each(fn(args) {
+    cli.parse(args) |> should.equal(Error("invalid command or arguments"))
+  })
+}
+
+pub fn done_parses_its_id_test() {
+  cli.parse(["done", "1"])
+  |> should.equal(Ok(cli.RunDone(DoneRequest("1"))))
+}
+
+pub fn an_empty_list_reports_whether_completed_tasks_were_requested_test() {
+  let empty = store_with([])
+
   run(["list"], empty)
   |> should.equal(cli.Outcome(0, ["No pending tasks."], []))
   run(["list", "--all"], empty)
   |> should.equal(cli.Outcome(0, ["No tasks."], []))
-  let one =
-    Store(fn() { Ok([Todo(1, "x", 5, 3, None, Pending)]) }, fn(_) { Ok(Nil) })
-  run(["list"], one)
+}
+
+pub fn tasks_are_rendered_as_tab_separated_rows_test() {
+  let store = store_with([Todo(1, "x", 5, 3, None, Pending)])
+
+  run(["list"], store)
   |> should.equal(
     cli.Outcome(
       0,
@@ -66,19 +99,28 @@ pub fn exact_outcome_and_rendering_matrix_test() {
       [],
     ),
   )
-  run(["done", "99"], one)
+}
+
+pub fn invalid_input_is_reported_on_stderr_test() {
+  run(["add", "x", "--priority", "9"], store_with([]))
+  |> should.equal(cli.Outcome(2, [], ["Error: invalid input"]))
+}
+
+pub fn an_unknown_task_is_reported_on_stderr_test() {
+  let store = store_with([Todo(1, "x", 5, 3, None, Pending)])
+
+  run(["done", "99"], store)
   |> should.equal(cli.Outcome(2, [], ["Error: task not found"]))
 }
 
-pub fn success_defaults_and_done_outcomes_test() {
-  let add_store = Store(fn() { Ok([]) }, fn(_) { Ok(Nil) })
-  run(["add", "x"], add_store)
+pub fn adding_a_task_reports_its_id_and_title_test() {
+  run(["add", "x"], store_with([]))
   |> should.equal(cli.Outcome(0, ["Added task 1: x"], []))
-  let done_store =
-    Store(fn() { Ok([Todo(1, "x", 0, 3, None, Pending)]) }, fn(_) { Ok(Nil) })
-  run(["done", "1"], done_store)
+}
+
+pub fn completing_a_task_reports_its_id_and_title_test() {
+  let store = store_with([Todo(1, "x", 0, 3, None, Pending)])
+
+  run(["done", "1"], store)
   |> should.equal(cli.Outcome(0, ["Completed task 1: x"], []))
-  cli.parse(["add", "x"])
-  |> should.equal(Ok(cli.Add(AddRequest("x", "0m", "3", None))))
-  cli.parse(["done", "1"]) |> should.equal(Ok(cli.RunDone(DoneRequest("1"))))
 }

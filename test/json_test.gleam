@@ -11,14 +11,14 @@ pub fn round_trip_test() {
   json.encode([]) |> should.equal("[]")
 }
 
-pub fn trusted_app_owned_values_and_unknown_fields_decode_test() {
+pub fn app_owned_values_are_not_domain_validated_test() {
   json.decode(
     "[{\"id\":-1,\"title\":\"\",\"estimate_minutes\":-2,\"priority\":9,\"due\":\"not-a-date\",\"status\":\"pending\",\"ignored\":true}]",
   )
   |> should.equal(Ok([Todo(-1, "", -2, 9, Some(Due("not-a-date")), Pending)]))
 }
 
-pub fn malformed_or_structurally_incomplete_json_fails_test() {
+pub fn malformed_or_incomplete_json_is_rejected_test() {
   let assert Error(_) = json.decode("[")
   let assert Error(_) =
     json.decode(
