@@ -104,14 +104,16 @@ pub fn validated_add_is_a_pure_transition_test() {
   ))
 }
 
-pub fn sorts_by_id_ascending_test() {
-  let due = Some(Due("2026-03-01T12:00"))
-  let lower = Todo(8, "lower", 0, 2, due, Pending)
-  let higher = Todo(9, "higher", 0, 2, due, Pending)
-  tasks.visible_sorted([higher, lower], True) |> should.equal([lower, higher])
+pub fn next_id_uses_the_largest_existing_id_test() {
+  let existing = Todo(2_147_483_647, "max", 0, 3, None, Done)
+  tasks.add([existing], ValidatedAdd("new", 0, 3, None))
+  |> should.equal(#(
+    [Todo(2_147_483_648, "new", 0, 3, None, Pending), existing],
+    Todo(2_147_483_648, "new", 0, 3, None, Pending),
+  ))
 }
 
-pub fn ids_completion_and_sort_test() {
+pub fn visible_tasks_filter_and_sort_test() {
   let values = [
     Todo(2_147_483_647, "max", 0, 3, None, Done),
     Todo(2, "none", 0, 5, None, Pending),
@@ -134,6 +136,16 @@ pub fn ids_completion_and_sort_test() {
     Todo(3, "early-low", 0, 1, Some(Due("2026-01-01T00:00")), Pending),
     Todo(4, "late", 0, 1, Some(Due("2026-02-01T00:00")), Pending),
   ])
+}
+
+pub fn completion_test() {
+  let values = [
+    Todo(2_147_483_647, "max", 0, 3, None, Done),
+    Todo(2, "none", 0, 5, None, Pending),
+    Todo(4, "late", 0, 1, Some(Due("2026-02-01T00:00")), Pending),
+    Todo(3, "early-low", 0, 1, Some(Due("2026-01-01T00:00")), Pending),
+    Todo(1, "early-high", 0, 5, Some(Due("2026-01-01T00:00")), Pending),
+  ]
   tasks.complete(values, 2)
   |> should.equal(
     Ok(#(
