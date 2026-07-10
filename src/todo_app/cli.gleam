@@ -2,9 +2,11 @@ import gleam/int
 import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/result
+import gleam/string
 import tasks/domain/model.{
-  type AddRequest, type DoneRequest, type ListRequest, type Todo, AddRequest,
-  AlreadyDone, Done, DoneRequest, InvalidInput, ListRequest, NotFound, Pending,
+  type AddRequest, type DoneRequest, type Due, type ListRequest, type Status,
+  type Todo, AddRequest, AlreadyDone, Done, DoneRequest, InvalidInput,
+  ListRequest, NotFound, Pending,
 }
 import todo_app/service.{type ServiceError, Domain, Persisted}
 
@@ -134,21 +136,27 @@ pub fn listed(items: List(Todo), all: Bool) -> Outcome {
 }
 
 fn task_line(task: Todo) -> String {
-  int.to_string(task.id)
-  <> "\t"
-  <> case task.status {
+  [
+    int.to_string(task.id),
+    status_text(task.status),
+    int.to_string(task.priority),
+    int.to_string(task.estimate_minutes) <> "m",
+    due_text(task.due),
+    task.title,
+  ]
+  |> string.join("\t")
+}
+
+fn status_text(status: Status) -> String {
+  case status {
     Pending -> "pending"
     Done -> "done"
   }
-  <> "\t"
-  <> int.to_string(task.priority)
-  <> "\t"
-  <> int.to_string(task.estimate_minutes)
-  <> "m\t"
-  <> case task.due {
+}
+
+fn due_text(due: Option(Due)) -> String {
+  case due {
     None -> "-"
-    Some(due) -> due.canonical
+    Some(value) -> value.canonical
   }
-  <> "\t"
-  <> task.title
 }
