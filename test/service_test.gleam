@@ -1,9 +1,10 @@
 import gleam/option.{None, Some}
-import gleam/time/calendar.{Date, July}
+import gleam/time/calendar
 import gleeunit/should
+import tasks/domain/due
 import tasks/domain/filter.{ListFilter, PendingOnly, Today}
 import tasks/domain/model.{
-  AlreadyDone, Done, Due, NotFound, Pending, Todo, ValidatedAdd,
+  AlreadyDone, Done, NotFound, Pending, Todo, ValidatedAdd,
 }
 import todo_app/service
 import todo_app/store.{Store}
@@ -12,17 +13,22 @@ fn store_with(tasks) {
   Store(fn() { Ok(tasks) }, fn(_) { Ok(Nil) })
 }
 
-fn today() {
-  Date(2026, July, 24)
+fn due_at(value) {
+  let assert Ok(value) = due.input(value, calendar.utc_offset)
+  value
+}
+
+fn now() {
+  due.instant(due_at("2026-07-24T12:00"))
 }
 
 fn pending_filter() {
   ListFilter(PendingOnly, None)
-  |> filter.resolve(today())
+  |> filter.resolve(now(), calendar.utc_offset)
 }
 
 fn pending_due(id, title, canonical) {
-  Todo(id, title, 0, 3, Some(Due(canonical)), Pending)
+  Todo(id, title, 0, 3, Some(due_at(canonical)), Pending)
 }
 
 pub fn add_saves_and_returns_the_added_task_test() {
@@ -91,7 +97,11 @@ pub fn list_propagates_the_due_filter_test() {
 
   service.list(
     store_with([undated, dated]),
-    filter.resolve(ListFilter(PendingOnly, Some(Today)), today()),
+    filter.resolve(
+      ListFilter(PendingOnly, Some(Today)),
+      now(),
+      calendar.utc_offset,
+    ),
   )
   |> should.equal(Ok([dated]))
 }

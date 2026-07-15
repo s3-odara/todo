@@ -15,7 +15,7 @@ import todo_app/store/path
 pub fn main() -> Nil {
   let args = argv.load().arguments
   // Help and grammar errors do not depend on persistence configuration.
-  case cli.parse(args) {
+  case cli.parse(args, calendar.local_offset()) {
     Ok(Help) -> emit(cli.help())
     Ok(command) -> run_with_path(command)
     Error(message) -> emit(cli.grammar_error(message))
@@ -37,16 +37,13 @@ fn run_with_path(command: Command) -> Nil {
         Store(fn() { file.load(filename) }, fn(tasks) {
           file.save(filename, tasks)
         }),
-        local_today,
+        local_clock,
       ))
   }
 }
 
-fn local_today() -> calendar.Date {
-  let now = timestamp.system_time()
-  let offset = calendar.local_offset()
-  let #(today, _) = timestamp.to_calendar(now, offset)
-  today
+fn local_clock() {
+  #(timestamp.system_time(), calendar.local_offset())
 }
 
 fn environment(name: String) {

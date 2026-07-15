@@ -1,22 +1,36 @@
 import gleam/int
 import gleam/list
+import gleam/order
 import gleam/result
 import gleam/string
 import gleam/time/calendar
-import tasks/domain/model.{type Due, Due}
+import gleam/time/duration.{type Duration}
+import gleam/time/timestamp.{type Timestamp}
 
-// CLI input accepts date-only as end of day.
-pub fn input(value: String) -> Result(Due, Nil) {
+/// A task deadline as an absolute instant, distinct from other scheduled times.
+pub opaque type Due {
+  Due(Timestamp)
+}
+
+// CLI input is a local calendar value. Date-only input means local end of day.
+pub fn input(value: String, offset: Duration) -> Result(Due, Nil) {
   case string.length(value) {
-    10 ->
-      parse_date(value)
-      |> result.map(fn(_) { Due(value <> "T23:59") })
-    16 -> validate_datetime(value)
+    10 -> {
+      use date <- result.try(parse_date(value))
+      Ok(
+        Due(timestamp.from_calendar(
+          date,
+          calendar.TimeOfDay(23, 59, 0, 0),
+          offset,
+        )),
+      )
+    }
+    16 -> parse_datetime(value, offset)
     _ -> Error(Nil)
   }
 }
 
-/// Parse an exact, zero-padded Gregorian calendar date.
+/// Parse an RFC 3339 full-date with an exact, zero-padded Gregorian shape.
 pub fn parse_date(value: String) -> Result(calendar.Date, Nil) {
   case date_shape(value) {
     False -> Error(Nil)
@@ -34,22 +48,57 @@ pub fn parse_date(value: String) -> Result(calendar.Date, Nil) {
   }
 }
 
-/// Return the calendar date carried by a validated due value.
-/// Due values are canonical app-owned data, so parsing failure is an invariant violation.
-pub fn date(value: Due) -> calendar.Date {
-  let assert Ok(date) = parse_date(string.slice(value.canonical, 0, 10))
+/// Present a stored instant as the local minute at the supplied offset.
+pub fn format(value: Due, offset: Duration) -> String {
+  let #(date, time) = timestamp.to_calendar(instant(value), offset)
+  [
+    pad(date.year, 4),
+    "-",
+    pad(calendar.month_to_int(date.month), 2),
+    "-",
+    pad(date.day, 2),
+    "T",
+    pad(time.hours, 2),
+    ":",
+    pad(time.minutes, 2),
+  ]
+  |> string.concat
+}
+
+/// Deliberately unwrap a deadline when an absolute-time API is required.
+pub fn instant(value: Due) -> Timestamp {
+  let Due(value) = value
+  value
+}
+
+pub fn local_date(value: Due, offset: Duration) -> calendar.Date {
+  let #(date, _) = timestamp.to_calendar(instant(value), offset)
   date
 }
 
-fn validate_datetime(value: String) -> Result(Due, Nil) {
+pub fn is_before(value: Due, boundary: Timestamp) -> Bool {
+  timestamp.compare(instant(value), boundary) == order.Lt
+}
+
+pub fn from_unix_seconds(seconds: Int) -> Due {
+  Due(timestamp.from_unix_seconds(seconds))
+}
+
+pub fn to_unix_seconds(value: Due) -> Int {
+  let #(seconds, _) = timestamp.to_unix_seconds_and_nanoseconds(instant(value))
+  seconds
+}
+
+fn parse_datetime(value: String, offset: Duration) -> Result(Due, Nil) {
   case datetime_shape(value) {
     False -> Error(Nil)
     True -> {
-      use _date <- result.try(parse_date(string.slice(value, 0, 10)))
+      use date <- result.try(parse_date(string.slice(value, 0, 10)))
       use hour <- result.try(slice_int(value, 11, 2))
       use minute <- result.try(slice_int(value, 14, 2))
-      case hour <= 23 && minute <= 59 {
-        True -> Ok(Due(value))
+      let time = calendar.TimeOfDay(hour, minute, 0, 0)
+      case calendar.is_valid_time_of_day(time) {
+        True -> Ok(Due(timestamp.from_calendar(date, time, offset)))
         False -> Error(Nil)
       }
     }
@@ -79,4 +128,8 @@ fn digits(values: List(String)) -> Bool {
 
 fn slice_int(s: String, start: Int, length: Int) -> Result(Int, Nil) {
   string.slice(s, start, length) |> int.parse
+}
+
+fn pad(value: Int, width: Int) -> String {
+  value |> int.to_string |> string.pad_start(width, "0")
 }

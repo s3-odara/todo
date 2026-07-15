@@ -5,14 +5,15 @@ import gleam/order.{Gt}
 import gleam/result
 import gleam/string
 import gleam/time/calendar
-import tasks/domain/due
+import gleam/time/duration.{type Duration}
+import tasks/domain/due.{type Due}
 import tasks/domain/filter.{
   type DueFilter, type ListFilter, type StatusFilter, AllStatuses, DoneOnly,
   Exact, ListFilter, Overdue, PendingOnly, Range, Today,
 }
 import tasks/domain/model.{
-  type Due, type Status, type TaskError, type Todo, type ValidatedAdd,
-  AlreadyDone, Done, NotFound, Pending,
+  type Status, type TaskError, type Todo, type ValidatedAdd, AlreadyDone, Done,
+  NotFound, Pending,
 }
 import tasks/domain/validation
 
@@ -45,7 +46,7 @@ type ListDueOptions {
   DueRange(since: Option(calendar.Date), until: Option(calendar.Date))
 }
 
-pub fn parse(args: List(String)) -> Result(Command, String) {
+pub fn parse(args: List(String), offset: Duration) -> Result(Command, String) {
   case args {
     [] | ["--help"] -> Ok(Help)
     ["add", "--help"] | ["list", "--help"] | ["done", "--help"] -> Ok(Help)
@@ -69,6 +70,7 @@ pub fn parse(args: List(String)) -> Result(Command, String) {
           option.unwrap(estimate, or: "0m"),
           option.unwrap(priority, or: "3"),
           due,
+          offset,
         )
         |> result.map_error(fn(_) { "invalid input" })
       })
@@ -199,7 +201,7 @@ pub fn help() -> Outcome {
       "todo list [--done | --all] [--due today|overdue|YYYY-MM-DD]",
       "          [--due-since YYYY-MM-DD] [--due-until YYYY-MM-DD]",
       "  default: pending; --done: done; --all: both",
-      "  due dates use local today; overdue is before today; ranges are inclusive",
+      "  due dates use local time; overdue is before now; ranges are inclusive",
       "  --due excludes undated tasks and cannot be combined with due ranges",
       "todo done ID",
     ],
@@ -238,7 +240,11 @@ pub fn completed(task: Todo) -> Outcome {
   )
 }
 
-pub fn listed(items: List(Todo), status: StatusFilter) -> Outcome {
+pub fn listed(
+  items: List(Todo),
+  status: StatusFilter,
+  offset: Duration,
+) -> Outcome {
   case items {
     [] ->
       Outcome(
@@ -257,20 +263,20 @@ pub fn listed(items: List(Todo), status: StatusFilter) -> Outcome {
         0,
         [
           "ID\tSTATUS\tPRIORITY\tESTIMATE\tDUE\tTITLE",
-          ..list.map(items, task_line)
+          ..list.map(items, fn(task) { task_line(task, offset) })
         ],
         [],
       )
   }
 }
 
-fn task_line(task: Todo) -> String {
+fn task_line(task: Todo, offset: Duration) -> String {
   [
     int.to_string(task.id),
     status_text(task.status),
     int.to_string(task.priority),
     int.to_string(task.estimate_minutes) <> "m",
-    due_text(task.due),
+    due_text(task.due, offset),
     task.title,
   ]
   |> string.join("\t")
@@ -283,9 +289,9 @@ fn status_text(status: Status) -> String {
   }
 }
 
-fn due_text(due: Option(Due)) -> String {
-  case due {
+fn due_text(due_value: Option(Due), offset: Duration) -> String {
+  case due_value {
     None -> "-"
-    Some(value) -> value.canonical
+    Some(value) -> due.format(value, offset)
   }
 }

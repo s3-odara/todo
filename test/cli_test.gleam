@@ -1,12 +1,13 @@
 import gleam/list
 import gleam/option.{None, Some}
 import gleam/time/calendar.{Date, July}
+import gleam/time/duration
 import gleeunit/should
 import tasks/domain/due
 import tasks/domain/filter.{
   AllStatuses, DoneOnly, Exact, ListFilter, Overdue, PendingOnly, Range, Today,
 }
-import tasks/domain/model.{Done, Due, Pending, Todo, ValidatedAdd}
+import tasks/domain/model.{Done, Pending, Todo, ValidatedAdd}
 import todo_app/cli
 import todo_app/runtime
 import todo_app/store.{Store}
@@ -15,9 +16,22 @@ fn today() {
   Date(2026, July, 24)
 }
 
+fn due_at(value) {
+  let assert Ok(value) = due.input(value, calendar.utc_offset)
+  value
+}
+
+fn clock() {
+  #(due.instant(due_at("2026-07-24T12:00")), calendar.utc_offset)
+}
+
+fn parse(args) {
+  cli.parse(args, calendar.utc_offset)
+}
+
 fn run(args, store) {
-  case cli.parse(args) {
-    Ok(command) -> runtime.run(command, store, today)
+  case parse(args) {
+    Ok(command) -> runtime.run(command, store, clock)
     Error(message) -> cli.grammar_error(message)
   }
 }
@@ -32,7 +46,7 @@ fn clock_must_not_run() {
 
 pub fn help_is_selected_when_no_command_or_a_help_flag_is_given_test() {
   [[], ["--help"], ["add", "--help"], ["list", "--help"], ["done", "--help"]]
-  |> list.each(fn(args) { cli.parse(args) |> should.equal(Ok(cli.Help)) })
+  |> list.each(fn(args) { parse(args) |> should.equal(Ok(cli.Help)) })
 }
 
 pub fn non_list_commands_do_not_read_the_clock_test() {
@@ -56,7 +70,7 @@ pub fn help_lists_the_available_commands_test() {
         "todo list [--done | --all] [--due today|overdue|YYYY-MM-DD]",
         "          [--due-since YYYY-MM-DD] [--due-until YYYY-MM-DD]",
         "  default: pending; --done: done; --all: both",
-        "  due dates use local today; overdue is before today; ranges are inclusive",
+        "  due dates use local time; overdue is before now; ranges are inclusive",
         "  --due excludes undated tasks and cannot be combined with due ranges",
         "todo done ID",
       ],
@@ -66,12 +80,12 @@ pub fn help_lists_the_available_commands_test() {
 }
 
 pub fn add_uses_default_estimate_and_priority_test() {
-  cli.parse(["add", "x"])
+  parse(["add", "x"])
   |> should.equal(Ok(cli.Add(ValidatedAdd("x", 0, 3, None))))
 }
 
 pub fn add_options_can_be_given_in_any_order_test() {
-  cli.parse([
+  parse([
     "add",
     "x",
     "--due",
@@ -82,7 +96,7 @@ pub fn add_options_can_be_given_in_any_order_test() {
     "2h",
   ])
   |> should.equal(
-    Ok(cli.Add(ValidatedAdd("x", 120, 5, Some(Due("2026-01-01T23:59"))))),
+    Ok(cli.Add(ValidatedAdd("x", 120, 5, Some(due_at("2026-01-01T23:59"))))),
   )
 }
 
@@ -93,7 +107,7 @@ pub fn duplicate_add_options_are_rejected_test() {
     ["add", "x", "--due", "2026-01-01", "--due", "2026-01-02"],
   ]
   |> list.each(fn(args) {
-    cli.parse(args)
+    parse(args)
     |> should.equal(Error("invalid, duplicate, or missing option"))
   })
 }
@@ -101,7 +115,7 @@ pub fn duplicate_add_options_are_rejected_test() {
 pub fn unknown_or_incomplete_add_options_are_rejected_test() {
   [["add", "x", "--unknown", "y"], ["add", "x", "--estimate"]]
   |> list.each(fn(args) {
-    cli.parse(args)
+    parse(args)
     |> should.equal(Error("invalid, duplicate, or missing option"))
   })
 }
@@ -113,39 +127,39 @@ pub fn invalid_command_shapes_are_rejected_test() {
     ["done", "1", "extra"],
   ]
   |> list.each(fn(args) {
-    cli.parse(args) |> should.equal(Error("invalid command or arguments"))
+    parse(args) |> should.equal(Error("invalid command or arguments"))
   })
 }
 
 pub fn done_parses_its_id_test() {
-  cli.parse(["done", "1"])
+  parse(["done", "1"])
   |> should.equal(Ok(cli.RunDone(1)))
 }
 
 pub fn list_status_options_parse_to_typed_filters_test() {
-  cli.parse(["list"])
+  parse(["list"])
   |> should.equal(Ok(cli.List(ListFilter(PendingOnly, None))))
-  cli.parse(["list", "--done"])
+  parse(["list", "--done"])
   |> should.equal(Ok(cli.List(ListFilter(DoneOnly, None))))
-  cli.parse(["list", "--all"])
+  parse(["list", "--all"])
   |> should.equal(Ok(cli.List(ListFilter(AllStatuses, None))))
 }
 
 pub fn list_due_options_parse_to_typed_filters_test() {
-  cli.parse(["list", "--due", "today"])
+  parse(["list", "--due", "today"])
   |> should.equal(Ok(cli.List(ListFilter(PendingOnly, Some(Today)))))
-  cli.parse(["list", "--due", "overdue"])
+  parse(["list", "--due", "overdue"])
   |> should.equal(Ok(cli.List(ListFilter(PendingOnly, Some(Overdue)))))
-  cli.parse(["list", "--due", "2026-07-24"])
+  parse(["list", "--due", "2026-07-24"])
   |> should.equal(Ok(cli.List(ListFilter(PendingOnly, Some(Exact(today()))))))
 }
 
 pub fn one_sided_list_ranges_parse_to_typed_filters_test() {
-  cli.parse(["list", "--due-since", "2026-07-24"])
+  parse(["list", "--due-since", "2026-07-24"])
   |> should.equal(
     Ok(cli.List(ListFilter(PendingOnly, Some(Range(Some(today()), None))))),
   )
-  cli.parse(["list", "--due-until", "2026-07-24"])
+  parse(["list", "--due-until", "2026-07-24"])
   |> should.equal(
     Ok(cli.List(ListFilter(PendingOnly, Some(Range(None, Some(today())))))),
   )
@@ -154,9 +168,9 @@ pub fn one_sided_list_ranges_parse_to_typed_filters_test() {
 pub fn status_and_exact_due_options_are_order_independent_test() {
   let expected = Ok(cli.List(ListFilter(AllStatuses, Some(Exact(today())))))
 
-  cli.parse(["list", "--all", "--due", "2026-07-24"])
+  parse(["list", "--all", "--due", "2026-07-24"])
   |> should.equal(expected)
-  cli.parse(["list", "--due", "2026-07-24", "--all"])
+  parse(["list", "--due", "2026-07-24", "--all"])
   |> should.equal(expected)
 }
 
@@ -165,7 +179,7 @@ pub fn list_range_options_are_order_independent_test() {
   let expected =
     Ok(cli.List(ListFilter(DoneOnly, Some(Range(Some(today()), Some(until))))))
 
-  cli.parse([
+  parse([
     "list",
     "--done",
     "--due-since",
@@ -174,7 +188,7 @@ pub fn list_range_options_are_order_independent_test() {
     "2026-07-25",
   ])
   |> should.equal(expected)
-  cli.parse([
+  parse([
     "list",
     "--due-until",
     "2026-07-25",
@@ -193,9 +207,7 @@ pub fn duplicate_list_options_are_invalid_input_test() {
     ["list", "--due-since", "2026-07-24", "--due-since", "2026-07-25"],
     ["list", "--due-until", "2026-07-24", "--due-until", "2026-07-25"],
   ]
-  |> list.each(fn(args) {
-    cli.parse(args) |> should.equal(Error("invalid input"))
-  })
+  |> list.each(fn(args) { parse(args) |> should.equal(Error("invalid input")) })
 }
 
 pub fn conflicting_list_options_are_invalid_in_either_order_test() {
@@ -207,9 +219,7 @@ pub fn conflicting_list_options_are_invalid_in_either_order_test() {
     ["list", "--due", "today", "--due-until", "2026-07-24"],
     ["list", "--due-until", "2026-07-24", "--due", "today"],
   ]
-  |> list.each(fn(args) {
-    cli.parse(args) |> should.equal(Error("invalid input"))
-  })
+  |> list.each(fn(args) { parse(args) |> should.equal(Error("invalid input")) })
 }
 
 pub fn invalid_list_values_and_missing_values_are_invalid_input_test() {
@@ -223,13 +233,11 @@ pub fn invalid_list_values_and_missing_values_are_invalid_input_test() {
     ["list", "--due-since", "today"],
     ["list", "--due-until", "overdue"],
   ]
-  |> list.each(fn(args) {
-    cli.parse(args) |> should.equal(Error("invalid input"))
-  })
+  |> list.each(fn(args) { parse(args) |> should.equal(Error("invalid input")) })
 }
 
 pub fn reversed_due_range_is_invalid_input_test() {
-  cli.parse([
+  parse([
     "list",
     "--due-since",
     "2026-07-25",
@@ -263,6 +271,28 @@ pub fn tasks_are_rendered_as_tab_separated_rows_test() {
     cli.Outcome(
       0,
       ["ID\tSTATUS\tPRIORITY\tESTIMATE\tDUE\tTITLE", "1\tpending\t3\t5m\t-\tx"],
+      [],
+    ),
+  )
+}
+
+pub fn stored_due_is_rendered_with_the_current_local_offset_test() {
+  let japan = duration.hours(9)
+  let assert Ok(stored) = due.input("2026-07-24T09:00", japan)
+  let command = cli.List(ListFilter(PendingOnly, None))
+
+  runtime.run(
+    command,
+    store_with([Todo(1, "x", 0, 3, Some(stored), Pending)]),
+    fn() { #(due.instant(due_at("2026-07-24T12:00")), japan) },
+  )
+  |> should.equal(
+    cli.Outcome(
+      0,
+      [
+        "ID\tSTATUS\tPRIORITY\tESTIMATE\tDUE\tTITLE",
+        "1\tpending\t3\t0m\t2026-07-24T09:00\tx",
+      ],
       [],
     ),
   )

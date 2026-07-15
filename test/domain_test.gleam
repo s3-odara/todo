@@ -1,7 +1,10 @@
 import gleam/list
 import gleam/option.{None, Some}
+import gleam/result
 import gleam/string
 import gleam/time/calendar.{Date, July}
+import gleam/time/duration
+import gleam/time/timestamp
 import gleeunit/should
 import tasks/domain/due
 import tasks/domain/filter.{
@@ -9,17 +12,26 @@ import tasks/domain/filter.{
   Range, ResolvedListFilter, Today,
 }
 import tasks/domain/model.{
-  AlreadyDone, Done, Due, NotFound, Pending, Todo, ValidatedAdd,
+  AlreadyDone, Done, NotFound, Pending, Todo, ValidatedAdd,
 }
 import tasks/domain/tasks
 import tasks/domain/validation
 
+fn due_at(value) {
+  let assert Ok(value) = due.input(value, calendar.utc_offset)
+  value
+}
+
 fn validated_add(title: String, estimate: String, priority: String) {
-  validation.add(title, estimate, priority, None)
+  validation.add(title, estimate, priority, None, calendar.utc_offset)
 }
 
 fn today() {
   Date(2026, July, 24)
+}
+
+fn now() {
+  due.instant(due_at("2026-07-24T12:00"))
 }
 
 fn pending_filter() {
@@ -27,11 +39,11 @@ fn pending_filter() {
 }
 
 fn resolved(criteria) {
-  filter.resolve(criteria, today())
+  filter.resolve(criteria, now(), calendar.utc_offset)
 }
 
 fn pending_due(id, title, canonical) {
-  Todo(id, title, 0, 3, Some(Due(canonical)), Pending)
+  Todo(id, title, 0, 3, Some(due_at(canonical)), Pending)
 }
 
 pub fn title_is_trimmed_test() {
@@ -102,12 +114,24 @@ pub fn task_id_must_be_a_positive_ascii_decimal_test() {
 }
 
 pub fn date_only_due_is_normalized_to_end_of_day_test() {
-  due.input("2024-02-29") |> should.equal(Ok(Due("2024-02-29T23:59")))
+  due.input("2024-02-29", calendar.utc_offset)
+  |> result.map(fn(value) { due.format(value, calendar.utc_offset) })
+  |> should.equal(Ok("2024-02-29T23:59"))
 }
 
 pub fn local_datetime_due_is_retained_test() {
-  due.input("2026-12-31T23:59")
-  |> should.equal(Ok(Due("2026-12-31T23:59")))
+  due.input("2026-12-31T23:59", calendar.utc_offset)
+  |> result.map(fn(value) { due.format(value, calendar.utc_offset) })
+  |> should.equal(Ok("2026-12-31T23:59"))
+}
+
+pub fn local_due_is_stored_as_an_instant_and_presented_locally_test() {
+  let japan = duration.hours(9)
+  let assert Ok(stored) = due.input("2026-07-24T09:00", japan)
+
+  timestamp.to_rfc3339(due.instant(stored), calendar.utc_offset)
+  |> should.equal("2026-07-24T00:00:00Z")
+  due.format(stored, japan) |> should.equal("2026-07-24T09:00")
 }
 
 pub fn invalid_calendar_or_datetime_values_are_rejected_test() {
@@ -123,7 +147,9 @@ pub fn invalid_calendar_or_datetime_values_are_rejected_test() {
     "2026-01-01t12:00",
     "2026-01-01 12:00",
   ]
-  |> list.each(fn(value) { due.input(value) |> should.equal(Error(Nil)) })
+  |> list.each(fn(value) {
+    due.input(value, calendar.utc_offset) |> should.equal(Error(Nil))
+  })
 }
 
 pub fn adding_a_task_assigns_an_id_greater_than_every_existing_id_test() {
@@ -169,10 +195,26 @@ pub fn done_only_filters_completed_tasks_test() {
 }
 
 pub fn relative_due_filters_resolve_to_absolute_dates_test() {
-  filter.resolve(ListFilter(PendingOnly, Some(Today)), today())
-  |> should.equal(ResolvedListFilter(PendingOnly, Some(On(today()))))
-  filter.resolve(ListFilter(PendingOnly, Some(Overdue)), today())
-  |> should.equal(ResolvedListFilter(PendingOnly, Some(Before(today()))))
+  filter.resolve(
+    ListFilter(PendingOnly, Some(Today)),
+    now(),
+    calendar.utc_offset,
+  )
+  |> should.equal(ResolvedListFilter(
+    PendingOnly,
+    Some(On(today())),
+    calendar.utc_offset,
+  ))
+  filter.resolve(
+    ListFilter(PendingOnly, Some(Overdue)),
+    now(),
+    calendar.utc_offset,
+  )
+  |> should.equal(ResolvedListFilter(
+    PendingOnly,
+    Some(Before(now())),
+    calendar.utc_offset,
+  ))
 }
 
 pub fn exact_due_filter_ignores_the_stored_time_test() {
@@ -198,15 +240,26 @@ pub fn today_due_filter_excludes_tasks_without_a_due_date_test() {
   |> should.equal([due_today])
 }
 
-pub fn overdue_is_strictly_before_today_test() {
-  let overdue = pending_due(1, "overdue", "2026-07-23T23:59")
-  let due_today = pending_due(2, "today", "2026-07-24T00:00")
+pub fn date_filters_use_the_current_local_offset_test() {
+  let japan = duration.hours(9)
+  let assert Ok(stored) = due.input("2026-07-24T00:30", japan)
+  let task = Todo(1, "local date", 0, 3, Some(stored), Pending)
+  let criteria =
+    filter.resolve(ListFilter(PendingOnly, Some(Exact(today()))), now(), japan)
+
+  tasks.visible_sorted([task], criteria) |> should.equal([task])
+}
+
+pub fn overdue_is_strictly_before_now_test() {
+  let yesterday = pending_due(1, "yesterday", "2026-07-23T23:59")
+  let earlier_today = pending_due(2, "earlier", "2026-07-24T11:59")
+  let due_now = pending_due(3, "now", "2026-07-24T12:00")
 
   tasks.visible_sorted(
-    [due_today, overdue],
+    [due_now, earlier_today, yesterday],
     resolved(ListFilter(PendingOnly, Some(Overdue))),
   )
-  |> should.equal([overdue])
+  |> should.equal([yesterday, earlier_today])
 }
 
 pub fn due_range_includes_both_boundaries_test() {
@@ -241,7 +294,7 @@ pub fn one_sided_due_ranges_are_inclusive_test() {
 
 pub fn status_and_due_filters_are_combined_with_and_test() {
   let pending = pending_due(1, "pending", "2026-07-23T00:00")
-  let completed = Todo(2, "done", 0, 3, Some(Due("2026-07-23T00:00")), Done)
+  let completed = Todo(2, "done", 0, 3, Some(due_at("2026-07-23T00:00")), Done)
 
   tasks.visible_sorted(
     [pending, completed],
