@@ -1,15 +1,19 @@
+import gleam/time/calendar
+import tasks/domain/filter.{ListFilter}
 import todo_app/cli.{type Command, type Outcome, Add, Help, List, RunDone}
 import todo_app/service
 import todo_app/store.{type Store}
 
 /// Pure application runner: adapters supply a parsed command and configured Store.
-pub fn run(command: Command, store: Store) -> Outcome {
+pub fn run(command: Command, store: Store, today: calendar.Date) -> Outcome {
   case command {
     Help -> cli.help()
     Add(values) -> service.add(store, values) |> service_outcome(cli.added)
-    List(include_all) ->
-      service.list(store, include_all)
-      |> service_outcome(fn(items) { cli.listed(items, include_all) })
+    List(filter) -> {
+      let ListFilter(status, _) = filter
+      service.list(store, filter, today)
+      |> service_outcome(fn(items) { cli.listed(items, status) })
+    }
     RunDone(id) -> service.done(store, id) |> service_outcome(cli.completed)
   }
 }

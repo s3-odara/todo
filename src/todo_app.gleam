@@ -3,6 +3,8 @@ import envoy
 import gleam/io
 import gleam/list
 import gleam/option.{None, Some}
+import gleam/time/calendar
+import gleam/time/timestamp
 import tasks/runtime as process
 import tasks/store/file
 import todo_app/cli.{type Command, type Outcome, Help, Outcome}
@@ -29,13 +31,18 @@ fn run_with_path(command: Command) -> Nil {
     )
   {
     Error(message) -> emit(cli.persistence_error(message))
-    Ok(filename) ->
+    Ok(filename) -> {
+      let now = timestamp.system_time()
+      let offset = calendar.local_offset()
+      let #(today, _) = timestamp.to_calendar(now, offset)
       emit(runtime.run(
         command,
         Store(fn() { file.load(filename) }, fn(tasks) {
           file.save(filename, tasks)
         }),
+        today,
       ))
+    }
   }
 }
 

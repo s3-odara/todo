@@ -1,5 +1,14 @@
 import gleam/int
 import gleam/list
+import gleam/option.{type Option, None, Some}
+import gleam/order.{Eq, Gt, Lt}
+import gleam/string
+import gleam/time/calendar
+import tasks/domain/due
+import tasks/domain/filter.{
+  type DueFilter, type ListFilter, type StatusFilter, AllStatuses, DoneOnly,
+  Exact, ListFilter, Overdue, PendingOnly, Range, Today,
+}
 import tasks/domain/model.{
   type TaskError, type Todo, type ValidatedAdd, AlreadyDone, Done, NotFound,
   Pending, Todo, ValidatedAdd,
@@ -40,9 +49,64 @@ pub fn complete(
   }
 }
 
-pub fn visible_sorted(todos: List(Todo), include_all: Bool) -> List(Todo) {
+pub fn visible_sorted(
+  todos: List(Todo),
+  filter: ListFilter,
+  today: calendar.Date,
+) -> List(Todo) {
+  let ListFilter(status, due_filter) = filter
   // Keep display order independent of mutable task metadata.
   todos
-  |> list.filter(fn(t) { include_all || t.status == Pending })
+  |> list.filter(fn(task) {
+    status_matches(task, status) && due_matches(task, due_filter, today)
+  })
   |> list.sort(by: fn(a, b) { int.compare(a.id, b.id) })
+}
+
+fn status_matches(task: Todo, filter: StatusFilter) -> Bool {
+  case filter {
+    PendingOnly -> task.status == Pending
+    DoneOnly -> task.status == Done
+    AllStatuses -> True
+  }
+}
+
+fn due_matches(
+  task: Todo,
+  filter: Option(DueFilter),
+  today: calendar.Date,
+) -> Bool {
+  case filter, task.due {
+    None, _ -> True
+    Some(_), None -> False
+    Some(filter), Some(stored) -> {
+      // Due values are app-owned canonical values; compare their date component.
+      let assert Ok(date) =
+        due.parse_date(string.slice(stored.canonical, 0, 10))
+      date_matches(date, filter, today)
+    }
+  }
+}
+
+fn date_matches(
+  date: calendar.Date,
+  filter: DueFilter,
+  today: calendar.Date,
+) -> Bool {
+  case filter {
+    Exact(wanted) -> calendar.naive_date_compare(date, wanted) == Eq
+    Today -> calendar.naive_date_compare(date, today) == Eq
+    Overdue -> calendar.naive_date_compare(date, today) == Lt
+    Range(since, until) -> {
+      let after_start = case since {
+        None -> True
+        Some(start) -> calendar.naive_date_compare(date, start) != Lt
+      }
+      let before_end = case until {
+        None -> True
+        Some(end) -> calendar.naive_date_compare(date, end) != Gt
+      }
+      after_start && before_end
+    }
+  }
 }

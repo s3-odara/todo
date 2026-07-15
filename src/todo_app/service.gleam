@@ -1,4 +1,6 @@
 import gleam/result
+import gleam/time/calendar
+import tasks/domain/filter.{type ListFilter}
 import tasks/domain/model.{type TaskError, type Todo, type ValidatedAdd}
 import tasks/domain/tasks
 import todo_app/store.{type Store, Store}
@@ -14,11 +16,12 @@ pub fn add(store: Store, values: ValidatedAdd) -> Result(Todo, ServiceError) {
 
 pub fn list(
   store: Store,
-  include_all: Bool,
+  filter: ListFilter,
+  today: calendar.Date,
 ) -> Result(List(Todo), ServiceError) {
   let Store(load, _) = store
   load()
-  |> result.map(fn(items) { tasks.visible_sorted(items, include_all) })
+  |> result.map(fn(items) { tasks.visible_sorted(items, filter, today) })
   |> result.map_error(Persisted)
 }
 
