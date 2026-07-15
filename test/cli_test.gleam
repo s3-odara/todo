@@ -17,7 +17,7 @@ fn today() {
 
 fn run(args, store) {
   case cli.parse(args) {
-    Ok(command) -> runtime.run(command, store, today())
+    Ok(command) -> runtime.run(command, store, today)
     Error(message) -> cli.grammar_error(message)
   }
 }
@@ -26,9 +26,24 @@ fn store_with(tasks) {
   Store(fn() { Ok(tasks) }, fn(_) { Ok(Nil) })
 }
 
+fn clock_must_not_run() {
+  panic as "clock must not run for this command"
+}
+
 pub fn help_is_selected_when_no_command_or_a_help_flag_is_given_test() {
   [[], ["--help"], ["add", "--help"], ["list", "--help"], ["done", "--help"]]
   |> list.each(fn(args) { cli.parse(args) |> should.equal(Ok(cli.Help)) })
+}
+
+pub fn non_list_commands_do_not_read_the_clock_test() {
+  runtime.run(cli.Help, store_with([]), clock_must_not_run)
+  |> should.equal(cli.help())
+  runtime.run(
+    cli.Add(ValidatedAdd("x", 0, 3, None)),
+    store_with([]),
+    clock_must_not_run,
+  )
+  |> should.equal(cli.Outcome(0, ["Added task 1: x"], []))
 }
 
 pub fn help_lists_the_available_commands_test() {

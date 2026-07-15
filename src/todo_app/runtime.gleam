@@ -4,14 +4,20 @@ import todo_app/cli.{type Command, type Outcome, Add, Help, List, RunDone}
 import todo_app/service
 import todo_app/store.{type Store}
 
-/// Pure application runner: adapters supply a parsed command and configured Store.
-pub fn run(command: Command, store: Store, today: calendar.Date) -> Outcome {
+/// Application boundary: adapters supply persistence and the local calendar clock.
+pub fn run(
+  command: Command,
+  store: Store,
+  local_today: fn() -> calendar.Date,
+) -> Outcome {
   case command {
     Help -> cli.help()
     Add(values) -> service.add(store, values) |> service_outcome(cli.added)
-    List(filter) -> {
-      let ListFilter(status, _) = filter
-      service.list(store, filter, today)
+    List(criteria) -> {
+      let ListFilter(status, _) = criteria
+      // Read the clock only for list; lower layers receive absolute criteria.
+      let resolved = filter.resolve(criteria, local_today())
+      service.list(store, resolved)
       |> service_outcome(fn(items) { cli.listed(items, status) })
     }
     RunDone(id) -> service.done(store, id) |> service_outcome(cli.completed)

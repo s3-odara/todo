@@ -31,19 +31,22 @@ fn run_with_path(command: Command) -> Nil {
     )
   {
     Error(message) -> emit(cli.persistence_error(message))
-    Ok(filename) -> {
-      let now = timestamp.system_time()
-      let offset = calendar.local_offset()
-      let #(today, _) = timestamp.to_calendar(now, offset)
+    Ok(filename) ->
       emit(runtime.run(
         command,
         Store(fn() { file.load(filename) }, fn(tasks) {
           file.save(filename, tasks)
         }),
-        today,
+        local_today,
       ))
-    }
   }
+}
+
+fn local_today() -> calendar.Date {
+  let now = timestamp.system_time()
+  let offset = calendar.local_offset()
+  let #(today, _) = timestamp.to_calendar(now, offset)
+  today
 }
 
 fn environment(name: String) {

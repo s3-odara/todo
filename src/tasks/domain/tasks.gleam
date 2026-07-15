@@ -1,7 +1,6 @@
 import gleam/int
 import gleam/list
-import gleam/time/calendar
-import tasks/domain/filter.{type ListFilter}
+import tasks/domain/filter.{type ResolvedListFilter}
 import tasks/domain/model.{
   type TaskError, type Todo, type ValidatedAdd, AlreadyDone, Done, NotFound,
   Pending, Todo, ValidatedAdd,
@@ -44,11 +43,10 @@ pub fn complete(
 
 pub fn visible_sorted(
   todos: List(Todo),
-  criteria: ListFilter,
-  today: calendar.Date,
+  criteria: ResolvedListFilter,
 ) -> List(Todo) {
   // Keep display order independent of mutable task metadata.
   todos
-  |> list.filter(fn(task) { filter.matches(criteria, task, today) })
+  |> list.filter(fn(task) { filter.matches(criteria, task) })
   |> list.sort(by: fn(a, b) { int.compare(a.id, b.id) })
 }

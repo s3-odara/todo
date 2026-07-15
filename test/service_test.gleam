@@ -18,6 +18,11 @@ fn today() {
 
 fn pending_filter() {
   ListFilter(PendingOnly, None)
+  |> filter.resolve(today())
+}
+
+fn pending_due(id, title, canonical) {
+  Todo(id, title, 0, 3, Some(Due(canonical)), Pending)
 }
 
 pub fn add_saves_and_returns_the_added_task_test() {
@@ -77,17 +82,16 @@ pub fn list_returns_pending_tasks_without_saving_test() {
       Error("save must not run")
     })
 
-  service.list(store, pending_filter(), today()) |> should.equal(Ok([pending]))
+  service.list(store, pending_filter()) |> should.equal(Ok([pending]))
 }
 
 pub fn list_propagates_the_due_filter_test() {
   let undated = Todo(1, "undated", 0, 3, None, Pending)
-  let dated = Todo(2, "dated", 0, 3, Some(Due("2026-07-24T12:00")), Pending)
+  let dated = pending_due(2, "dated", "2026-07-24T12:00")
 
   service.list(
     store_with([undated, dated]),
-    ListFilter(PendingOnly, Some(Today)),
-    today(),
+    filter.resolve(ListFilter(PendingOnly, Some(Today)), today()),
   )
   |> should.equal(Ok([dated]))
 }
@@ -96,7 +100,7 @@ pub fn a_list_load_failure_is_reported_test() {
   let store =
     Store(fn() { Error("corrupt") }, fn(_) { Error("save must not run") })
 
-  service.list(store, pending_filter(), today())
+  service.list(store, pending_filter())
   |> should.equal(Error(service.Persisted("corrupt")))
 }
 

@@ -21,9 +21,32 @@ pub type ListFilter {
   ListFilter(status: StatusFilter, due: Option(DueFilter))
 }
 
-pub fn matches(filter: ListFilter, task: Todo, today: calendar.Date) -> Bool {
+pub type ResolvedDueFilter {
+  On(calendar.Date)
+  Before(calendar.Date)
+  Within(since: Option(calendar.Date), until: Option(calendar.Date))
+}
+
+pub type ResolvedListFilter {
+  ResolvedListFilter(status: StatusFilter, due: Option(ResolvedDueFilter))
+}
+
+/// Resolve relative CLI criteria once, before persistence and domain transforms.
+pub fn resolve(filter: ListFilter, today: calendar.Date) -> ResolvedListFilter {
   let ListFilter(status, due_filter) = filter
-  status_matches(status, task) && due_matches(due_filter, task, today)
+  let resolved_due = case due_filter {
+    None -> None
+    Some(Exact(date)) -> Some(On(date))
+    Some(Today) -> Some(On(today))
+    Some(Overdue) -> Some(Before(today))
+    Some(Range(since, until)) -> Some(Within(since, until))
+  }
+  ResolvedListFilter(status, resolved_due)
+}
+
+pub fn matches(filter: ResolvedListFilter, task: Todo) -> Bool {
+  let ResolvedListFilter(status, due_filter) = filter
+  status_matches(status, task) && due_matches(due_filter, task)
 }
 
 fn status_matches(filter: StatusFilter, task: Todo) -> Bool {
@@ -34,28 +57,19 @@ fn status_matches(filter: StatusFilter, task: Todo) -> Bool {
   }
 }
 
-fn due_matches(
-  filter: Option(DueFilter),
-  task: Todo,
-  today: calendar.Date,
-) -> Bool {
+fn due_matches(filter: Option(ResolvedDueFilter), task: Todo) -> Bool {
   case filter, task.due {
     None, _ -> True
     Some(_), None -> False
-    Some(filter), Some(stored) -> date_matches(due.date(stored), filter, today)
+    Some(filter), Some(stored) -> date_matches(due.date(stored), filter)
   }
 }
 
-fn date_matches(
-  date: calendar.Date,
-  filter: DueFilter,
-  today: calendar.Date,
-) -> Bool {
+fn date_matches(date: calendar.Date, filter: ResolvedDueFilter) -> Bool {
   case filter {
-    Exact(wanted) -> calendar.naive_date_compare(date, wanted) == Eq
-    Today -> calendar.naive_date_compare(date, today) == Eq
-    Overdue -> calendar.naive_date_compare(date, today) == Lt
-    Range(since, until) ->
+    On(wanted) -> calendar.naive_date_compare(date, wanted) == Eq
+    Before(boundary) -> calendar.naive_date_compare(date, boundary) == Lt
+    Within(since, until) ->
       within_lower_bound(date, since) && within_upper_bound(date, until)
   }
 }

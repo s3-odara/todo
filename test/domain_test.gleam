@@ -5,7 +5,8 @@ import gleam/time/calendar.{Date, July}
 import gleeunit/should
 import tasks/domain/due
 import tasks/domain/filter.{
-  AllStatuses, DoneOnly, Exact, ListFilter, Overdue, PendingOnly, Range, Today,
+  AllStatuses, Before, DoneOnly, Exact, ListFilter, On, Overdue, PendingOnly,
+  Range, ResolvedListFilter, Today,
 }
 import tasks/domain/model.{
   AlreadyDone, Done, Due, NotFound, Pending, Todo, ValidatedAdd,
@@ -23,6 +24,14 @@ fn today() {
 
 fn pending_filter() {
   ListFilter(PendingOnly, None)
+}
+
+fn resolved(criteria) {
+  filter.resolve(criteria, today())
+}
+
+fn pending_due(id, title, canonical) {
+  Todo(id, title, 0, 3, Some(Due(canonical)), Pending)
 }
 
 pub fn title_is_trimmed_test() {
@@ -133,7 +142,7 @@ pub fn pending_tasks_are_listed_in_id_order_test() {
   let second = Todo(2, "second", 0, 1, None, Pending)
   let completed = Todo(3, "completed", 0, 3, None, Done)
 
-  tasks.visible_sorted([completed, second, first], pending_filter(), today())
+  tasks.visible_sorted([completed, second, first], resolved(pending_filter()))
   |> should.equal([first, second])
 }
 
@@ -143,8 +152,7 @@ pub fn completed_tasks_are_included_when_requested_test() {
 
   tasks.visible_sorted(
     [completed, pending],
-    ListFilter(AllStatuses, None),
-    today(),
+    resolved(ListFilter(AllStatuses, None)),
   )
   |> should.equal([pending, completed])
 }
@@ -155,91 +163,89 @@ pub fn done_only_filters_completed_tasks_test() {
 
   tasks.visible_sorted(
     [pending, completed],
-    ListFilter(DoneOnly, None),
-    today(),
+    resolved(ListFilter(DoneOnly, None)),
   )
   |> should.equal([completed])
 }
 
+pub fn relative_due_filters_resolve_to_absolute_dates_test() {
+  filter.resolve(ListFilter(PendingOnly, Some(Today)), today())
+  |> should.equal(ResolvedListFilter(PendingOnly, Some(On(today()))))
+  filter.resolve(ListFilter(PendingOnly, Some(Overdue)), today())
+  |> should.equal(ResolvedListFilter(PendingOnly, Some(Before(today()))))
+}
+
 pub fn exact_due_filter_ignores_the_stored_time_test() {
-  let morning = Todo(2, "morning", 0, 3, Some(Due("2026-07-24T00:00")), Pending)
-  let evening = Todo(1, "evening", 0, 3, Some(Due("2026-07-24T23:59")), Pending)
-  let later = Todo(3, "later", 0, 3, Some(Due("2026-07-25T00:00")), Pending)
+  let morning = pending_due(2, "morning", "2026-07-24T00:00")
+  let evening = pending_due(1, "evening", "2026-07-24T23:59")
+  let later = pending_due(3, "later", "2026-07-25T00:00")
 
   tasks.visible_sorted(
     [morning, later, evening],
-    ListFilter(PendingOnly, Some(Exact(today()))),
-    today(),
+    resolved(ListFilter(PendingOnly, Some(Exact(today())))),
   )
   |> should.equal([evening, morning])
 }
 
 pub fn today_due_filter_excludes_tasks_without_a_due_date_test() {
   let undated = Todo(1, "undated", 0, 3, None, Pending)
-  let due_today = Todo(2, "today", 0, 3, Some(Due("2026-07-24T12:00")), Pending)
+  let due_today = pending_due(2, "today", "2026-07-24T12:00")
 
   tasks.visible_sorted(
     [undated, due_today],
-    ListFilter(PendingOnly, Some(Today)),
-    today(),
+    resolved(ListFilter(PendingOnly, Some(Today))),
   )
   |> should.equal([due_today])
 }
 
 pub fn overdue_is_strictly_before_today_test() {
-  let overdue = Todo(1, "overdue", 0, 3, Some(Due("2026-07-23T23:59")), Pending)
-  let due_today = Todo(2, "today", 0, 3, Some(Due("2026-07-24T00:00")), Pending)
+  let overdue = pending_due(1, "overdue", "2026-07-23T23:59")
+  let due_today = pending_due(2, "today", "2026-07-24T00:00")
 
   tasks.visible_sorted(
     [due_today, overdue],
-    ListFilter(PendingOnly, Some(Overdue)),
-    today(),
+    resolved(ListFilter(PendingOnly, Some(Overdue))),
   )
   |> should.equal([overdue])
 }
 
 pub fn due_range_includes_both_boundaries_test() {
-  let start = Todo(1, "start", 0, 3, Some(Due("2026-07-24T23:59")), Pending)
-  let end = Todo(2, "end", 0, 3, Some(Due("2026-07-25T00:00")), Pending)
-  let outside = Todo(3, "outside", 0, 3, Some(Due("2026-07-26T00:00")), Pending)
+  let start = pending_due(1, "start", "2026-07-24T23:59")
+  let end = pending_due(2, "end", "2026-07-25T00:00")
+  let outside = pending_due(3, "outside", "2026-07-26T00:00")
   let assert Ok(until) = due.parse_date("2026-07-25")
 
   tasks.visible_sorted(
     [outside, end, start],
-    ListFilter(PendingOnly, Some(Range(Some(today()), Some(until)))),
-    today(),
+    resolved(ListFilter(PendingOnly, Some(Range(Some(today()), Some(until))))),
   )
   |> should.equal([start, end])
 }
 
 pub fn one_sided_due_ranges_are_inclusive_test() {
-  let before = Todo(1, "before", 0, 3, Some(Due("2026-07-23T00:00")), Pending)
-  let boundary =
-    Todo(2, "boundary", 0, 3, Some(Due("2026-07-24T00:00")), Pending)
-  let after = Todo(3, "after", 0, 3, Some(Due("2026-07-25T00:00")), Pending)
+  let before = pending_due(1, "before", "2026-07-23T00:00")
+  let boundary = pending_due(2, "boundary", "2026-07-24T00:00")
+  let after = pending_due(3, "after", "2026-07-25T00:00")
 
   tasks.visible_sorted(
     [after, boundary, before],
-    ListFilter(PendingOnly, Some(Range(Some(today()), None))),
-    today(),
+    resolved(ListFilter(PendingOnly, Some(Range(Some(today()), None)))),
   )
   |> should.equal([boundary, after])
   tasks.visible_sorted(
     [after, boundary, before],
-    ListFilter(PendingOnly, Some(Range(None, Some(today())))),
-    today(),
+    resolved(ListFilter(PendingOnly, Some(Range(None, Some(today()))))),
   )
   |> should.equal([before, boundary])
 }
 
 pub fn status_and_due_filters_are_combined_with_and_test() {
-  let pending = Todo(1, "pending", 0, 3, Some(Due("2026-07-23T00:00")), Pending)
+  let pending = pending_due(1, "pending", "2026-07-23T00:00")
   let completed = Todo(2, "done", 0, 3, Some(Due("2026-07-23T00:00")), Done)
 
   tasks.visible_sorted(
     [pending, completed],
-    ListFilter(DoneOnly, Some(Overdue)),
-    today(),
+    resolved(ListFilter(DoneOnly, Some(Overdue))),
   )
   |> should.equal([completed])
 }

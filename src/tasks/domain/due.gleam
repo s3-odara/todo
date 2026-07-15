@@ -10,7 +10,7 @@ pub fn input(value: String) -> Result(Due, Nil) {
   case string.length(value) {
     10 ->
       parse_date(value)
-      |> result_to_due(value <> "T23:59")
+      |> result.map(fn(_) { Due(value <> "T23:59") })
     16 -> validate_datetime(value)
     _ -> Error(Nil)
   }
@@ -41,27 +41,18 @@ pub fn date(value: Due) -> calendar.Date {
   date
 }
 
-fn result_to_due(
-  result: Result(calendar.Date, Nil),
-  canonical: String,
-) -> Result(Due, Nil) {
-  case result {
-    Ok(_) -> Ok(Due(canonical))
-    Error(error) -> Error(error)
-  }
-}
-
 fn validate_datetime(value: String) -> Result(Due, Nil) {
-  case datetime_shape(value), parse_date(string.slice(value, 0, 10)) {
-    True, Ok(_) -> {
-      let hour = slice_int(value, 11, 2)
-      let minute = slice_int(value, 14, 2)
-      case hour, minute {
-        Ok(hour), Ok(minute) if hour <= 23 && minute <= 59 -> Ok(Due(value))
-        _, _ -> Error(Nil)
+  case datetime_shape(value) {
+    False -> Error(Nil)
+    True -> {
+      use _date <- result.try(parse_date(string.slice(value, 0, 10)))
+      use hour <- result.try(slice_int(value, 11, 2))
+      use minute <- result.try(slice_int(value, 14, 2))
+      case hour <= 23 && minute <= 59 {
+        True -> Ok(Due(value))
+        False -> Error(Nil)
       }
     }
-    _, _ -> Error(Nil)
   }
 }
 
