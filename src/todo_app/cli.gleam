@@ -36,13 +36,13 @@ type AddOptions {
 }
 
 type ListOptions {
-  ListOptions(
-    done: Bool,
-    all: Bool,
-    due: Option(DueFilter),
-    since: Option(calendar.Date),
-    until: Option(calendar.Date),
-  )
+  ListOptions(status: Option(StatusFilter), due: ListDueOptions)
+}
+
+type ListDueOptions {
+  NoDueOptions
+  DueMatch(DueFilter)
+  DueRange(since: Option(calendar.Date), until: Option(calendar.Date))
 }
 
 pub fn parse(args: List(String)) -> Result(Command, String) {
@@ -51,7 +51,7 @@ pub fn parse(args: List(String)) -> Result(Command, String) {
     ["add", "--help"] | ["list", "--help"] | ["done", "--help"] -> Ok(Help)
     ["list", ..flags] ->
       flags
-      |> list_flags(ListOptions(False, False, None, None, None))
+      |> list_flags(ListOptions(None, NoDueOptions))
       |> result.try(list_filter)
       |> result.map(List)
       |> result.map_error(fn(_) { "invalid input" })
@@ -91,25 +91,80 @@ fn add_flags(flags, options: AddOptions) -> Result(AddOptions, String) {
 }
 
 fn list_flags(flags, options: ListOptions) -> Result(ListOptions, Nil) {
-  case flags, options {
-    [], _ -> Ok(options)
-    ["--done", ..rest], ListOptions(done: False, ..) ->
-      list_flags(rest, ListOptions(..options, done: True))
-    ["--all", ..rest], ListOptions(all: False, ..) ->
-      list_flags(rest, ListOptions(..options, all: True))
-    ["--due", value, ..rest], ListOptions(due: None, ..) -> {
+  case flags {
+    [] -> Ok(options)
+    ["--done", ..rest] -> {
+      use updated <- result.try(select_status(options, DoneOnly))
+      list_flags(rest, updated)
+    }
+    ["--all", ..rest] -> {
+      use updated <- result.try(select_status(options, AllStatuses))
+      list_flags(rest, updated)
+    }
+    ["--due", value, ..rest] -> {
       use parsed <- result.try(parse_due_filter(value))
-      list_flags(rest, ListOptions(..options, due: Some(parsed)))
+      use updated <- result.try(select_due(options, parsed))
+      list_flags(rest, updated)
     }
-    ["--due-since", value, ..rest], ListOptions(since: None, ..) -> {
+    ["--due-since", value, ..rest] -> {
       use parsed <- result.try(due.parse_date(value))
-      list_flags(rest, ListOptions(..options, since: Some(parsed)))
+      use updated <- result.try(set_since(options, parsed))
+      list_flags(rest, updated)
     }
-    ["--due-until", value, ..rest], ListOptions(until: None, ..) -> {
+    ["--due-until", value, ..rest] -> {
       use parsed <- result.try(due.parse_date(value))
-      list_flags(rest, ListOptions(..options, until: Some(parsed)))
+      use updated <- result.try(set_until(options, parsed))
+      list_flags(rest, updated)
     }
-    _, _ -> Error(Nil)
+    _ -> Error(Nil)
+  }
+}
+
+fn select_status(
+  options: ListOptions,
+  status: StatusFilter,
+) -> Result(ListOptions, Nil) {
+  case options {
+    ListOptions(status: None, ..) ->
+      Ok(ListOptions(..options, status: Some(status)))
+    _ -> Error(Nil)
+  }
+}
+
+fn select_due(
+  options: ListOptions,
+  filter: DueFilter,
+) -> Result(ListOptions, Nil) {
+  case options {
+    ListOptions(due: NoDueOptions, ..) ->
+      Ok(ListOptions(..options, due: DueMatch(filter)))
+    _ -> Error(Nil)
+  }
+}
+
+fn set_since(
+  options: ListOptions,
+  since: calendar.Date,
+) -> Result(ListOptions, Nil) {
+  case options {
+    ListOptions(due: NoDueOptions, ..) ->
+      Ok(ListOptions(..options, due: DueRange(Some(since), None)))
+    ListOptions(due: DueRange(since: None, until: until), ..) ->
+      Ok(ListOptions(..options, due: DueRange(Some(since), until)))
+    _ -> Error(Nil)
+  }
+}
+
+fn set_until(
+  options: ListOptions,
+  until: calendar.Date,
+) -> Result(ListOptions, Nil) {
+  case options {
+    ListOptions(due: NoDueOptions, ..) ->
+      Ok(ListOptions(..options, due: DueRange(None, Some(until))))
+    ListOptions(due: DueRange(since: since, until: None), ..) ->
+      Ok(ListOptions(..options, due: DueRange(since, Some(until))))
+    _ -> Error(Nil)
   }
 }
 
@@ -122,32 +177,17 @@ fn parse_due_filter(value: String) -> Result(DueFilter, Nil) {
 }
 
 fn list_filter(options: ListOptions) -> Result(ListFilter, Nil) {
-  let ListOptions(done, all, exact, since, until) = options
-  case done && all, exact, since, until {
-    True, _, _, _ -> Error(Nil)
-    False, Some(_), Some(_), _ | False, Some(_), _, Some(_) -> Error(Nil)
-    False, _, Some(start), Some(end) ->
+  let ListOptions(status, due_options) = options
+  let status = option.unwrap(status, or: PendingOnly)
+  case due_options {
+    NoDueOptions -> Ok(ListFilter(status, None))
+    DueMatch(filter) -> Ok(ListFilter(status, Some(filter)))
+    DueRange(Some(start), Some(end)) ->
       case calendar.naive_date_compare(start, end) {
         Gt -> Error(Nil)
-        _ -> Ok(ListFilter(status_filter(done, all), Some(Range(since, until))))
+        _ -> Ok(ListFilter(status, Some(Range(Some(start), Some(end)))))
       }
-    False, _, _, _ -> {
-      let status = status_filter(done, all)
-      let due_filter = case exact, since, until {
-        Some(filter), _, _ -> Some(filter)
-        None, None, None -> None
-        None, _, _ -> Some(Range(since, until))
-      }
-      Ok(ListFilter(status, due_filter))
-    }
-  }
-}
-
-fn status_filter(done: Bool, all: Bool) -> StatusFilter {
-  case done, all {
-    True, _ -> DoneOnly
-    _, True -> AllStatuses
-    _, _ -> PendingOnly
+    DueRange(since, until) -> Ok(ListFilter(status, Some(Range(since, until))))
   }
 }
 

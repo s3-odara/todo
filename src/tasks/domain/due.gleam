@@ -34,6 +34,13 @@ pub fn parse_date(value: String) -> Result(calendar.Date, Nil) {
   }
 }
 
+/// Return the calendar date carried by a validated due value.
+/// Due values are canonical app-owned data, so parsing failure is an invariant violation.
+pub fn date(value: Due) -> calendar.Date {
+  let assert Ok(date) = parse_date(string.slice(value.canonical, 0, 10))
+  date
+}
+
 fn result_to_due(
   result: Result(calendar.Date, Nil),
   canonical: String,
