@@ -1,6 +1,5 @@
 import gleam/int
 import gleam/list
-import gleam/order
 import gleam/result
 import gleam/string
 import gleam/time/calendar
@@ -69,15 +68,6 @@ pub fn format(value: Due, offset: Duration) -> String {
 pub fn instant(value: Due) -> Timestamp {
   let Due(value) = value
   value
-}
-
-pub fn local_date(value: Due, offset: Duration) -> calendar.Date {
-  let #(date, _) = timestamp.to_calendar(instant(value), offset)
-  date
-}
-
-pub fn is_before(value: Due, boundary: Timestamp) -> Bool {
-  timestamp.compare(instant(value), boundary) == order.Lt
 }
 
 pub fn from_unix_seconds(seconds: Int) -> Due {

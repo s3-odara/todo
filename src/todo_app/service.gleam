@@ -19,7 +19,11 @@ pub fn list(
 ) -> Result(List(Todo), ServiceError) {
   let Store(load, _) = store
   load()
-  |> result.map(fn(items) { tasks.visible_sorted(items, filter) })
+  |> result.map(fn(items) {
+    items
+    |> tasks.visible(filter)
+    |> tasks.sorted_by_id
+  })
   |> result.map_error(Persisted)
 }
 
