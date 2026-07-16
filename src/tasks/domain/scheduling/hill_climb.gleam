@@ -20,8 +20,9 @@ pub type HillResult {
   )
 }
 
-// Rebuilding one task or an ordered pair subsumes block-level add, move,
-// split, merge, and swap operations without five separate mutation paths.
+// Rebuilding one task, an ordered pair, or an ordered triple subsumes
+// block-level add, move, split, merge, and swap operations without separate
+// mutation paths.
 type Rebuild {
   Rebuild(tasks: List(task_model.Todo))
 }
@@ -137,7 +138,18 @@ fn rebuilds(tasks: List(task_model.Todo)) -> List(Rebuild) {
   let remaining = candidate_limit - list.length(singles)
   case remaining <= 0 {
     True -> singles
-    False -> list.append(singles, pair_rebuilds(ordered, remaining, []))
+    False -> {
+      let pairs = pair_rebuilds(ordered, remaining, [])
+      let triple_budget = remaining - list.length(pairs)
+      case triple_budget <= 0 {
+        True -> list.append(singles, pairs)
+        False ->
+          list.append(
+            singles,
+            list.append(pairs, triple_rebuilds(ordered, triple_budget, [])),
+          )
+      }
+    }
   }
 }
 
@@ -170,6 +182,70 @@ fn pairs_with(
         Rebuild([first, second]),
         ..acc
       ])
+  }
+}
+
+fn triple_rebuilds(
+  tasks: List(task_model.Todo),
+  remaining: Int,
+  acc: List(Rebuild),
+) -> List(Rebuild) {
+  case tasks, remaining <= 0 {
+    _, True -> list.reverse(acc)
+    [], _ | [_], _ | [_, _], _ -> list.reverse(acc)
+    [first, ..rest], False ->
+      triples_with_first(first, rest, rest, remaining, acc)
+  }
+}
+
+fn triples_with_first(
+  first: task_model.Todo,
+  candidates: List(task_model.Todo),
+  next_outer: List(task_model.Todo),
+  remaining: Int,
+  acc: List(Rebuild),
+) -> List(Rebuild) {
+  case candidates, remaining <= 0 {
+    _, True -> list.reverse(acc)
+    [], False | [_], False -> triple_rebuilds(next_outer, remaining, acc)
+    [second, ..rest], False ->
+      triples_with_pair(first, second, rest, rest, next_outer, remaining, acc)
+  }
+}
+
+fn triples_with_pair(
+  first: task_model.Todo,
+  second: task_model.Todo,
+  candidates: List(task_model.Todo),
+  next_second: List(task_model.Todo),
+  next_outer: List(task_model.Todo),
+  remaining: Int,
+  acc: List(Rebuild),
+) -> List(Rebuild) {
+  case candidates, remaining <= 0 {
+    _, True -> list.reverse(acc)
+    [], False ->
+      triples_with_first(first, next_second, next_outer, remaining, acc)
+    [third, ..rest], False -> {
+      let permutations = [
+        Rebuild([first, second, third]),
+        Rebuild([first, third, second]),
+        Rebuild([second, first, third]),
+        Rebuild([second, third, first]),
+        Rebuild([third, first, second]),
+        Rebuild([third, second, first]),
+      ]
+      let selected = list.take(permutations, remaining)
+      triples_with_pair(
+        first,
+        second,
+        rest,
+        next_second,
+        next_outer,
+        remaining - list.length(selected),
+        list.append(list.reverse(selected), acc),
+      )
+    }
   }
 }
 
