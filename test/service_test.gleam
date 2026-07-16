@@ -177,6 +177,58 @@ pub fn an_already_completed_task_is_not_saved_test() {
   |> should.equal(Error(service.Domain(AlreadyDone)))
 }
 
+pub fn availability_mutation_preserves_tasks_and_schedule_test() {
+  let schedule = saved_schedule()
+  let task = Todo(1, "x", 0, 3, None, Pending, Spread, 30)
+  let store =
+    Store(fn() { Ok(state_with_schedule([task], schedule)) }, fn(state) {
+      state.tasks |> should.equal([task])
+      state.current_schedule |> should.equal(Some(schedule))
+      state.availability
+      |> should.equal(
+        availability.Availability(
+          [
+            availability.WeeklyAvailability(availability.Mon, [
+              availability.Interval(540, 720),
+            ]),
+          ],
+          [],
+        ),
+      )
+      Ok(Nil)
+    })
+
+  service.mutate_availability(
+    store,
+    availability.AddWeekly([availability.Mon], availability.Interval(540, 720)),
+  )
+  |> should.equal(Ok(Nil))
+}
+
+pub fn availability_save_failure_is_reported_test() {
+  let store = Store(fn() { Ok(state_with([])) }, fn(_) { Error("disk") })
+  service.mutate_availability(
+    store,
+    availability.AddWeekly([availability.Mon], availability.Interval(540, 720)),
+  )
+  |> should.equal(Error(service.Persisted("disk")))
+}
+
+pub fn reset_without_an_override_is_a_noop_and_does_not_save_test() {
+  let store =
+    Store(fn() { Ok(state_with([])) }, fn(_) { panic as "save must not run" })
+  let assert Ok(date) = due.parse_date("2026-07-20")
+  service.mutate_availability(store, availability.ResetDate(date))
+  |> should.equal(Ok(Nil))
+}
+
+pub fn availability_list_does_not_save_test() {
+  let state = state_with([])
+  let store = Store(fn() { Ok(state) }, fn(_) { panic as "save must not run" })
+  service.availability_list(store)
+  |> should.equal(Ok(availability.empty()))
+}
+
 pub fn a_done_save_failure_is_reported_test() {
   let pending = Todo(1, "x", 0, 3, None, Pending, Spread, 30)
   let store =

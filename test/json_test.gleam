@@ -1,5 +1,6 @@
 import gleam/list
 import gleam/option.{None, Some}
+import gleam/time/calendar.{Date, July}
 import gleeunit/should
 import tasks/domain/app_state.{AppState}
 import tasks/domain/availability
@@ -38,6 +39,64 @@ pub fn tasks_are_encoded_in_canonical_id_order_test() {
   |> should.equal(
     "{\"version\":1,\"tasks\":[{\"id\":1,\"title\":\"first\",\"estimate_minutes\":0,\"priority\":3,\"due\":null,\"status\":\"done\",\"scheduling_policy\":\"asap\",\"minimum_split_minutes\":30},{\"id\":2,\"title\":\"second\",\"estimate_minutes\":0,\"priority\":3,\"due\":null,\"status\":\"done\",\"scheduling_policy\":\"asap\",\"minimum_split_minutes\":30}],\"availability\":{\"weekly\":[],\"overrides\":[]},\"current_schedule\":null}",
   )
+}
+
+pub fn availability_round_trip_is_canonical_and_preserves_closed_dates_test() {
+  let value =
+    availability.Availability(
+      [
+        availability.WeeklyAvailability(availability.Fri, [
+          availability.Interval(780, 840),
+        ]),
+        availability.WeeklyAvailability(availability.Mon, [
+          availability.Interval(540, 720),
+        ]),
+      ],
+      [availability.DateOverride(Date(2026, July, 21), [])],
+    )
+  let encoded = json.encode(AppState(1, [], value, None))
+  encoded
+  |> should.equal(
+    "{\"version\":1,\"tasks\":[],\"availability\":{\"weekly\":[{\"day\":\"mon\",\"intervals\":[{\"from\":540,\"to\":720}]},{\"day\":\"fri\",\"intervals\":[{\"from\":780,\"to\":840}]}],\"overrides\":[{\"date\":\"2026-07-21\",\"intervals\":[]}]},\"current_schedule\":null}",
+  )
+  json.decode(encoded)
+  |> should.equal(
+    Ok(AppState(
+      1,
+      [],
+      availability.Availability(
+        [
+          availability.WeeklyAvailability(availability.Mon, [
+            availability.Interval(540, 720),
+          ]),
+          availability.WeeklyAvailability(availability.Fri, [
+            availability.Interval(780, 840),
+          ]),
+        ],
+        [availability.DateOverride(Date(2026, July, 21), [])],
+      ),
+      None,
+    )),
+  )
+}
+
+pub fn duplicate_and_noncanonical_availability_is_rejected_test() {
+  let values = [
+    "{\"weekly\":[{\"day\":\"mon\",\"intervals\":[{\"from\":540,\"to\":600}]},{\"day\":\"mon\",\"intervals\":[{\"from\":660,\"to\":720}]}],\"overrides\":[]}",
+    "{\"weekly\":[{\"day\":\"mon\",\"intervals\":[{\"from\":540,\"to\":600},{\"from\":600,\"to\":660}]}],\"overrides\":[]}",
+    "{\"weekly\":[{\"day\":\"mon\",\"intervals\":[]}],\"overrides\":[]}",
+    "{\"weekly\":[{\"day\":\"fri\",\"intervals\":[{\"from\":540,\"to\":600}]},{\"day\":\"mon\",\"intervals\":[{\"from\":540,\"to\":600}]}],\"overrides\":[]}",
+    "{\"weekly\":[],\"overrides\":[{\"date\":\"2026-07-21\",\"intervals\":[]},{\"date\":\"2026-07-21\",\"intervals\":[]}]}",
+    "{\"weekly\":[],\"overrides\":[{\"date\":\"2026-07-22\",\"intervals\":[]},{\"date\":\"2026-07-21\",\"intervals\":[]}]}",
+  ]
+  values
+  |> list.each(fn(value) {
+    let text =
+      "{\"version\":1,\"tasks\":[],\"availability\":"
+      <> value
+      <> ",\"current_schedule\":null}"
+    let assert Error(_) = json.decode(text)
+  })
 }
 
 pub fn unknown_version_is_rejected_test() {

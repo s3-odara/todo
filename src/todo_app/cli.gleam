@@ -6,6 +6,7 @@ import gleam/result
 import gleam/string
 import gleam/time/calendar
 import gleam/time/duration.{type Duration}
+import tasks/domain/availability.{type Availability, type Mutation}
 import tasks/domain/due.{type Due}
 import tasks/domain/filter.{
   type DueFilter, type ListFilter, type StatusFilter, AllStatuses, DoneOnly,
@@ -22,6 +23,8 @@ pub type Command {
   Add(ValidatedAdd)
   List(ListFilter)
   RunDone(id: Int)
+  AvailabilityList
+  MutateAvailability(Mutation)
 }
 
 pub type Outcome {
@@ -35,6 +38,15 @@ type AddOptions {
     due: Option(String),
     scheduling_policy: Option(String),
     minimum_split: Option(String),
+  )
+}
+
+type AvailabilityOptions {
+  AvailabilityOptions(
+    days: Option(List(availability.Weekday)),
+    date: Option(calendar.Date),
+    from: Option(String),
+    to: Option(String),
   )
 }
 
@@ -54,7 +66,17 @@ pub fn parse(
 ) -> Result(Command, String) {
   case args {
     [] | ["--help"] -> Ok(Help)
-    ["add", "--help"] | ["list", "--help"] | ["done", "--help"] -> Ok(Help)
+    ["add", "--help"]
+    | ["list", "--help"]
+    | ["done", "--help"]
+    | ["availability", "--help"] -> Ok(Help)
+    ["availability", "list"] -> Ok(AvailabilityList)
+    ["availability", action, ..flags] ->
+      flags
+      |> availability_flags(AvailabilityOptions(None, None, None, None))
+      |> result.try(fn(options) { availability_command(action, options) })
+      |> result.map(MutateAvailability)
+      |> result.map_error(fn(_) { "invalid input" })
     ["list", ..flags] ->
       flags
       |> list_flags(ListOptions(None, NoDueOptions))
@@ -83,6 +105,57 @@ pub fn parse(
       })
       |> result.map(Add)
     _ -> Error("invalid command or arguments")
+  }
+}
+
+fn availability_flags(flags, options: AvailabilityOptions) {
+  case flags, options {
+    [], _ -> Ok(options)
+    ["--day", value, ..rest], AvailabilityOptions(days: None, ..) -> {
+      use days <- result.try(availability.parse_days(value))
+      availability_flags(rest, AvailabilityOptions(..options, days: Some(days)))
+    }
+    ["--date", value, ..rest], AvailabilityOptions(date: None, ..) -> {
+      use date <- result.try(availability.parse_date(value))
+      availability_flags(rest, AvailabilityOptions(..options, date: Some(date)))
+    }
+    ["--from", value, ..rest], AvailabilityOptions(from: None, ..) ->
+      availability_flags(
+        rest,
+        AvailabilityOptions(..options, from: Some(value)),
+      )
+    ["--to", value, ..rest], AvailabilityOptions(to: None, ..) ->
+      availability_flags(rest, AvailabilityOptions(..options, to: Some(value)))
+    _, _ -> Error(Nil)
+  }
+}
+
+fn availability_command(action, options) -> Result(Mutation, Nil) {
+  let AvailabilityOptions(days, date, from, to) = options
+  case action, days, date, from, to {
+    "add", Some(days), None, Some(from), Some(to) -> {
+      use interval <- result.try(availability.parse_interval(from, to))
+      Ok(availability.AddWeekly(days, interval))
+    }
+    "delete", Some(days), None, Some(from), Some(to) -> {
+      use interval <- result.try(availability.parse_interval(from, to))
+      Ok(availability.DeleteWeekly(days, interval))
+    }
+    "add", None, Some(date), Some(from), Some(to) -> {
+      use interval <- result.try(availability.parse_interval(from, to))
+      Ok(availability.AddDate(date, interval))
+    }
+    "delete", None, Some(date), Some(from), Some(to) -> {
+      use interval <- result.try(availability.parse_interval(from, to))
+      Ok(availability.DeleteDate(date, interval))
+    }
+    "set", None, Some(date), Some(from), Some(to) -> {
+      use interval <- result.try(availability.parse_interval(from, to))
+      Ok(availability.SetDate(date, interval))
+    }
+    "close", None, Some(date), None, None -> Ok(availability.CloseDate(date))
+    "reset", None, Some(date), None, None -> Ok(availability.ResetDate(date))
+    _, _, _, _, _ -> Error(Nil)
   }
 }
 
@@ -218,6 +291,10 @@ pub fn help() -> Outcome {
       "  due dates use local time; overdue is before now; ranges are inclusive",
       "  --due excludes undated tasks and cannot be combined with due ranges",
       "todo done ID",
+      "todo availability add|delete (--day DAY[,DAY...] | --date YYYY-MM-DD) --from HH:MM --to HH:MM",
+      "todo availability set --date YYYY-MM-DD --from HH:MM --to HH:MM",
+      "todo availability close|reset --date YYYY-MM-DD",
+      "todo availability list",
     ],
     [],
   )
@@ -252,6 +329,67 @@ pub fn completed(task: Todo) -> Outcome {
     ["Completed task " <> int.to_string(task.id) <> ": " <> task.title],
     [],
   )
+}
+
+pub fn availability_listed(value: Availability) -> Outcome {
+  let availability.Availability(weekly, overrides) = value
+  case weekly, overrides {
+    [], [] -> Outcome(0, ["No availability configured."], [])
+    _, _ -> {
+      let weekly_lines =
+        list.flat_map(weekly, fn(entry) {
+          list.map(entry.intervals, fn(interval) {
+            [
+              "weekly",
+              availability.weekday_string(entry.day),
+              minute_text(interval.from),
+              minute_text(interval.to),
+            ]
+            |> string.join("\t")
+          })
+        })
+      let override_lines =
+        list.flat_map(overrides, fn(entry) {
+          let date = date_text(entry.date)
+          case entry.intervals {
+            [] -> ["override\t" <> date <> "\tclosed"]
+            intervals ->
+              list.map(intervals, fn(interval) {
+                [
+                  "override",
+                  date,
+                  minute_text(interval.from),
+                  minute_text(interval.to),
+                ]
+                |> string.join("\t")
+              })
+          }
+        })
+      Outcome(0, list.append(weekly_lines, override_lines), [])
+    }
+  }
+}
+
+pub fn availability_updated() -> Outcome {
+  Outcome(0, ["Availability updated."], [])
+}
+
+fn minute_text(value: Int) -> String {
+  let hour = value / 60 |> int.to_string |> string.pad_start(2, "0")
+  let minute = value % 60 |> int.to_string |> string.pad_start(2, "0")
+  hour <> ":" <> minute
+}
+
+fn date_text(date: calendar.Date) -> String {
+  [
+    date.year |> int.to_string |> string.pad_start(4, "0"),
+    date.month
+      |> calendar.month_to_int
+      |> int.to_string
+      |> string.pad_start(2, "0"),
+    date.day |> int.to_string |> string.pad_start(2, "0"),
+  ]
+  |> string.join("-")
 }
 
 pub fn listed(

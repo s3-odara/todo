@@ -82,6 +82,10 @@ pub fn help_lists_the_available_commands_test() {
         "  due dates use local time; overdue is before now; ranges are inclusive",
         "  --due excludes undated tasks and cannot be combined with due ranges",
         "todo done ID",
+        "todo availability add|delete (--day DAY[,DAY...] | --date YYYY-MM-DD) --from HH:MM --to HH:MM",
+        "todo availability set --date YYYY-MM-DD --from HH:MM --to HH:MM",
+        "todo availability close|reset --date YYYY-MM-DD",
+        "todo availability list",
       ],
       [],
     ),
@@ -200,6 +204,69 @@ pub fn invalid_command_shapes_are_rejected_test() {
   |> list.each(fn(args) {
     parse(args) |> should.equal(Error("invalid command or arguments"))
   })
+}
+
+pub fn availability_commands_parse_to_typed_mutations_test() {
+  let date = Date(2026, July, 20)
+  parse(["availability", "list"])
+  |> should.equal(Ok(cli.AvailabilityList))
+  parse([
+    "availability", "add", "--day", "mon,fri", "--from", "09:00", "--to",
+    "12:00",
+  ])
+  |> should.equal(
+    Ok(
+      cli.MutateAvailability(availability.AddWeekly(
+        [availability.Mon, availability.Fri],
+        availability.Interval(540, 720),
+      )),
+    ),
+  )
+  parse(["availability", "close", "--date", "2026-07-20"])
+  |> should.equal(Ok(cli.MutateAvailability(availability.CloseDate(date))))
+}
+
+pub fn invalid_availability_shapes_are_rejected_test() {
+  [
+    [
+      "availability",
+      "add",
+      "--day",
+      "mon",
+      "--date",
+      "2026-07-20",
+      "--from",
+      "09:00",
+      "--to",
+      "10:00",
+    ],
+    [
+      "availability",
+      "add",
+      "--day",
+      "mon,mon",
+      "--from",
+      "09:00",
+      "--to",
+      "10:00",
+    ],
+    ["availability", "add", "--day", "wat", "--from", "09:00", "--to", "10:00"],
+    ["availability", "add", "--day", "mon", "--from", "24:00", "--to", "24:00"],
+    [
+      "availability",
+      "delete",
+      "--day",
+      "mon",
+      "--from",
+      "10:00",
+      "--to",
+      "09:00",
+    ],
+    ["availability", "set", "--day", "mon", "--from", "09:00", "--to", "10:00"],
+    ["availability", "close", "--date", "2026-07-20", "--from", "09:00"],
+    ["availability", "reset"],
+  ]
+  |> list.each(fn(args) { parse(args) |> should.equal(Error("invalid input")) })
 }
 
 pub fn done_parses_its_id_test() {
@@ -321,6 +388,31 @@ pub fn reversed_due_range_is_invalid_input_test() {
 pub fn list_input_errors_use_the_cli_grammar_error_contract_test() {
   run(["list", "--done", "--all"], store_with([]))
   |> should.equal(cli.Outcome(2, [], ["Error: invalid input"]))
+}
+
+pub fn availability_formatter_is_stable_and_marks_closed_overrides_test() {
+  let value =
+    availability.Availability(
+      [
+        availability.WeeklyAvailability(availability.Mon, [
+          availability.Interval(540, 720),
+        ]),
+      ],
+      [availability.DateOverride(Date(2026, July, 21), [])],
+    )
+  cli.availability_listed(value)
+  |> should.equal(
+    cli.Outcome(
+      0,
+      [
+        "weekly\tmon\t09:00\t12:00",
+        "override\t2026-07-21\tclosed",
+      ],
+      [],
+    ),
+  )
+  cli.availability_listed(availability.empty())
+  |> should.equal(cli.Outcome(0, ["No availability configured."], []))
 }
 
 pub fn an_empty_list_uses_the_status_specific_message_test() {

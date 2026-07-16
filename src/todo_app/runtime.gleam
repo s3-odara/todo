@@ -1,7 +1,10 @@
 import gleam/time/duration.{type Duration}
 import gleam/time/timestamp.{type Timestamp}
 import tasks/domain/filter.{ListFilter}
-import todo_app/cli.{type Command, type Outcome, Add, Help, List, RunDone}
+import todo_app/cli.{
+  type Command, type Outcome, Add, AvailabilityList, Help, List,
+  MutateAvailability, RunDone,
+}
 import todo_app/service
 import todo_app/store.{type Store}
 
@@ -22,6 +25,12 @@ pub fn run(
       |> service_outcome(fn(items) { cli.listed(items, status, offset) })
     }
     RunDone(id) -> service.done(store, id) |> service_outcome(cli.completed)
+    AvailabilityList ->
+      service.availability_list(store)
+      |> service_outcome(cli.availability_listed)
+    MutateAvailability(mutation) ->
+      service.mutate_availability(store, mutation)
+      |> service_outcome(fn(_) { cli.availability_updated() })
   }
 }
 

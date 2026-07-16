@@ -23,7 +23,7 @@ import tasks/domain/validation
 pub fn decode(text: String) -> Result(AppState, String) {
   json.parse(from: text, using: state_decoder())
   |> result.map_error(fn(_) { "invalid JSON" })
-  |> result.try(validate_unique_task_ids)
+  |> result.try(validate_state)
 }
 
 fn state_decoder() {
@@ -162,11 +162,58 @@ fn weekday_decoder() {
   })
 }
 
-fn validate_unique_task_ids(state: AppState) -> Result(AppState, String) {
-  let AppState(tasks: tasks, ..) = state
-  case unique_ids(tasks, []) {
+fn validate_state(state: AppState) -> Result(AppState, String) {
+  let AppState(tasks: tasks, availability: value, ..) = state
+  let Availability(weekly, overrides) = value
+  case
+    unique_ids(tasks, [])
+    && unique_weekdays(weekly, [])
+    && unique_dates(overrides, [])
+    && weekly
+    == list.sort(weekly, by: fn(a, b) {
+      int.compare(weekday_number(a.day), weekday_number(b.day))
+    })
+    && overrides
+    == list.sort(overrides, by: fn(a, b) {
+      calendar.naive_date_compare(a.date, b.date)
+    })
+    && list.all(weekly, fn(entry) {
+      entry.intervals != [] && availability.is_canonical(entry.intervals)
+    })
+    && list.all(overrides, fn(entry) {
+      availability.is_canonical(entry.intervals)
+    })
+  {
     True -> Ok(state)
     False -> Error("invalid JSON")
+  }
+}
+
+fn unique_weekdays(
+  entries: List(WeeklyAvailability),
+  seen: List(Weekday),
+) -> Bool {
+  case entries {
+    [] -> True
+    [entry, ..rest] ->
+      case list.contains(seen, entry.day) {
+        True -> False
+        False -> unique_weekdays(rest, [entry.day, ..seen])
+      }
+  }
+}
+
+fn unique_dates(
+  entries: List(DateOverride),
+  seen: List(calendar.Date),
+) -> Bool {
+  case entries {
+    [] -> True
+    [entry, ..rest] ->
+      case list.contains(seen, entry.date) {
+        True -> False
+        False -> unique_dates(rest, [entry.date, ..seen])
+      }
   }
 }
 

@@ -20,6 +20,7 @@ filepath = "~> 1.1"
 envoy = "~> 1.2"
 gleam_json = "~> 3.1"
 gleam_time = "~> 1.8"
+datebook = "~> 1.1"
 
 [dev_dependencies]
 gleeunit = ">= 1.0.0 and < 2.0.0"

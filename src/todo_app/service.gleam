@@ -1,5 +1,6 @@
 import gleam/result
 import tasks/domain/app_state.{AppState}
+import tasks/domain/availability.{type Availability, type Mutation}
 import tasks/domain/filter.{type ResolvedListFilter}
 import tasks/domain/model.{type TaskError, type Todo, type ValidatedAdd}
 import tasks/domain/tasks
@@ -30,6 +31,33 @@ pub fn list(
 
 pub fn done(store: Store, id: Int) -> Result(Todo, ServiceError) {
   persist_transition(store, fn(items) { tasks.complete(items, id) })
+}
+
+pub fn availability_list(store: Store) -> Result(Availability, ServiceError) {
+  let Store(load, _) = store
+  load()
+  |> result.map(fn(state) { state.availability })
+  |> result.map_error(Persisted)
+}
+
+pub fn mutate_availability(
+  store: Store,
+  mutation: Mutation,
+) -> Result(Nil, ServiceError) {
+  let Store(load, save) = store
+  case load() {
+    Error(error) -> Error(Persisted(error))
+    Ok(state) -> {
+      let #(updated, should_save) =
+        availability.apply(state.availability, mutation)
+      case should_save {
+        False -> Ok(Nil)
+        True ->
+          save(AppState(..state, availability: updated))
+          |> result.map_error(Persisted)
+      }
+    }
+  }
 }
 
 fn persist_transition(
