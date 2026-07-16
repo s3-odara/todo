@@ -11,7 +11,7 @@ import tasks/domain/scheduling/model.{type ScheduleBlock, type Score, Score}
 
 pub const epsilon = 0.000000000001
 
-pub const sample_count = 256
+const gauss_node = 0.7745966692414834
 
 pub type Comparison {
   Better
@@ -21,6 +21,10 @@ pub type Comparison {
 
 pub type Contribution {
   Contribution(task_id: Int, score: Score)
+}
+
+type WorkInterval {
+  WorkInterval(start: Int, end: Int)
 }
 
 pub fn evaluate(
@@ -47,7 +51,6 @@ pub fn evaluate_task(
   blocks: List(ScheduleBlock),
   planning_start: Int,
 ) -> Score {
-  // Filter once: policy sampling must not rescan unrelated blocks 256 times.
   let own = list.filter(blocks, fn(block) { block.task_id == task.id })
   let weight = priority_weight(task.priority)
   Score(
@@ -85,6 +88,11 @@ fn replacement(current: Contribution, replacements: List(Contribution)) {
   }
 }
 
+/// Integrates squared policy error over normalized calendar progress [0, 1].
+///
+/// Scheduler output takes the single-pass O(B) path. Arbitrary public input is
+/// made safe by clipping positive intervals to the planning window, sorting,
+/// and merging overlaps before the same piecewise integration is applied.
 pub fn policy_error(
   task: task_model.Todo,
   blocks: List(ScheduleBlock),
@@ -102,16 +110,38 @@ fn policy_error_for_blocks(
   case task.due, task.estimate_minutes > 0 {
     option.Some(deadline), True -> {
       let due_seconds = due.to_unix_seconds(deadline)
-      let span = int.to_float(due_seconds - planning_start)
-      case span >. 0.0 {
+      case due_seconds > planning_start {
         False -> 0.0
         True -> {
-          let sum = case sweep_safe(blocks, option.None) {
-            True ->
-              sample_sum_sweep(task, blocks, planning_start, span, 0, 0.0, 0.0)
-            False -> sample_sum(task, blocks, planning_start, span, 0, 0.0)
+          let span = int.to_float(due_seconds - planning_start)
+          let estimate = int.to_float(task.estimate_minutes * 60)
+          case
+            integrate_canonical(
+              task.scheduling_policy,
+              blocks,
+              planning_start,
+              due_seconds,
+              span,
+              estimate,
+              planning_start,
+              0.0,
+              0.0,
+            )
+          {
+            Ok(error) -> error
+            Error(_) ->
+              blocks
+              |> normalized_intervals(planning_start, due_seconds)
+              |> integrate_intervals(
+                task.scheduling_policy,
+                planning_start,
+                span,
+                estimate,
+                planning_start,
+                0.0,
+                0.0,
+              )
           }
-          sum /. int.to_float(sample_count)
         }
       }
     }
@@ -119,105 +149,215 @@ fn policy_error_for_blocks(
   }
 }
 
-fn sweep_safe(
+// Canonical scheduler blocks are positive, chronological, non-overlapping, and
+// within the window. Validation is fused with integration so each valid block
+// is visited exactly once.
+fn integrate_canonical(
+  policy,
   blocks: List(ScheduleBlock),
-  previous_end: option.Option(Int),
-) -> Bool {
+  planning_start: Int,
+  due_seconds: Int,
+  span: Float,
+  estimate: Float,
+  previous_end: Int,
+  completed: Float,
+  error: Float,
+) -> Result(Float, Nil) {
   case blocks {
-    [] -> True
+    [] ->
+      Ok(
+        error
+        +. integrate_segment(
+          policy,
+          normalized(previous_end, planning_start, span),
+          1.0,
+          completed /. estimate,
+          0.0,
+        ),
+      )
     [block, ..rest] -> {
       let start = invariant.seconds(block.start)
       let end = invariant.seconds(block.end)
-      start < end
-      && case previous_end {
-        option.None -> sweep_safe(rest, option.Some(end))
-        option.Some(previous) ->
-          start >= previous && sweep_safe(rest, option.Some(end))
+      case
+        start >= planning_start
+        && start < end
+        && start >= previous_end
+        && end <= due_seconds
+      {
+        False -> Error(Nil)
+        True -> {
+          let gap_start = normalized(previous_end, planning_start, span)
+          let block_start = normalized(start, planning_start, span)
+          let block_end = normalized(end, planning_start, span)
+          let progress = completed /. estimate
+          let next_error =
+            error
+            +. integrate_segment(policy, gap_start, block_start, progress, 0.0)
+            +. integrate_segment(
+              policy,
+              block_start,
+              block_end,
+              progress,
+              span /. estimate,
+            )
+          integrate_canonical(
+            policy,
+            rest,
+            planning_start,
+            due_seconds,
+            span,
+            estimate,
+            end,
+            completed +. int.to_float(end - start),
+            next_error,
+          )
+        }
       }
     }
   }
 }
 
-fn sample_sum_sweep(
-  task: task_model.Todo,
+fn normalized(seconds: Int, planning_start: Int, span: Float) -> Float {
+  int.to_float(seconds - planning_start) /. span
+}
+
+// Three-point Gauss-Legendre is exact here: actual is linear on a segment,
+// policy is quadratic, and their squared difference has degree at most four.
+fn integrate_segment(
+  policy,
+  left,
+  right,
+  progress_left,
+  progress_slope,
+) -> Float {
+  case right <=. left {
+    True -> 0.0
+    False -> {
+      let midpoint = { left +. right } /. 2.0
+      let half_width = { right -. left } /. 2.0
+      let left_node = midpoint -. half_width *. gauss_node
+      let right_node = midpoint +. half_width *. gauss_node
+      half_width
+      *. {
+        5.0
+        /. 9.0
+        *. squared_error(
+          policy,
+          left_node,
+          progress_left +. { left_node -. left } *. progress_slope,
+        )
+        +. 8.0
+        /. 9.0
+        *. squared_error(
+          policy,
+          midpoint,
+          progress_left +. { midpoint -. left } *. progress_slope,
+        )
+        +. 5.0
+        /. 9.0
+        *. squared_error(
+          policy,
+          right_node,
+          progress_left +. { right_node -. left } *. progress_slope,
+        )
+      }
+    }
+  }
+}
+
+fn squared_error(policy, x, actual) -> Float {
+  let difference = actual -. policy_value(policy, x)
+  difference *. difference
+}
+
+fn normalized_intervals(
   blocks: List(ScheduleBlock),
   planning_start: Int,
+  due_seconds: Int,
+) -> List(WorkInterval) {
+  blocks
+  |> list.filter_map(fn(block) {
+    let raw_start = invariant.seconds(block.start)
+    let raw_end = invariant.seconds(block.end)
+    let start = int.max(planning_start, raw_start)
+    let end = int.min(due_seconds, raw_end)
+    case raw_start < raw_end && start < end {
+      True -> Ok(WorkInterval(start, end))
+      False -> Error(Nil)
+    }
+  })
+  |> list.sort(by: fn(a, b) {
+    case int.compare(a.start, b.start) {
+      order.Eq -> int.compare(a.end, b.end)
+      other -> other
+    }
+  })
+  |> merge_intervals([])
+}
+
+fn merge_intervals(
+  intervals: List(WorkInterval),
+  merged: List(WorkInterval),
+) -> List(WorkInterval) {
+  case intervals, merged {
+    [], _ -> list.reverse(merged)
+    [next, ..rest], [] -> merge_intervals(rest, [next])
+    [next, ..rest], [current, ..previous] ->
+      case next.start <= current.end {
+        True ->
+          merge_intervals(rest, [
+            WorkInterval(current.start, int.max(current.end, next.end)),
+            ..previous
+          ])
+        False -> merge_intervals(rest, [next, current, ..previous])
+      }
+  }
+}
+
+fn integrate_intervals(
+  intervals: List(WorkInterval),
+  policy,
+  planning_start: Int,
   span: Float,
-  k: Int,
-  sum: Float,
-  completed_work: Float,
+  estimate: Float,
+  previous_end: Int,
+  completed: Float,
+  error: Float,
 ) -> Float {
-  case k >= sample_count {
-    True -> sum
-    False -> {
-      let x = { int.to_float(k) +. 0.5 } /. int.to_float(sample_count)
-      let sample = int.to_float(planning_start) +. x *. span
-      let #(remaining, completed) =
-        advance_completed(blocks, sample, completed_work)
-      let worked_seconds = case remaining {
-        [] -> completed
-        [block, ..] -> {
-          let start = int.to_float(invariant.seconds(block.start))
-          case sample <=. start {
-            True -> completed
-            False -> completed +. sample -. start
-          }
-        }
-      }
-      let actual =
-        worked_seconds /. { int.to_float(task.estimate_minutes) *. 60.0 }
-      let desired = policy_value(task.scheduling_policy, x)
-      let difference = actual -. desired
-      sample_sum_sweep(
-        task,
-        remaining,
-        planning_start,
-        span,
-        k + 1,
-        sum +. difference *. difference,
-        completed,
+  case intervals {
+    [] ->
+      error
+      +. integrate_segment(
+        policy,
+        normalized(previous_end, planning_start, span),
+        1.0,
+        completed /. estimate,
+        0.0,
       )
-    }
-  }
-}
-
-fn advance_completed(
-  blocks: List(ScheduleBlock),
-  sample: Float,
-  completed_work: Float,
-) -> #(List(ScheduleBlock), Float) {
-  case blocks {
-    [] -> #(blocks, completed_work)
-    [block, ..rest] -> {
-      let end = int.to_float(invariant.seconds(block.end))
-      case sample >=. end {
-        False -> #(blocks, completed_work)
-        True -> {
-          let start = int.to_float(invariant.seconds(block.start))
-          advance_completed(rest, sample, completed_work +. end -. start)
-        }
-      }
-    }
-  }
-}
-
-// Fallback retains the public API's behavior for arbitrary block lists.
-fn sample_sum(task, blocks, planning_start, span, k, sum) {
-  case k >= sample_count {
-    True -> sum
-    False -> {
-      let x = { int.to_float(k) +. 0.5 } /. int.to_float(sample_count)
-      let sample = int.to_float(planning_start) +. x *. span
-      let actual = progress(task, blocks, sample)
-      let desired = policy_value(task.scheduling_policy, x)
-      let difference = actual -. desired
-      sample_sum(
-        task,
-        blocks,
+    [interval, ..rest] -> {
+      let gap_start = normalized(previous_end, planning_start, span)
+      let block_start = normalized(interval.start, planning_start, span)
+      let block_end = normalized(interval.end, planning_start, span)
+      let progress = completed /. estimate
+      let next_error =
+        error
+        +. integrate_segment(policy, gap_start, block_start, progress, 0.0)
+        +. integrate_segment(
+          policy,
+          block_start,
+          block_end,
+          progress,
+          span /. estimate,
+        )
+      integrate_intervals(
+        rest,
+        policy,
         planning_start,
         span,
-        k + 1,
-        sum +. difference *. difference,
+        estimate,
+        interval.end,
+        completed +. int.to_float(interval.end - interval.start),
+        next_error,
       )
     }
   }
@@ -229,23 +369,6 @@ pub fn policy_value(policy, x) -> Float {
     Spread -> x
     NearDeadline -> x *. x
   }
-}
-
-fn progress(
-  task: task_model.Todo,
-  blocks: List(ScheduleBlock),
-  sample: Float,
-) -> Float {
-  let worked_seconds =
-    list.fold(blocks, 0.0, fn(total, block) {
-      let start = int.to_float(invariant.seconds(block.start))
-      let end = int.to_float(invariant.seconds(block.end))
-      case sample <=. start {
-        True -> total
-        False -> total +. float.min(sample, end) -. start
-      }
-    })
-  worked_seconds /. { int.to_float(task.estimate_minutes) *. 60.0 }
 }
 
 pub fn placed_minutes(task_id: Int, blocks: List(ScheduleBlock)) -> Int {

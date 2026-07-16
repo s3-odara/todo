@@ -51,7 +51,7 @@ A date override completely replaces its weekday's weekly availability. `set` rep
 
 Blocks remain inside effective availability, do not overlap, start no earlier than planning start, end no later than due, and never exceed estimates. Blocks normally meet the task's minimum split. A shorter single block is allowed only when the entire estimate is shorter than the minimum; a leftover shorter than the minimum is not scheduled by itself. Adjacent blocks for one task are merged.
 
-Priority weights are 1, 2, 4, 8, and 16. The scheduler first minimizes priority-weighted unscheduled minutes, then policy error at 256 fixed calendar-progress samples. With `x` as elapsed calendar fraction from planning start to due, desired completion is:
+Priority weights are 1, 2, 4, 8, and 16. The scheduler first minimizes priority-weighted unscheduled minutes, then the continuous policy error `integral((actual_progress(x) - desired_progress(x))^2, x=0..1)`. Actual progress is piecewise linear across scheduled blocks and gaps. The implementation integrates each segment exactly with three-point Gauss-Legendre quadrature. With `x` as elapsed calendar fraction from planning start to due, desired completion is:
 
 ```text
 asap:          1 - (1 - x)^2
@@ -106,7 +106,7 @@ scripts/compare_scheduling_quality.sh \
   benchmark/baselines/6af6520-full.psv candidate.psv
 ```
 
-The report's wins and losses are from the candidate's perspective. A full baseline may contain scenarios absent from a quick candidate, but every candidate scenario must have a baseline entry. Comparing holdout or stress results across revisions requires a corresponding result captured from the baseline revision.
+The report's wins and losses are from the candidate's perspective. A full baseline may contain scenarios absent from a quick candidate, but every candidate scenario must have a baseline entry. Policy-error values are comparable only between artifacts using the same objective; artifacts from the former 256-sample objective remain useful for primary-score comparisons only. Comparing holdout or stress results across revisions requires a corresponding result captured from the baseline revision.
 
 Summarize an oracle run without a baseline:
 

@@ -15,10 +15,6 @@ fn task(policy) {
   Todo(1, "task", 60, 3, Some(due.from_unix_seconds(3600)), Pending, policy, 30)
 }
 
-fn sampled_task() {
-  Todo(1, "task", 60, 3, Some(due.from_unix_seconds(512)), Pending, Spread, 1)
-}
-
 fn block(start: Int, end: Int) {
   scheduling_model.ScheduleBlock(
     1,
@@ -27,76 +23,143 @@ fn block(start: Int, end: Int) {
   )
 }
 
-fn reference_policy_error(
-  task: Todo,
-  blocks: List(scheduling_model.ScheduleBlock),
-) -> Float {
-  reference_sum(task, blocks, 0, 0.0) /. int.to_float(score.sample_count)
+fn other_task_block(start: Int, end: Int) {
+  scheduling_model.ScheduleBlock(
+    2,
+    timestamp.from_unix_seconds(start),
+    timestamp.from_unix_seconds(end),
+  )
 }
 
-fn reference_sum(
-  task: Todo,
-  blocks: List(scheduling_model.ScheduleBlock),
-  k: Int,
-  sum: Float,
-) -> Float {
-  case k >= score.sample_count {
-    True -> sum
-    False -> {
-      let x = { int.to_float(k) +. 0.5 } /. int.to_float(score.sample_count)
-      let sample = x *. 512.0
-      let worked =
-        list.fold(blocks, 0.0, fn(total, current) {
-          let start = int.to_float(invariant.seconds(current.start))
-          let end = int.to_float(invariant.seconds(current.end))
-          case sample <=. start {
-            True -> total
-            False -> total +. float.min(sample, end) -. start
-          }
-        })
-      let actual = worked /. { int.to_float(task.estimate_minutes) *. 60.0 }
-      let difference = actual -. score.policy_value(task.scheduling_policy, x)
-      reference_sum(task, blocks, k + 1, sum +. difference *. difference)
-    }
-  }
+fn close(actual: Float, expected: Float) {
+  let is_close = float.absolute_value(actual -. expected) <. 0.00000000001
+  is_close |> should.be_true
 }
 
-pub fn policy_curves_and_midpoint_sampling_test() {
+pub fn policy_curves_and_empty_progress_integrals_test() {
   score.policy_value(Asap, 0.5) |> should.equal(0.75)
   score.policy_value(Spread, 0.5) |> should.equal(0.5)
   score.policy_value(NearDeadline, 0.5) |> should.equal(0.25)
-  let error = score.policy_error(task(Spread), [], 0)
-  let close =
-    float.absolute_value(error -. 0.3333320617675781) <. 0.000000000001
-  close |> should.be_true
+
+  close(score.policy_error(task(Asap), [], 0), 8.0 /. 15.0)
+  close(score.policy_error(task(Spread), [], 0), 1.0 /. 3.0)
+  close(score.policy_error(task(NearDeadline), [], 0), 1.0 /. 5.0)
 }
 
-pub fn chronological_policy_sweep_matches_reference_at_boundaries_test() {
-  let current = sampled_task()
-  let cases = [
-    [],
-    // Midpoints are odd seconds: these hit start=1 and end=3 exactly.
-    [block(1, 3)],
-    [block(3, 9), block(11, 17), block(200, 400)],
-    [block(0, 512)],
-  ]
-  list.each(cases, fn(blocks) {
-    score.policy_error(current, blocks, 0)
-    |> should.equal(reference_policy_error(current, blocks))
-  })
+pub fn full_span_progress_integrals_test() {
+  let full = [block(0, 3600)]
+  close(score.policy_error(task(Asap), full, 0), 1.0 /. 30.0)
+  close(score.policy_error(task(Spread), full, 0), 0.0)
+  close(score.policy_error(task(NearDeadline), full, 0), 1.0 /. 30.0)
 }
 
-pub fn noncanonical_policy_blocks_retain_reference_behavior_test() {
-  let current = sampled_task()
-  let cases = [
-    [block(11, 17), block(3, 9)],
-    [block(3, 15), block(9, 17)],
-    [block(9, 9)],
+pub fn partial_block_and_gap_have_exact_piecewise_error_test() {
+  // Actual progress is x through x=1/2 and then remains 1/2.
+  close(score.policy_error(task(Spread), [block(0, 1800)], 0), 1.0 /. 24.0)
+
+  // Touching blocks are separate valid segments but describe full-span progress.
+  close(
+    score.policy_error(
+      task(Spread),
+      [block(0, 1200), block(1200, 2400), block(2400, 3600)],
+      0,
+    ),
+    0.0,
+  )
+}
+
+pub fn arbitrary_blocks_are_clipped_sorted_and_union_merged_test() {
+  let canonical_union = [block(0, 1800), block(2700, 3600)]
+  let arbitrary = [
+    other_task_block(0, 3600),
+    block(2700, 4000),
+    block(900, 1800),
+    block(-600, 1200),
+    block(600, 1500),
+    block(2500, 2500),
+    block(2000, 1900),
   ]
-  list.each(cases, fn(blocks) {
-    score.policy_error(current, blocks, 0)
-    |> should.equal(reference_policy_error(current, blocks))
-  })
+  let exact = score.policy_error(task(Asap), arbitrary, 0)
+  close(exact, score.policy_error(task(Asap), canonical_union, 0))
+  let reference =
+    dense_midpoint_reference(task(Asap), canonical_union, 0, 20_000)
+  let agrees_with_dense_reference =
+    float.absolute_value(exact -. reference) <. 0.00000001
+  agrees_with_dense_reference |> should.be_true
+}
+
+pub fn boundaries_and_invalid_windows_are_safe_test() {
+  // Wholly outside and zero/negative blocks contribute no progress.
+  close(
+    score.policy_error(
+      task(NearDeadline),
+      [block(-100, 0), block(3600, 4000), block(5, 5), block(10, 9)],
+      0,
+    ),
+    1.0 /. 5.0,
+  )
+  let no_span =
+    Todo(
+      1,
+      "no span",
+      60,
+      3,
+      Some(due.from_unix_seconds(0)),
+      Pending,
+      Spread,
+      30,
+    )
+  score.policy_error(no_span, [block(-100, 100)], 0) |> should.equal(0.0)
+  score.policy_error(task(Spread), [block(0, 3600)], 3600)
+  |> should.equal(0.0)
+}
+
+fn dense_midpoint_reference(
+  current: Todo,
+  union_blocks: List(scheduling_model.ScheduleBlock),
+  planning_start: Int,
+  count: Int,
+) -> Float {
+  let assert Some(deadline) = current.due
+  let span = int.to_float(due.to_unix_seconds(deadline) - planning_start)
+  dense_sum(current, union_blocks, planning_start, span, count, 0, 0.0)
+  /. int.to_float(count)
+}
+
+fn dense_sum(
+  current: Todo,
+  blocks: List(scheduling_model.ScheduleBlock),
+  planning_start: Int,
+  span: Float,
+  count: Int,
+  index: Int,
+  total: Float,
+) -> Float {
+  case index >= count {
+    True -> total
+    False -> {
+      let x = { int.to_float(index) +. 0.5 } /. int.to_float(count)
+      let sample = int.to_float(planning_start) +. x *. span
+      let worked =
+        list.fold(blocks, 0.0, fn(acc, current) {
+          let start = int.to_float(invariant.seconds(current.start))
+          let end = int.to_float(invariant.seconds(current.end))
+          acc +. float.max(0.0, float.min(sample, end) -. start)
+        })
+      let actual = worked /. { int.to_float(current.estimate_minutes) *. 60.0 }
+      let difference =
+        actual -. score.policy_value(current.scheduling_policy, x)
+      dense_sum(
+        current,
+        blocks,
+        planning_start,
+        span,
+        count,
+        index + 1,
+        total +. difference *. difference,
+      )
+    }
+  }
 }
 
 pub fn score_is_lexicographic_with_fixed_epsilon_test() {
@@ -113,17 +176,10 @@ pub fn score_is_lexicographic_with_fixed_epsilon_test() {
 }
 
 pub fn block_progress_and_priority_weight_test() {
-  let block =
-    scheduling_model.ScheduleBlock(
-      1,
-      timestamp.from_unix_seconds(0),
-      timestamp.from_unix_seconds(3600),
-    )
-  let value = score.evaluate([task(Spread)], [block], 0)
+  let value = score.evaluate([task(Spread)], [block(0, 3600)], 0)
   value.weighted_unscheduled_minutes |> should.equal(0)
   score.priority_weight(5) |> should.equal(16)
-  let close = value.weighted_policy_error <. 0.000000000001
-  close |> should.be_true
+  close(value.weighted_policy_error, 0.0)
 }
 
 pub fn task_contributions_preserve_total_and_ordered_replacement_test() {
@@ -139,13 +195,7 @@ pub fn task_contributions_preserve_total_and_ordered_replacement_test() {
       Asap,
       30,
     )
-  let blocks = [
-    scheduling_model.ScheduleBlock(
-      1,
-      timestamp.from_unix_seconds(0),
-      timestamp.from_unix_seconds(1800),
-    ),
-  ]
+  let blocks = [block(0, 1800)]
   let contributions = score.contributions([first, second], blocks, 0)
   score.total(contributions)
   |> should.equal(score.evaluate([first, second], blocks, 0))
