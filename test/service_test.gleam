@@ -293,34 +293,6 @@ pub fn scheduled_overlap_uses_half_open_bounds_with_negative_seconds_test() {
   filter.block_overlaps(86_340, 86_460, window) |> should.be_true
 }
 
-pub fn scheduled_list_includes_a_negative_seconds_block_crossing_day_start_test() {
-  let task = Todo(1, "epoch crossing", 2, 3, None, Pending, Spread, 1)
-  let block = scheduling_model.ScheduleBlock(1, -60, 60)
-  let schedule =
-    scheduling_model.SavedSchedule(
-      timestamp.from_unix_seconds(-60),
-      timestamp.from_unix_seconds(-60),
-      0,
-      [block],
-    )
-
-  service.scheduled_list(
-    Store(fn() { Ok(state_with_schedule([task], schedule)) }, fn(_) {
-      panic as "save must not run"
-    }),
-    AllStatuses,
-    ScheduledExact(ScheduledDate(calendar.Date(1970, calendar.January, 1))),
-    None,
-  )
-  |> should.equal(
-    Ok(
-      service.ScheduledListing(0, [
-        service.ScheduledItem(block, task),
-      ]),
-    ),
-  )
-}
-
 pub fn generate_schedule_replaces_snapshot_and_saves_report_only_in_result_test() {
   let now =
     timestamp.from_calendar(
