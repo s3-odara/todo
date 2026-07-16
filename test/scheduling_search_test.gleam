@@ -16,6 +16,15 @@ import tasks/domain/scheduling/scheduler
 import tasks/domain/scheduling/score
 import tasks/domain/scheduling/timeline.{AbsoluteInterval}
 
+pub fn hill_climb_worker_count_tracks_runtime_schedulers_test() {
+  let schedulers = hill_climb.online_scheduler_count()
+  let at_least_one = schedulers >= 1
+  at_least_one |> should.be_true
+  hill_climb.worker_count(0) |> should.equal(0)
+  hill_climb.worker_count(1) |> should.equal(1)
+  hill_climb.worker_count(schedulers + 5) |> should.equal(schedulers)
+}
+
 fn state(tasks, availability) {
   AppState(tasks, availability, None)
 }

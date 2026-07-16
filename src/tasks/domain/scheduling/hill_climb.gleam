@@ -1,3 +1,4 @@
+import gleam/erlang/process
 import gleam/int
 import gleam/list
 import gleam/option
@@ -27,11 +28,30 @@ type Rebuild {
   Rebuild(tasks: List(task_model.Todo))
 }
 
+type IndexedRebuild {
+  IndexedRebuild(index: Int, rebuild: Rebuild)
+}
+
 type Candidate {
   Candidate(
+    index: Int,
     blocks: List(scheduling_model.ScheduleBlock),
     score: scheduling_model.Score,
   )
+}
+
+@external(erlang, "tasks_runtime_ffi", "schedulers_online")
+fn runtime_schedulers_online() -> Int
+
+pub fn online_scheduler_count() -> Int {
+  int.max(runtime_schedulers_online(), 1)
+}
+
+pub fn worker_count(useful_work: Int) -> Int {
+  case useful_work <= 0 {
+    True -> 0
+    False -> int.min(online_scheduler_count(), useful_work)
+  }
 }
 
 pub fn improve(initial, tasks, projected, planning_start, offset) {
@@ -48,7 +68,8 @@ pub fn climb(
   climb_loop(
     initial,
     tasks,
-    rebuilds(tasks),
+    rebuilds(tasks)
+      |> list.index_map(fn(rebuild, index) { IndexedRebuild(index, rebuild) }),
     projected,
     planning_start,
     offset,
@@ -74,28 +95,18 @@ fn climb_loop(
         score.contributions(tasks, blocks, planning_start)
       let current_score = score.total(current_contributions)
       let candidate =
-        rebuild_candidates
-        |> list.fold(option.None, fn(best, rebuild) {
-          let Rebuild(selected) = rebuild
-          let greedy.RebuildResult(next, replacements) =
-            greedy.rebuild(blocks, selected, projected, planning_start, offset)
-          case next == blocks {
-            True -> best
-            False -> {
-              // A rebuild changes only its selected tasks; reuse every other score.
-              let next_score =
-                score.replace_contributions(current_contributions, replacements)
-                |> score.total
-              case score.strictly_better(next_score, than: current_score) {
-                False -> best
-                True -> choose_better(best, Candidate(next, next_score))
-              }
-            }
-          }
-        })
+        evaluate_candidates(
+          rebuild_candidates,
+          blocks,
+          current_contributions,
+          current_score,
+          projected,
+          planning_start,
+          offset,
+        )
       case candidate {
         option.None -> HillResult(blocks, accepted, list.reverse(scores))
-        option.Some(Candidate(next, next_score)) ->
+        option.Some(Candidate(_, next, next_score)) ->
           // Greedy construction should already be valid; validate accepted states
           // so a placement bug cannot propagate through the search.
           case
@@ -125,6 +136,109 @@ fn climb_loop(
   }
 }
 
+fn evaluate_candidates(
+  rebuild_candidates,
+  blocks,
+  current_contributions,
+  current_score,
+  projected,
+  planning_start,
+  offset,
+) {
+  let count = list.length(rebuild_candidates)
+  let workers = worker_count(count)
+  case workers <= 1 {
+    True ->
+      evaluate_chunk(
+        rebuild_candidates,
+        blocks,
+        current_contributions,
+        current_score,
+        projected,
+        planning_start,
+        offset,
+      )
+    False -> {
+      let chunk_size = { count + workers - 1 } / workers
+      let chunks = chunks(rebuild_candidates, chunk_size, [])
+      let results = process.new_subject()
+      chunks
+      |> list.each(fn(chunk) {
+        process.spawn(fn() {
+          process.send(
+            results,
+            evaluate_chunk(
+              chunk,
+              blocks,
+              current_contributions,
+              current_score,
+              projected,
+              planning_start,
+              offset,
+            ),
+          )
+        })
+        Nil
+      })
+      collect_results(results, list.length(chunks), option.None)
+    }
+  }
+}
+
+fn evaluate_chunk(
+  rebuild_candidates,
+  blocks,
+  current_contributions,
+  current_score,
+  projected,
+  planning_start,
+  offset,
+) {
+  rebuild_candidates
+  |> list.fold(option.None, fn(best, indexed) {
+    let IndexedRebuild(index, Rebuild(selected)) = indexed
+    let greedy.RebuildResult(next, replacements) =
+      greedy.rebuild(blocks, selected, projected, planning_start, offset)
+    case next == blocks {
+      True -> best
+      False -> {
+        // A rebuild changes only its selected tasks; reuse every other score.
+        let next_score =
+          score.replace_contributions(current_contributions, replacements)
+          |> score.total
+        case score.strictly_better(next_score, than: current_score) {
+          False -> best
+          True -> choose_better(best, Candidate(index, next, next_score))
+        }
+      }
+    }
+  })
+}
+
+fn chunks(items: List(a), size: Int, acc: List(List(a))) -> List(List(a)) {
+  case items {
+    [] -> list.reverse(acc)
+    _ -> {
+      let #(chunk, rest) = list.split(items, at: size)
+      chunks(rest, size, [chunk, ..acc])
+    }
+  }
+}
+
+fn collect_results(results, remaining, best) {
+  case remaining {
+    0 -> best
+    _ -> {
+      let candidate = process.receive_forever(results)
+      let merged = case candidate {
+        option.None -> best
+        option.Some(candidate) -> choose_better(best, candidate)
+      }
+      collect_results(results, remaining - 1, merged)
+    }
+  }
+}
+
 fn choose_better(
   current: option.Option(Candidate),
   candidate: Candidate,
@@ -134,7 +248,8 @@ fn choose_better(
     option.Some(existing) ->
       case score.compare(candidate.score, existing.score) {
         score.Better -> option.Some(candidate)
-        // Stable enumeration is the deterministic tie-break.
+        score.Equal if candidate.index < existing.index ->
+          option.Some(candidate)
         score.Equal | score.Worse -> current
       }
   }
