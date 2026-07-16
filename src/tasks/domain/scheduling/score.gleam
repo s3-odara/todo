@@ -23,10 +23,6 @@ pub type Contribution {
   Contribution(task_id: Int, score: Score)
 }
 
-type WorkInterval {
-  WorkInterval(start: Int, end: Int)
-}
-
 pub fn evaluate(
   tasks: List(task_model.Todo),
   blocks: List(ScheduleBlock),
@@ -90,9 +86,8 @@ fn replacement(current: Contribution, replacements: List(Contribution)) {
 
 /// Integrates squared policy error over normalized calendar progress [0, 1].
 ///
-/// Scheduler output takes the single-pass O(B) path. Arbitrary public input is
-/// made safe by clipping positive intervals to the planning window, sorting,
-/// and merging overlaps before the same piecewise integration is applied.
+/// Blocks must be canonical, non-overlapping, and within the planning window.
+/// Scheduling boundaries enforce this once; score evaluation stays O(B).
 pub fn policy_error(
   task: task_model.Todo,
   blocks: List(ScheduleBlock),
@@ -115,33 +110,16 @@ fn policy_error_for_blocks(
         True -> {
           let span = int.to_float(due_seconds - planning_start)
           let estimate = int.to_float(task.estimate_minutes * 60)
-          case
-            integrate_canonical(
-              task.scheduling_policy,
-              blocks,
-              planning_start,
-              due_seconds,
-              span,
-              estimate,
-              planning_start,
-              0.0,
-              0.0,
-            )
-          {
-            Ok(error) -> error
-            Error(_) ->
-              blocks
-              |> normalized_intervals(planning_start, due_seconds)
-              |> integrate_intervals(
-                task.scheduling_policy,
-                planning_start,
-                span,
-                estimate,
-                planning_start,
-                0.0,
-                0.0,
-              )
-          }
+          integrate_blocks(
+            task.scheduling_policy,
+            blocks,
+            planning_start,
+            span,
+            estimate,
+            planning_start,
+            0.0,
+            0.0,
+          )
         }
       }
     }
@@ -149,70 +127,55 @@ fn policy_error_for_blocks(
   }
 }
 
-// Canonical scheduler blocks are positive, chronological, non-overlapping, and
-// within the window. Validation is fused with integration so each valid block
-// is visited exactly once.
-fn integrate_canonical(
+// Revalidating canonical blocks in this hot path duplicates the invariant
+// boundary and would run for every search candidate.
+fn integrate_blocks(
   policy,
   blocks: List(ScheduleBlock),
   planning_start: Int,
-  due_seconds: Int,
   span: Float,
   estimate: Float,
   previous_end: Int,
   completed: Float,
   error: Float,
-) -> Result(Float, Nil) {
+) -> Float {
   case blocks {
     [] ->
-      Ok(
-        error
-        +. integrate_segment(
-          policy,
-          normalized(previous_end, planning_start, span),
-          1.0,
-          completed /. estimate,
-          0.0,
-        ),
+      error
+      +. integrate_segment(
+        policy,
+        normalized(previous_end, planning_start, span),
+        1.0,
+        completed /. estimate,
+        0.0,
       )
     [block, ..rest] -> {
       let start = invariant.seconds(block.start)
       let end = invariant.seconds(block.end)
-      case
-        start >= planning_start
-        && start < end
-        && start >= previous_end
-        && end <= due_seconds
-      {
-        False -> Error(Nil)
-        True -> {
-          let gap_start = normalized(previous_end, planning_start, span)
-          let block_start = normalized(start, planning_start, span)
-          let block_end = normalized(end, planning_start, span)
-          let progress = completed /. estimate
-          let next_error =
-            error
-            +. integrate_segment(policy, gap_start, block_start, progress, 0.0)
-            +. integrate_segment(
-              policy,
-              block_start,
-              block_end,
-              progress,
-              span /. estimate,
-            )
-          integrate_canonical(
-            policy,
-            rest,
-            planning_start,
-            due_seconds,
-            span,
-            estimate,
-            end,
-            completed +. int.to_float(end - start),
-            next_error,
-          )
-        }
-      }
+      let gap_start = normalized(previous_end, planning_start, span)
+      let block_start = normalized(start, planning_start, span)
+      let block_end = normalized(end, planning_start, span)
+      let progress = completed /. estimate
+      let next_error =
+        error
+        +. integrate_segment(policy, gap_start, block_start, progress, 0.0)
+        +. integrate_segment(
+          policy,
+          block_start,
+          block_end,
+          progress,
+          span /. estimate,
+        )
+      integrate_blocks(
+        policy,
+        rest,
+        planning_start,
+        span,
+        estimate,
+        end,
+        completed +. int.to_float(end - start),
+        next_error,
+      )
     }
   }
 }
@@ -268,99 +231,6 @@ fn integrate_segment(
 fn squared_error(policy, x, actual) -> Float {
   let difference = actual -. policy_value(policy, x)
   difference *. difference
-}
-
-fn normalized_intervals(
-  blocks: List(ScheduleBlock),
-  planning_start: Int,
-  due_seconds: Int,
-) -> List(WorkInterval) {
-  blocks
-  |> list.filter_map(fn(block) {
-    let raw_start = invariant.seconds(block.start)
-    let raw_end = invariant.seconds(block.end)
-    let start = int.max(planning_start, raw_start)
-    let end = int.min(due_seconds, raw_end)
-    case raw_start < raw_end && start < end {
-      True -> Ok(WorkInterval(start, end))
-      False -> Error(Nil)
-    }
-  })
-  |> list.sort(by: fn(a, b) {
-    case int.compare(a.start, b.start) {
-      order.Eq -> int.compare(a.end, b.end)
-      other -> other
-    }
-  })
-  |> merge_intervals([])
-}
-
-fn merge_intervals(
-  intervals: List(WorkInterval),
-  merged: List(WorkInterval),
-) -> List(WorkInterval) {
-  case intervals, merged {
-    [], _ -> list.reverse(merged)
-    [next, ..rest], [] -> merge_intervals(rest, [next])
-    [next, ..rest], [current, ..previous] ->
-      case next.start <= current.end {
-        True ->
-          merge_intervals(rest, [
-            WorkInterval(current.start, int.max(current.end, next.end)),
-            ..previous
-          ])
-        False -> merge_intervals(rest, [next, current, ..previous])
-      }
-  }
-}
-
-fn integrate_intervals(
-  intervals: List(WorkInterval),
-  policy,
-  planning_start: Int,
-  span: Float,
-  estimate: Float,
-  previous_end: Int,
-  completed: Float,
-  error: Float,
-) -> Float {
-  case intervals {
-    [] ->
-      error
-      +. integrate_segment(
-        policy,
-        normalized(previous_end, planning_start, span),
-        1.0,
-        completed /. estimate,
-        0.0,
-      )
-    [interval, ..rest] -> {
-      let gap_start = normalized(previous_end, planning_start, span)
-      let block_start = normalized(interval.start, planning_start, span)
-      let block_end = normalized(interval.end, planning_start, span)
-      let progress = completed /. estimate
-      let next_error =
-        error
-        +. integrate_segment(policy, gap_start, block_start, progress, 0.0)
-        +. integrate_segment(
-          policy,
-          block_start,
-          block_end,
-          progress,
-          span /. estimate,
-        )
-      integrate_intervals(
-        rest,
-        policy,
-        planning_start,
-        span,
-        estimate,
-        interval.end,
-        completed +. int.to_float(interval.end - interval.start),
-        next_error,
-      )
-    }
-  }
 }
 
 pub fn policy_value(policy, x) -> Float {

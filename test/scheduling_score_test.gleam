@@ -1,13 +1,10 @@
 import gleam/float
-import gleam/int
-import gleam/list
 import gleam/option.{Some}
 import gleam/time/timestamp
 import gleeunit/should
 import tasks/domain/due
-import tasks/domain/model.{type Todo, Pending, Todo}
+import tasks/domain/model.{Pending, Todo}
 import tasks/domain/policy.{Asap, NearDeadline, Spread}
-import tasks/domain/scheduling/invariant
 import tasks/domain/scheduling/model as scheduling_model
 import tasks/domain/scheduling/score
 
@@ -18,14 +15,6 @@ fn task(policy) {
 fn block(start: Int, end: Int) {
   scheduling_model.ScheduleBlock(
     1,
-    timestamp.from_unix_seconds(start),
-    timestamp.from_unix_seconds(end),
-  )
-}
-
-fn other_task_block(start: Int, end: Int) {
-  scheduling_model.ScheduleBlock(
-    2,
     timestamp.from_unix_seconds(start),
     timestamp.from_unix_seconds(end),
   )
@@ -68,36 +57,7 @@ pub fn partial_block_and_gap_have_exact_piecewise_error_test() {
   )
 }
 
-pub fn arbitrary_blocks_are_clipped_sorted_and_union_merged_test() {
-  let canonical_union = [block(0, 1800), block(2700, 3600)]
-  let arbitrary = [
-    other_task_block(0, 3600),
-    block(2700, 4000),
-    block(900, 1800),
-    block(-600, 1200),
-    block(600, 1500),
-    block(2500, 2500),
-    block(2000, 1900),
-  ]
-  let exact = score.policy_error(task(Asap), arbitrary, 0)
-  close(exact, score.policy_error(task(Asap), canonical_union, 0))
-  let reference =
-    dense_midpoint_reference(task(Asap), canonical_union, 0, 20_000)
-  let agrees_with_dense_reference =
-    float.absolute_value(exact -. reference) <. 0.00000001
-  agrees_with_dense_reference |> should.be_true
-}
-
-pub fn boundaries_and_invalid_windows_are_safe_test() {
-  // Wholly outside and zero/negative blocks contribute no progress.
-  close(
-    score.policy_error(
-      task(NearDeadline),
-      [block(-100, 0), block(3600, 4000), block(5, 5), block(10, 9)],
-      0,
-    ),
-    1.0 /. 5.0,
-  )
+pub fn invalid_planning_windows_return_zero_test() {
   let no_span =
     Todo(
       1,
@@ -109,57 +69,9 @@ pub fn boundaries_and_invalid_windows_are_safe_test() {
       Spread,
       30,
     )
-  score.policy_error(no_span, [block(-100, 100)], 0) |> should.equal(0.0)
+  score.policy_error(no_span, [], 0) |> should.equal(0.0)
   score.policy_error(task(Spread), [block(0, 3600)], 3600)
   |> should.equal(0.0)
-}
-
-fn dense_midpoint_reference(
-  current: Todo,
-  union_blocks: List(scheduling_model.ScheduleBlock),
-  planning_start: Int,
-  count: Int,
-) -> Float {
-  let assert Some(deadline) = current.due
-  let span = int.to_float(due.to_unix_seconds(deadline) - planning_start)
-  dense_sum(current, union_blocks, planning_start, span, count, 0, 0.0)
-  /. int.to_float(count)
-}
-
-fn dense_sum(
-  current: Todo,
-  blocks: List(scheduling_model.ScheduleBlock),
-  planning_start: Int,
-  span: Float,
-  count: Int,
-  index: Int,
-  total: Float,
-) -> Float {
-  case index >= count {
-    True -> total
-    False -> {
-      let x = { int.to_float(index) +. 0.5 } /. int.to_float(count)
-      let sample = int.to_float(planning_start) +. x *. span
-      let worked =
-        list.fold(blocks, 0.0, fn(acc, current) {
-          let start = int.to_float(invariant.seconds(current.start))
-          let end = int.to_float(invariant.seconds(current.end))
-          acc +. float.max(0.0, float.min(sample, end) -. start)
-        })
-      let actual = worked /. { int.to_float(current.estimate_minutes) *. 60.0 }
-      let difference =
-        actual -. score.policy_value(current.scheduling_policy, x)
-      dense_sum(
-        current,
-        blocks,
-        planning_start,
-        span,
-        count,
-        index + 1,
-        total +. difference *. difference,
-      )
-    }
-  }
 }
 
 pub fn score_is_lexicographic_with_fixed_epsilon_test() {
