@@ -20,6 +20,10 @@ pub type TimelineError {
   InvalidCalendarRange
 }
 
+type ProjectionState {
+  ProjectionState(reversed: List(AbsoluteInterval), additions: Int)
+}
+
 /// Project effective local availability lazily by date, clipping at both ends.
 pub fn project(
   value: availability.Availability,
@@ -45,62 +49,55 @@ pub fn project(
         planning_start,
         horizon,
         utc_offset_seconds,
-        [],
-        0,
+        ProjectionState([], 0),
       )
     }
   }
 }
 
-fn project_dates(value, date, last_date, lower, upper, offset, acc, count) {
-  case calendar.naive_date_compare(date, last_date) {
-    order.Gt -> Ok(acc |> list.reverse |> merge_projected([]) |> list.reverse)
-    _ -> {
-      let intervals = availability.effective(value, date)
-      let additions =
-        intervals
-        |> list.filter_map(fn(interval) {
-          let start = local_minute_seconds(date, interval.from, offset)
-          let end = local_minute_seconds(date, interval.to, offset)
-          let clipped_start = int.max(start, lower)
-          let clipped_end = int.min(end, upper)
-          case clipped_start < clipped_end {
-            True -> Ok(AbsoluteInterval(clipped_start, clipped_end))
-            False -> Error(Nil)
-          }
-        })
-      let next_count = count + list.length(additions)
-      case next_count > projected_interval_limit {
-        True -> Error(SearchSpaceTooLarge)
-        False ->
-          case calendar.naive_date_compare(date, last_date) {
-            order.Eq ->
-              Ok(
-                list.append(list.reverse(additions), acc)
-                |> list.reverse
-                |> merge_projected([])
-                |> list.reverse,
-              )
-            _ -> {
-              use next <- result.try(
-                local_time.next_date(date)
-                |> result.map_error(fn(_) { InvalidCalendarRange }),
-              )
-              project_dates(
-                value,
-                next,
-                last_date,
-                lower,
-                upper,
-                offset,
-                list.append(list.reverse(additions), acc),
-                next_count,
-              )
-            }
-          }
+fn project_dates(value, date, last_date, lower, upper, offset, state) {
+  let additions = project_date(value, date, lower, upper, offset)
+  let ProjectionState(reversed, count) = state
+  let next =
+    ProjectionState(
+      list.append(list.reverse(additions), reversed),
+      count + list.length(additions),
+    )
+  case next.additions > projected_interval_limit {
+    True -> Error(SearchSpaceTooLarge)
+    False ->
+      case calendar.naive_date_compare(date, last_date) {
+        order.Eq -> Ok(finish_projection(next))
+        _ -> {
+          use following <- result.try(
+            local_time.next_date(date)
+            |> result.map_error(fn(_) { InvalidCalendarRange }),
+          )
+          project_dates(value, following, last_date, lower, upper, offset, next)
+        }
       }
-    }
   }
+}
+
+fn project_date(value, date, lower, upper, offset) {
+  availability.effective(value, date)
+  |> list.filter_map(fn(interval) {
+    let start = local_minute_seconds(date, interval.from, offset)
+    let end = local_minute_seconds(date, interval.to, offset)
+    let clipped_start = int.max(start, lower)
+    let clipped_end = int.min(end, upper)
+    case clipped_start < clipped_end {
+      True -> Ok(AbsoluteInterval(clipped_start, clipped_end))
+      False -> Error(Nil)
+    }
+  })
+}
+
+fn finish_projection(state: ProjectionState) -> List(AbsoluteInterval) {
+  state.reversed
+  |> list.reverse
+  |> merge_projected([])
+  |> list.reverse
 }
 
 /// Local midnight plus a local minute, converted through the fixed offset.
@@ -119,58 +116,60 @@ pub fn local_minute_seconds(
   seconds + minute * 60
 }
 
-/// Free portions of projected availability after subtracting canonical blocks.
+/// Return free half-open intervals in O(P+B).
+///
+/// Projected intervals must be ordered, merged, and disjoint. Blocks must be
+/// canonical, non-overlapping, and each fully contained in one projected interval.
 pub fn free_intervals(
   projected: List(AbsoluteInterval),
   blocks: List(ScheduleBlock),
 ) -> List(AbsoluteInterval) {
-  projected
-  |> list.flat_map(fn(interval) { subtract_blocks(interval, blocks) })
+  free(projected, blocks, []) |> list.reverse
 }
 
-fn subtract_blocks(
-  interval: AbsoluteInterval,
+fn free(
+  projected: List(AbsoluteInterval),
   blocks: List(ScheduleBlock),
+  reversed: List(AbsoluteInterval),
 ) -> List(AbsoluteInterval) {
-  let relevant =
-    blocks
-    |> list.filter_map(fn(block) {
-      let start = seconds(block.start)
-      let end = seconds(block.end)
-      case end > interval.start && start < interval.end {
-        True -> Ok(AbsoluteInterval(start, end))
-        False -> Error(Nil)
-      }
-    })
-    |> list.sort(by: interval_compare)
-  carve(relevant, interval.start, interval.end, []) |> list.reverse
+  case projected {
+    [] -> reversed
+    [interval, ..rest] -> {
+      let #(remaining, next) = carve(interval, blocks, interval.start, reversed)
+      free(rest, remaining, next)
+    }
+  }
 }
 
 fn carve(
-  blocks: List(AbsoluteInterval),
+  interval: AbsoluteInterval,
+  blocks: List(ScheduleBlock),
   cursor: Int,
-  end: Int,
-  acc: List(AbsoluteInterval),
-) -> List(AbsoluteInterval) {
+  reversed: List(AbsoluteInterval),
+) -> #(List(ScheduleBlock), List(AbsoluteInterval)) {
   case blocks {
-    [] ->
-      case cursor < end {
-        True -> [AbsoluteInterval(cursor, end), ..acc]
-        False -> acc
-      }
+    [] -> #(blocks, add_gap(cursor, interval.end, reversed))
     [block, ..rest] -> {
-      let clipped_start = int.max(cursor, block.start)
-      let next_cursor = int.max(cursor, block.end)
-      case clipped_start > cursor {
-        True ->
-          carve(rest, next_cursor, end, [
-            AbsoluteInterval(cursor, clipped_start),
-            ..acc
-          ])
-        False -> carve(rest, next_cursor, end, acc)
+      let start = seconds(block.start)
+      let end = seconds(block.end)
+      case start >= interval.end {
+        True -> #(blocks, add_gap(cursor, interval.end, reversed))
+        False -> carve(interval, rest, end, add_gap(cursor, start, reversed))
       }
     }
   }
+}
+
+fn add_gap(start, end, reversed) {
+  case start < end {
+    True -> [AbsoluteInterval(start, end), ..reversed]
+    False -> reversed
+  }
+}
+
+fn seconds(value) -> Int {
+  let #(seconds, _) = timestamp.to_unix_seconds_and_nanoseconds(value)
+  seconds
 }
 
 fn merge_projected(
@@ -190,16 +189,4 @@ fn merge_projected(
         False -> merge_projected(rest, [next, current, ..previous])
       }
   }
-}
-
-fn interval_compare(a: AbsoluteInterval, b: AbsoluteInterval) -> order.Order {
-  case int.compare(a.start, b.start) {
-    order.Eq -> int.compare(a.end, b.end)
-    other -> other
-  }
-}
-
-fn seconds(value) -> Int {
-  let #(seconds, _) = timestamp.to_unix_seconds_and_nanoseconds(value)
-  seconds
 }
