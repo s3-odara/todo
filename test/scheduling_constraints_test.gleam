@@ -1,6 +1,5 @@
 import gleam/list
 import gleam/option.{Some}
-import gleam/time/timestamp
 import gleeunit/should
 import tasks/domain/due
 import tasks/domain/model.{Pending, Todo}
@@ -24,11 +23,7 @@ fn task(estimate, minimum) {
 }
 
 fn block(start, end) {
-  scheduling_model.ScheduleBlock(
-    1,
-    timestamp.from_unix_seconds(start),
-    timestamp.from_unix_seconds(end),
-  )
+  scheduling_model.ScheduleBlock(1, start, end)
 }
 
 pub fn effective_minimum_split_boundaries_test() {
@@ -62,21 +57,6 @@ pub fn generation_validator_rejects_hard_constraint_violations_test() {
     )
     |> should.be_error
   })
-}
-
-pub fn nanosecond_block_boundaries_are_rejected_test() {
-  let nano_block =
-    scheduling_model.ScheduleBlock(
-      1,
-      timestamp.from_unix_seconds_and_nanoseconds(seconds: 0, nanoseconds: 1),
-      timestamp.from_unix_seconds_and_nanoseconds(seconds: 1800, nanoseconds: 1),
-    )
-  invariant.validate_generation(
-    [nano_block],
-    [task(30, 30)],
-    SearchSpace([AbsoluteInterval(0, 3600)], 0, 0),
-  )
-  |> should.be_error
 }
 
 pub fn adjacent_same_task_blocks_are_normalized_test() {

@@ -534,10 +534,15 @@ pub fn tasks_are_rendered_as_tab_separated_rows_test() {
 pub fn scheduled_rows_use_the_saved_offset_and_current_task_test() {
   let start = due.instant(due_at("2026-07-24T00:00"))
   let end = timestamp.add(start, duration.minutes(30))
+  let #(start_seconds, _) = timestamp.to_unix_seconds_and_nanoseconds(start)
+  let #(end_seconds, _) = timestamp.to_unix_seconds_and_nanoseconds(end)
   let task = Todo(1, "x", 30, 3, None, Done, Spread, 30)
   cli.scheduled_listed(
     service.ScheduledListing(32_400, [
-      service.ScheduledItem(scheduling_model.ScheduleBlock(1, start, end), task),
+      service.ScheduledItem(
+        scheduling_model.ScheduleBlock(1, start_seconds, end_seconds),
+        task,
+      ),
     ]),
   )
   |> should.equal(

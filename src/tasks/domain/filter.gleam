@@ -1,5 +1,5 @@
 import gleam/option.{type Option, None, Some}
-import gleam/order.{Eq, Lt}
+import gleam/order.{Lt}
 import gleam/time/calendar
 import gleam/time/duration.{type Duration}
 import gleam/time/timestamp.{type Timestamp}
@@ -109,8 +109,8 @@ pub fn scheduled_window(
 
 /// Scheduled blocks overlap a local-day window rather than merely starting in it.
 pub fn block_overlaps(
-  start: Timestamp,
-  end: Timestamp,
+  start_seconds: Int,
+  end_seconds: Int,
   window: Option(ResolvedDueFilter),
 ) -> Bool {
   case window {
@@ -118,17 +118,20 @@ pub fn block_overlaps(
     Some(DueWindow(since, until)) -> {
       let after_start = case since {
         None -> True
-        Some(value) ->
-          timestamp.compare(end, value) != Lt
-          && timestamp.compare(end, value) != Eq
+        Some(value) -> end_seconds > unix_seconds(value)
       }
       let before_end = case until {
         None -> True
-        Some(value) -> timestamp.compare(start, value) == Lt
+        Some(value) -> start_seconds < unix_seconds(value)
       }
       after_start && before_end
     }
   }
+}
+
+fn unix_seconds(value: Timestamp) -> Int {
+  let #(seconds, _) = timestamp.to_unix_seconds_and_nanoseconds(value)
+  seconds
 }
 
 fn due_matches(filter: Option(ResolvedDueFilter), stored: Option(Due)) -> Bool {

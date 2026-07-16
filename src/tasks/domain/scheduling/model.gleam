@@ -24,7 +24,7 @@ pub type PlanningContext {
 }
 
 pub type ScheduleBlock {
-  ScheduleBlock(task_id: Int, start: Timestamp, end: Timestamp)
+  ScheduleBlock(task_id: Int, start_seconds: Int, end_seconds: Int)
 }
 
 pub type SavedSchedule {

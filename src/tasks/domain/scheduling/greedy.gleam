@@ -3,7 +3,6 @@ import gleam/int
 import gleam/list
 import gleam/option
 import gleam/order
-import gleam/time/timestamp
 import tasks/domain/due
 import tasks/domain/model as task_model
 import tasks/domain/policy
@@ -145,8 +144,8 @@ fn placement_candidates(
                 |> list.map(fn(start) {
                   scheduling_model.ScheduleBlock(
                     task.id,
-                    timestamp.from_unix_seconds(start),
-                    timestamp.from_unix_seconds(start + block_length * 60),
+                    start,
+                    start + block_length * 60,
                   )
                 })
             }

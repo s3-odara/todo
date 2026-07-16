@@ -135,11 +135,7 @@ pub fn persisted_schedule_round_trip_and_snapshot_validation_test() {
       timestamp.from_unix_seconds(0),
       0,
       [
-        scheduling_model.ScheduleBlock(
-          1,
-          timestamp.from_unix_seconds(60),
-          timestamp.from_unix_seconds(120),
-        ),
+        scheduling_model.ScheduleBlock(1, 60, 120),
       ],
     )
   let state = AppState([task], availability.empty(), Some(schedule))

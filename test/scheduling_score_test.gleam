@@ -1,7 +1,6 @@
 import gleam/float
 import gleam/list
 import gleam/option.{Some}
-import gleam/time/timestamp
 import gleeunit/should
 import tasks/domain/due
 import tasks/domain/model.{Pending, Todo}
@@ -14,11 +13,7 @@ fn task(policy) {
 }
 
 fn block(start: Int, end: Int) {
-  scheduling_model.ScheduleBlock(
-    1,
-    timestamp.from_unix_seconds(start),
-    timestamp.from_unix_seconds(end),
-  )
+  scheduling_model.ScheduleBlock(1, start, end)
 }
 
 fn close(actual: Float, expected: Float) {

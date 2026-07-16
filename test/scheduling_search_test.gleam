@@ -142,8 +142,7 @@ pub fn policy_secondary_objective_moves_work_earlier_or_later_test() {
     scheduling_model.SavedSchedule(blocks: [near_block], ..),
     _,
   )) = scheduler.generate(state([near], availability), context)
-  let ordered =
-    invariant.seconds(asap_block.start) < invariant.seconds(near_block.start)
+  let ordered = asap_block.start_seconds < near_block.start_seconds
   ordered |> should.be_true
 }
 
@@ -172,11 +171,7 @@ pub fn pair_rebuild_can_replace_low_priority_work_atomically_test() {
       30,
     )
   let initial = [
-    scheduling_model.ScheduleBlock(
-      1,
-      timestamp.from_unix_seconds(0),
-      timestamp.from_unix_seconds(3600),
-    ),
+    scheduling_model.ScheduleBlock(1, 0, 3600),
   ]
   let before = score.evaluate([low, high], initial, 0)
   let space = SearchSpace(projected, 0, 0)
@@ -188,11 +183,7 @@ pub fn pair_rebuild_can_replace_low_priority_work_atomically_test() {
   result.accepted_scores |> should.equal([after])
   result.blocks
   |> should.equal([
-    scheduling_model.ScheduleBlock(
-      2,
-      timestamp.from_unix_seconds(0),
-      timestamp.from_unix_seconds(3600),
-    ),
+    scheduling_model.ScheduleBlock(2, 0, 3600),
   ])
   invariant.validate_generation(result.blocks, [low, high], space)
   |> should.be_ok
@@ -209,16 +200,8 @@ pub fn exact_s7_schedule_and_score_are_characterized_test() {
   let initial = greedy.build(tasks, space)
   let result = hill_climb.climb(initial, tasks, space)
   let expected_blocks = [
-    scheduling_model.ScheduleBlock(
-      3,
-      timestamp.from_unix_seconds(0),
-      timestamp.from_unix_seconds(240),
-    ),
-    scheduling_model.ScheduleBlock(
-      2,
-      timestamp.from_unix_seconds(240),
-      timestamp.from_unix_seconds(360),
-    ),
+    scheduling_model.ScheduleBlock(3, 0, 240),
+    scheduling_model.ScheduleBlock(2, 240, 360),
   ]
   let expected_score = scheduling_model.Score(33, 4.558518518518518)
   result.blocks |> should.equal(expected_blocks)

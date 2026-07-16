@@ -6,7 +6,6 @@ import gleam/order
 import tasks/domain/due
 import tasks/domain/model as task_model
 import tasks/domain/policy
-import tasks/domain/scheduling/invariant
 import tasks/domain/scheduling/model.{type ScheduleBlock, type Score, Score}
 
 pub const epsilon = 0.000000000001
@@ -150,8 +149,8 @@ fn integrate_blocks(
         0.0,
       )
     [block, ..rest] -> {
-      let start = invariant.seconds(block.start)
-      let end = invariant.seconds(block.end)
+      let start = block.start_seconds
+      let end = block.end_seconds
       let gap_start = normalized(previous_end, planning_start, span)
       let block_start = normalized(start, planning_start, span)
       let block_end = normalized(end, planning_start, span)
@@ -241,9 +240,7 @@ pub fn placed_minutes(task_id: Int, blocks: List(ScheduleBlock)) -> Int {
 
 fn placed_minutes_in(blocks: List(ScheduleBlock)) -> Int {
   list.fold(blocks, 0, fn(total, block) {
-    total
-    + { invariant.seconds(block.end) - invariant.seconds(block.start) }
-    / 60
+    total + { block.end_seconds - block.start_seconds } / 60
   })
 }
 

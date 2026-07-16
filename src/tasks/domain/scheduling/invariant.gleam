@@ -62,11 +62,9 @@ fn structural(
 ) -> Bool {
   no_overlap(blocks, option.None)
   && list.all(blocks, fn(block) {
-    let start = seconds(block.start)
-    let end = seconds(block.end)
+    let start = block.start_seconds
+    let end = block.end_seconds
     start < end
-    && nanoseconds(block.start) == 0
-    && nanoseconds(block.end) == 0
     && floor_mod(start + offset, 60) == 0
     && floor_mod(end + offset, 60) == 0
     && has_task(tasks, block.task_id)
@@ -74,7 +72,7 @@ fn structural(
 }
 
 fn all_after(blocks: List(ScheduleBlock), planning_start: Int) -> Bool {
-  list.all(blocks, fn(block) { seconds(block.start) >= planning_start })
+  list.all(blocks, fn(block) { block.start_seconds >= planning_start })
 }
 
 fn contained(
@@ -82,8 +80,8 @@ fn contained(
   projected: List(AbsoluteInterval),
 ) -> Bool {
   list.all(blocks, fn(block) {
-    let start = seconds(block.start)
-    let end = seconds(block.end)
+    let start = block.start_seconds
+    let end = block.end_seconds
     list.any(projected, fn(interval) {
       start >= interval.start && end <= interval.end
     })
@@ -98,7 +96,7 @@ fn task_constraints(
     let own = list.filter(blocks, fn(block) { block.task_id == task.id })
     let total =
       list.fold(own, 0, fn(sum, block) {
-        sum + { seconds(block.end) - seconds(block.start) } / 60
+        sum + { block.end_seconds - block.start_seconds } / 60
       })
     let minimum = task_model.effective_minimum_split(task)
     let due_seconds = case task.due {
@@ -107,8 +105,8 @@ fn task_constraints(
     }
     total <= task.estimate_minutes
     && list.all(own, fn(block) {
-      { seconds(block.end) - seconds(block.start) } / 60 >= minimum
-      && seconds(block.end) <= due_seconds
+      { block.end_seconds - block.start_seconds } / 60 >= minimum
+      && block.end_seconds <= due_seconds
     })
   })
 }
@@ -124,8 +122,8 @@ fn no_overlap(
   case blocks {
     [] -> True
     [block, ..rest] -> {
-      let start = seconds(block.start)
-      let end = seconds(block.end)
+      let start = block.start_seconds
+      let end = block.end_seconds
       case previous_end {
         option.None -> no_overlap(rest, option.Some(end))
         option.Some(previous) ->
@@ -145,11 +143,15 @@ fn merge_adjacent(
     [next, ..rest], [current, ..previous] ->
       case
         current.task_id == next.task_id
-        && seconds(current.end) == seconds(next.start)
+        && current.end_seconds == next.start_seconds
       {
         True ->
           merge_adjacent(rest, [
-            ScheduleBlock(current.task_id, current.start, next.end),
+            ScheduleBlock(
+              current.task_id,
+              current.start_seconds,
+              next.end_seconds,
+            ),
             ..previous
           ])
         False -> merge_adjacent(rest, [next, current, ..previous])
@@ -158,10 +160,10 @@ fn merge_adjacent(
 }
 
 pub fn block_compare(a: ScheduleBlock, b: ScheduleBlock) -> order.Order {
-  case int.compare(seconds(a.start), seconds(b.start)) {
+  case int.compare(a.start_seconds, b.start_seconds) {
     order.Eq ->
       case int.compare(a.task_id, b.task_id) {
-        order.Eq -> int.compare(seconds(a.end), seconds(b.end))
+        order.Eq -> int.compare(a.end_seconds, b.end_seconds)
         other -> other
       }
     other -> other
@@ -171,8 +173,8 @@ pub fn block_compare(a: ScheduleBlock, b: ScheduleBlock) -> order.Order {
 pub fn block_key_compare(a: ScheduleBlock, b: ScheduleBlock) -> order.Order {
   case int.compare(a.task_id, b.task_id) {
     order.Eq ->
-      case int.compare(seconds(a.start), seconds(b.start)) {
-        order.Eq -> int.compare(seconds(a.end), seconds(b.end))
+      case int.compare(a.start_seconds, b.start_seconds) {
+        order.Eq -> int.compare(a.end_seconds, b.end_seconds)
         other -> other
       }
     other -> other
@@ -182,11 +184,6 @@ pub fn block_key_compare(a: ScheduleBlock, b: ScheduleBlock) -> order.Order {
 pub fn seconds(value) -> Int {
   let #(seconds, _) = timestamp.to_unix_seconds_and_nanoseconds(value)
   seconds
-}
-
-fn nanoseconds(value) -> Int {
-  let #(_, nanoseconds) = timestamp.to_unix_seconds_and_nanoseconds(value)
-  nanoseconds
 }
 
 pub fn floor_mod(value: Int, modulus: Int) -> Int {

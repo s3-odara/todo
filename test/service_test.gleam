@@ -243,10 +243,12 @@ pub fn scheduled_list_joins_current_task_status_without_saving_test() {
       offset,
     )
   let end = timestamp.add(start, duration.minutes(60))
+  let #(start_seconds, _) = timestamp.to_unix_seconds_and_nanoseconds(start)
+  let #(end_seconds, _) = timestamp.to_unix_seconds_and_nanoseconds(end)
   let task = Todo(1, "current title", 60, 3, None, Done, Spread, 30)
   let schedule =
     scheduling_model.SavedSchedule(start, start, 32_400, [
-      scheduling_model.ScheduleBlock(1, start, end),
+      scheduling_model.ScheduleBlock(1, start_seconds, end_seconds),
     ])
   let store =
     Store(fn() { Ok(state_with_schedule([task], schedule)) }, fn(_) {
@@ -258,7 +260,7 @@ pub fn scheduled_list_joins_current_task_status_without_saving_test() {
     Ok(
       service.ScheduledListing(32_400, [
         service.ScheduledItem(
-          scheduling_model.ScheduleBlock(1, start, end),
+          scheduling_model.ScheduleBlock(1, start_seconds, end_seconds),
           task,
         ),
       ]),

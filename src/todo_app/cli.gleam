@@ -549,8 +549,14 @@ pub fn scheduled_listed(listing: ScheduledListing) -> Outcome {
           ..list.map(items, fn(item) {
             let ScheduledItem(block, task) = item
             [
-              timestamp_text(block.start, offset),
-              timestamp_text(block.end, offset),
+              timestamp_text(
+                timestamp.from_unix_seconds(block.start_seconds),
+                offset,
+              ),
+              timestamp_text(
+                timestamp.from_unix_seconds(block.end_seconds),
+                offset,
+              ),
               int.to_string(task.id),
               status_text(task.status),
               task.title,
@@ -582,8 +588,11 @@ pub fn schedule_generated(
       "START\tEND\tTASK_ID",
       ..list.map(blocks, fn(block) {
         [
-          timestamp_text(block.start, offset),
-          timestamp_text(block.end, offset),
+          timestamp_text(
+            timestamp.from_unix_seconds(block.start_seconds),
+            offset,
+          ),
+          timestamp_text(timestamp.from_unix_seconds(block.end_seconds), offset),
           int.to_string(block.task_id),
         ]
         |> string.join("\t")

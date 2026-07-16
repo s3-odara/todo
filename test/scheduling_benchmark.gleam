@@ -4,7 +4,6 @@ import gleam/int
 import gleam/io
 import gleam/list
 import gleam/option.{type Option, None, Some}
-import gleam/time/timestamp
 import tasks/domain/due
 import tasks/domain/model.{type Todo, Pending, Todo}
 import tasks/domain/policy.{Asap, NearDeadline, Spread}
@@ -501,8 +500,8 @@ fn assignment_blocks(
       assignment_blocks(rest, minute + 1, [
         scheduling_model.ScheduleBlock(
           task_id,
-          timestamp.from_unix_seconds(minute * 60),
-          timestamp.from_unix_seconds({ minute + 1 } * 60),
+          minute * 60,
+          { minute + 1 } * 60,
         ),
         ..acc
       ])

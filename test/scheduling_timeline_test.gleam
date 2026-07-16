@@ -1,14 +1,9 @@
-import gleam/time/timestamp
 import gleeunit/should
 import tasks/domain/scheduling/model.{ScheduleBlock}
 import tasks/domain/scheduling/timeline.{AbsoluteInterval}
 
 fn block(task_id, start, end) {
-  ScheduleBlock(
-    task_id,
-    timestamp.from_unix_seconds(start),
-    timestamp.from_unix_seconds(end),
-  )
+  ScheduleBlock(task_id, start, end)
 }
 
 pub fn canonical_free_intervals_are_carved_in_one_pass_test() {

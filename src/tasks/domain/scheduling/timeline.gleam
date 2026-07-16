@@ -150,8 +150,8 @@ fn carve(
   case blocks {
     [] -> #(blocks, add_gap(cursor, interval.end, reversed))
     [block, ..rest] -> {
-      let start = seconds(block.start)
-      let end = seconds(block.end)
+      let start = block.start_seconds
+      let end = block.end_seconds
       case start >= interval.end {
         True -> #(blocks, add_gap(cursor, interval.end, reversed))
         False -> carve(interval, rest, end, add_gap(cursor, start, reversed))
@@ -165,11 +165,6 @@ fn add_gap(start, end, reversed) {
     True -> [AbsoluteInterval(start, end), ..reversed]
     False -> reversed
   }
-}
-
-fn seconds(value) -> Int {
-  let #(seconds, _) = timestamp.to_unix_seconds_and_nanoseconds(value)
-  seconds
 }
 
 fn merge_projected(

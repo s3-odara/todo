@@ -89,7 +89,11 @@ pub fn scheduled_list(
             Some(task) ->
               case
                 filter.status_matches(status, task.status)
-                && filter.block_overlaps(block.start, block.end, window)
+                && filter.block_overlaps(
+                  block.start_seconds,
+                  block.end_seconds,
+                  window,
+                )
               {
                 True -> Ok(ScheduledItem(block, task))
                 False -> Error(Nil)

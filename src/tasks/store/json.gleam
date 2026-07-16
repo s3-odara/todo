@@ -187,14 +187,8 @@ fn schedule_decoder() {
 
 fn schedule_block_decoder() {
   use task_id <- decode.field("task_id", decode.int)
-  use start <- decode.field(
-    "start",
-    decode.int |> decode.map(timestamp.from_unix_seconds),
-  )
-  use end <- decode.field(
-    "end",
-    decode.int |> decode.map(timestamp.from_unix_seconds),
-  )
+  use start <- decode.field("start", decode.int)
+  use end <- decode.field("end", decode.int)
   decode.success(scheduling_model.ScheduleBlock(task_id, start, end))
 }
 
@@ -381,7 +375,7 @@ fn schedule_json(value: scheduling_model.SavedSchedule) -> json.Json {
       "blocks",
       json.array(
         list.sort(value.blocks, by: fn(a, b) {
-          case timestamp.compare(a.start, b.start) {
+          case int.compare(a.start_seconds, b.start_seconds) {
             order.Eq -> int.compare(a.task_id, b.task_id)
             other -> other
           }
@@ -389,8 +383,8 @@ fn schedule_json(value: scheduling_model.SavedSchedule) -> json.Json {
         of: fn(block) {
           json.object([
             #("task_id", json.int(block.task_id)),
-            #("start", instant_json(block.start)),
-            #("end", instant_json(block.end)),
+            #("start", json.int(block.start_seconds)),
+            #("end", json.int(block.end_seconds)),
           ])
         },
       ),
