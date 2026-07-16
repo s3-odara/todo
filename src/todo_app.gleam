@@ -5,6 +5,7 @@ import gleam/list
 import gleam/option.{None, Some}
 import gleam/time/calendar
 import gleam/time/timestamp
+import tasks/domain/due
 import tasks/runtime as process
 import tasks/store/file
 import todo_app/cli.{type Command, type Outcome, Help, Outcome}
@@ -15,7 +16,7 @@ import todo_app/store/path
 pub fn main() -> Nil {
   let args = argv.load().arguments
   // Help and grammar errors do not depend on persistence configuration.
-  case cli.parse(args, calendar.local_offset()) {
+  case cli.parse(args, parse_due) {
     Ok(Help) -> emit(cli.help())
     Ok(command) -> run_with_path(command)
     Error(message) -> emit(cli.grammar_error(message))
@@ -34,12 +35,16 @@ fn run_with_path(command: Command) -> Nil {
     Ok(filename) ->
       emit(runtime.run(
         command,
-        Store(fn() { file.load(filename) }, fn(tasks) {
-          file.save(filename, tasks)
+        Store(fn() { file.load(filename) }, fn(state) {
+          file.save(filename, state)
         }),
         local_clock,
       ))
   }
+}
+
+fn parse_due(value) {
+  due.input(value, calendar.local_offset())
 }
 
 fn local_clock() {

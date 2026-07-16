@@ -14,8 +14,19 @@ fn next_id(todos: List(Todo)) -> Int {
 }
 
 pub fn add(todos: List(Todo), values: ValidatedAdd) -> #(List(Todo), Todo) {
-  let ValidatedAdd(title, estimate, priority, due) = values
-  let added = Todo(next_id(todos), title, estimate, priority, due, Pending)
+  let ValidatedAdd(title, estimate, priority, due, policy, minimum_split) =
+    values
+  let added =
+    Todo(
+      next_id(todos),
+      title,
+      estimate,
+      priority,
+      due,
+      Pending,
+      policy,
+      minimum_split,
+    )
   #([added, ..todos], added)
 }
 

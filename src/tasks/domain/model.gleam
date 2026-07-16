@@ -1,5 +1,6 @@
 import gleam/option.{type Option}
 import tasks/domain/due.{type Due}
+import tasks/domain/policy.{type SchedulingPolicy}
 
 pub type Status {
   Pending
@@ -14,6 +15,8 @@ pub type Todo {
     priority: Int,
     due: Option(Due),
     status: Status,
+    scheduling_policy: SchedulingPolicy,
+    minimum_split_minutes: Int,
   )
 }
 
@@ -24,6 +27,8 @@ pub type ValidatedAdd {
     estimate_minutes: Int,
     priority: Int,
     due: Option(Due),
+    scheduling_policy: SchedulingPolicy,
+    minimum_split_minutes: Int,
   )
 }
 

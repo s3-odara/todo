@@ -1,4 +1,5 @@
 import gleam/result
+import tasks/domain/app_state.{AppState}
 import tasks/domain/filter.{type ResolvedListFilter}
 import tasks/domain/model.{type TaskError, type Todo, type ValidatedAdd}
 import tasks/domain/tasks
@@ -19,8 +20,8 @@ pub fn list(
 ) -> Result(List(Todo), ServiceError) {
   let Store(load, _) = store
   load()
-  |> result.map(fn(items) {
-    items
+  |> result.map(fn(state) {
+    state.tasks
     |> tasks.visible(filter)
     |> tasks.sorted_by_id
   })
@@ -39,11 +40,11 @@ fn persist_transition(
   let Store(load, save) = store
   case load() {
     Error(error) -> Error(Persisted(error))
-    Ok(items) ->
-      case transition(items) {
+    Ok(state) ->
+      case transition(state.tasks) {
         Error(error) -> Error(Domain(error))
         Ok(#(updated, selected)) ->
-          save(updated)
+          save(AppState(..state, tasks: updated))
           |> result.map(fn(_) { selected })
           |> result.map_error(Persisted)
       }

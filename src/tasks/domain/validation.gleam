@@ -3,26 +3,67 @@ import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/result
 import gleam/string
-import gleam/time/duration.{type Duration}
 import tasks/domain/due.{type Due}
-import tasks/domain/model.{type ValidatedAdd, ValidatedAdd}
+import tasks/domain/model.{
+  type Status, type Todo, type ValidatedAdd, Todo, ValidatedAdd,
+}
+import tasks/domain/policy.{type SchedulingPolicy, parse as parse_policy}
 
 pub fn add(
   raw_title: String,
   raw_estimate: String,
   raw_priority: String,
   raw_due: Option(String),
-  offset: Duration,
+  raw_policy: String,
+  raw_minimum_split: String,
+  due_parser: fn(String) -> Result(Due, Nil),
 ) -> Result(ValidatedAdd, Nil) {
   case
     title(raw_title),
     estimate(raw_estimate),
     priority(raw_priority),
-    optional_due(raw_due, offset)
+    optional_due(raw_due, due_parser),
+    parse_policy(raw_policy),
+    positive_duration(raw_minimum_split)
   {
-    Ok(clean), Ok(minutes), Ok(rank), Ok(due_value) ->
-      Ok(ValidatedAdd(clean, minutes, rank, due_value))
-    _, _, _, _ -> Error(Nil)
+    Ok(clean), Ok(minutes), Ok(rank), Ok(due_value), Ok(policy), Ok(split) ->
+      Ok(ValidatedAdd(clean, minutes, rank, due_value, policy, split))
+    _, _, _, _, _, _ -> Error(Nil)
+  }
+}
+
+pub fn persisted_task(
+  id_value: Int,
+  title_value: String,
+  estimate_minutes: Int,
+  priority_value: Int,
+  due_value: Option(Due),
+  status: Status,
+  scheduling_policy: SchedulingPolicy,
+  minimum_split_minutes: Int,
+) -> Result(Todo, Nil) {
+  case title(title_value) {
+    Ok(clean)
+      if clean == title_value
+      && id_value > 0
+      && estimate_minutes >= 0
+      && estimate_minutes <= 525_600
+      && priority_value >= 1
+      && priority_value <= 5
+      && minimum_split_minutes >= 1
+      && minimum_split_minutes <= 525_600
+    ->
+      Ok(Todo(
+        id_value,
+        title_value,
+        estimate_minutes,
+        priority_value,
+        due_value,
+        status,
+        scheduling_policy,
+        minimum_split_minutes,
+      ))
+    _ -> Error(Nil)
   }
 }
 
@@ -79,11 +120,18 @@ fn estimate(value: String) -> Result(Int, Nil) {
 
 fn optional_due(
   raw: Option(String),
-  offset: Duration,
+  due_parser: fn(String) -> Result(Due, Nil),
 ) -> Result(Option(Due), Nil) {
   case raw {
     None -> Ok(None)
-    Some(value) -> due.input(value, offset) |> result.map(Some)
+    Some(value) -> due_parser(value) |> result.map(Some)
+  }
+}
+
+fn positive_duration(value: String) -> Result(Int, Nil) {
+  case estimate(value) {
+    Ok(minutes) if minutes > 0 -> Ok(minutes)
+    _ -> Error(Nil)
   }
 }
 

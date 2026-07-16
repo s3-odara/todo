@@ -3,11 +3,14 @@ import gleam/option.{None, Some}
 import gleam/time/calendar.{Date, July}
 import gleam/time/duration
 import gleeunit/should
+import tasks/domain/app_state.{AppState}
+import tasks/domain/availability
 import tasks/domain/due
 import tasks/domain/filter.{
   AllStatuses, DoneOnly, Exact, ListFilter, Overdue, PendingOnly, Range, Today,
 }
 import tasks/domain/model.{Done, Pending, Todo, ValidatedAdd}
+import tasks/domain/policy.{Asap, NearDeadline, Spread}
 import todo_app/cli
 import todo_app/runtime
 import todo_app/store.{Store}
@@ -26,7 +29,7 @@ fn clock() {
 }
 
 fn parse(args) {
-  cli.parse(args, calendar.utc_offset)
+  cli.parse(args, fn(value) { due.input(value, calendar.utc_offset) })
 }
 
 fn run(args, store) {
@@ -36,8 +39,12 @@ fn run(args, store) {
   }
 }
 
+fn state_with(tasks) {
+  AppState(1, tasks, availability.empty(), None)
+}
+
 fn store_with(tasks) {
-  Store(fn() { Ok(tasks) }, fn(_) { Ok(Nil) })
+  Store(fn() { Ok(state_with(tasks)) }, fn(_) { Ok(Nil) })
 }
 
 fn clock_must_not_run() {
@@ -53,7 +60,7 @@ pub fn non_list_commands_do_not_read_the_clock_test() {
   runtime.run(cli.Help, store_with([]), clock_must_not_run)
   |> should.equal(cli.help())
   runtime.run(
-    cli.Add(ValidatedAdd("x", 0, 3, None)),
+    cli.Add(ValidatedAdd("x", 0, 3, None, Spread, 30)),
     store_with([]),
     clock_must_not_run,
   )
@@ -67,6 +74,8 @@ pub fn help_lists_the_available_commands_test() {
       0,
       [
         "todo add TITLE [--estimate DURATION] [--priority PRIORITY] [--due DUE]",
+        "               [--scheduling-policy asap|spread|near_deadline]",
+        "               [--minimum-split DURATION]",
         "todo list [--done | --all] [--due today|overdue|YYYY-MM-DD]",
         "          [--due-since YYYY-MM-DD] [--due-until YYYY-MM-DD]",
         "  default: pending; --done: done; --all: both",
@@ -81,7 +90,60 @@ pub fn help_lists_the_available_commands_test() {
 
 pub fn add_uses_default_estimate_and_priority_test() {
   parse(["add", "x"])
-  |> should.equal(Ok(cli.Add(ValidatedAdd("x", 0, 3, None))))
+  |> should.equal(Ok(cli.Add(ValidatedAdd("x", 0, 3, None, Spread, 30))))
+}
+
+pub fn add_scheduling_defaults_are_applied_test() {
+  parse(["add", "x"])
+  |> should.equal(Ok(cli.Add(ValidatedAdd("x", 0, 3, None, Spread, 30))))
+}
+
+pub fn add_scheduling_options_are_parsed_test() {
+  parse([
+    "add",
+    "x",
+    "--minimum-split",
+    "45m",
+    "--scheduling-policy",
+    "asap",
+  ])
+  |> should.equal(Ok(cli.Add(ValidatedAdd("x", 0, 3, None, Asap, 45))))
+
+  parse(["add", "x", "--scheduling-policy", "near_deadline"])
+  |> should.equal(Ok(cli.Add(ValidatedAdd("x", 0, 3, None, NearDeadline, 30))))
+}
+
+pub fn invalid_scheduling_options_are_rejected_test() {
+  [
+    ["add", "x", "--scheduling-policy", "unknown"],
+    ["add", "x", "--minimum-split", "0m"],
+    ["add", "x", "--minimum-split", "-1m"],
+    ["add", "x", "--minimum-split", "30"],
+  ]
+  |> list.each(fn(args) { parse(args) |> should.equal(Error("invalid input")) })
+
+  [
+    ["add", "x", "--scheduling-policy"],
+    ["add", "x", "--minimum-split"],
+    [
+      "add",
+      "x",
+      "--scheduling-policy",
+      "asap",
+      "--scheduling-policy",
+      "spread",
+    ],
+    ["add", "x", "--minimum-split", "30m", "--minimum-split", "1h"],
+  ]
+  |> list.each(fn(args) {
+    parse(args)
+    |> should.equal(Error("invalid, duplicate, or missing option"))
+  })
+}
+
+pub fn due_parser_is_only_called_when_due_is_present_test() {
+  cli.parse(["add", "x"], fn(_) { panic as "due parser must not run" })
+  |> should.equal(Ok(cli.Add(ValidatedAdd("x", 0, 3, None, Spread, 30))))
 }
 
 pub fn add_options_can_be_given_in_any_order_test() {
@@ -96,7 +158,16 @@ pub fn add_options_can_be_given_in_any_order_test() {
     "2h",
   ])
   |> should.equal(
-    Ok(cli.Add(ValidatedAdd("x", 120, 5, Some(due_at("2026-01-01T23:59"))))),
+    Ok(
+      cli.Add(ValidatedAdd(
+        "x",
+        120,
+        5,
+        Some(due_at("2026-01-01T23:59")),
+        Spread,
+        30,
+      )),
+    ),
   )
 }
 
@@ -264,7 +335,7 @@ pub fn an_empty_list_uses_the_status_specific_message_test() {
 }
 
 pub fn tasks_are_rendered_as_tab_separated_rows_test() {
-  let store = store_with([Todo(1, "x", 5, 3, None, Pending)])
+  let store = store_with([Todo(1, "x", 5, 3, None, Pending, Spread, 30)])
 
   run(["list"], store)
   |> should.equal(
@@ -283,7 +354,7 @@ pub fn stored_due_is_rendered_with_the_current_local_offset_test() {
 
   runtime.run(
     command,
-    store_with([Todo(1, "x", 0, 3, Some(stored), Pending)]),
+    store_with([Todo(1, "x", 0, 3, Some(stored), Pending, Spread, 30)]),
     fn() { #(due.instant(due_at("2026-07-24T12:00")), japan) },
   )
   |> should.equal(
@@ -304,14 +375,14 @@ pub fn invalid_input_is_reported_on_stderr_test() {
 }
 
 pub fn an_unknown_task_is_reported_on_stderr_test() {
-  let store = store_with([Todo(1, "x", 5, 3, None, Pending)])
+  let store = store_with([Todo(1, "x", 5, 3, None, Pending, Spread, 30)])
 
   run(["done", "99"], store)
   |> should.equal(cli.Outcome(2, [], ["Error: task not found"]))
 }
 
 pub fn an_already_completed_task_is_reported_on_stderr_test() {
-  let store = store_with([Todo(1, "x", 5, 3, None, Done)])
+  let store = store_with([Todo(1, "x", 5, 3, None, Done, Spread, 30)])
 
   run(["done", "1"], store)
   |> should.equal(cli.Outcome(2, [], ["Error: task is already completed"]))
@@ -330,7 +401,7 @@ pub fn adding_a_task_reports_its_id_and_title_test() {
 }
 
 pub fn completing_a_task_reports_its_id_and_title_test() {
-  let store = store_with([Todo(1, "x", 0, 3, None, Pending)])
+  let store = store_with([Todo(1, "x", 0, 3, None, Pending, Spread, 30)])
 
   run(["done", "1"], store)
   |> should.equal(cli.Outcome(0, ["Completed task 1: x"], []))

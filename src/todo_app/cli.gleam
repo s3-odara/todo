@@ -33,6 +33,8 @@ type AddOptions {
     estimate: Option(String),
     priority: Option(String),
     due: Option(String),
+    scheduling_policy: Option(String),
+    minimum_split: Option(String),
   )
 }
 
@@ -46,7 +48,10 @@ type ListDueOptions {
   DueRange(since: Option(calendar.Date), until: Option(calendar.Date))
 }
 
-pub fn parse(args: List(String), offset: Duration) -> Result(Command, String) {
+pub fn parse(
+  args: List(String),
+  due_parser: fn(String) -> Result(Due, Nil),
+) -> Result(Command, String) {
   case args {
     [] | ["--help"] -> Ok(Help)
     ["add", "--help"] | ["list", "--help"] | ["done", "--help"] -> Ok(Help)
@@ -62,15 +67,17 @@ pub fn parse(args: List(String), offset: Duration) -> Result(Command, String) {
       |> result.map_error(fn(_) { "invalid input" })
     ["add", title, ..flags] ->
       flags
-      |> add_flags(AddOptions(None, None, None))
+      |> add_flags(AddOptions(None, None, None, None, None))
       |> result.try(fn(options) {
-        let AddOptions(estimate, priority, due) = options
+        let AddOptions(estimate, priority, due, policy, minimum_split) = options
         validation.add(
           title,
           option.unwrap(estimate, or: "0m"),
           option.unwrap(priority, or: "3"),
           due,
-          offset,
+          option.unwrap(policy, or: "spread"),
+          option.unwrap(minimum_split, or: "30m"),
+          due_parser,
         )
         |> result.map_error(fn(_) { "invalid input" })
       })
@@ -88,6 +95,11 @@ fn add_flags(flags, options: AddOptions) -> Result(AddOptions, String) {
       add_flags(rest, AddOptions(..options, priority: Some(value)))
     ["--due", value, ..rest], AddOptions(due: None, ..) ->
       add_flags(rest, AddOptions(..options, due: Some(value)))
+    ["--scheduling-policy", value, ..rest],
+      AddOptions(scheduling_policy: None, ..)
+    -> add_flags(rest, AddOptions(..options, scheduling_policy: Some(value)))
+    ["--minimum-split", value, ..rest], AddOptions(minimum_split: None, ..) ->
+      add_flags(rest, AddOptions(..options, minimum_split: Some(value)))
     _, _ -> Error("invalid, duplicate, or missing option")
   }
 }
@@ -198,6 +210,8 @@ pub fn help() -> Outcome {
     0,
     [
       "todo add TITLE [--estimate DURATION] [--priority PRIORITY] [--due DUE]",
+      "               [--scheduling-policy asap|spread|near_deadline]",
+      "               [--minimum-split DURATION]",
       "todo list [--done | --all] [--due today|overdue|YYYY-MM-DD]",
       "          [--due-since YYYY-MM-DD] [--due-until YYYY-MM-DD]",
       "  default: pending; --done: done; --all: both",
