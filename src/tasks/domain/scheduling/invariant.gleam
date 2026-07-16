@@ -100,10 +100,7 @@ fn task_constraints(
       list.fold(own, 0, fn(sum, block) {
         sum + { seconds(block.end) - seconds(block.start) } / 60
       })
-    let minimum = case task.estimate_minutes < task.minimum_split_minutes {
-      True -> task.estimate_minutes
-      False -> task.minimum_split_minutes
-    }
+    let minimum = task_model.effective_minimum_split(task)
     let due_seconds = case task.due {
       option.Some(value) -> due.to_unix_seconds(value)
       option.None -> 0

@@ -1,0 +1,17 @@
+scenario|initial_unscheduled|initial_policy_error|final_unscheduled|final_policy_error|oracle_unscheduled|oracle_policy_error|primary_regret|policy_regret|blocks|accepted_moves|valid
+short_remainder|80|0.029629629629629617|80|0.029629629629629617|-|-|-|-|1|0|true
+priority_contention|480|3.0375578703703696|480|1.6070023148148147|-|-|-|-|4|1|true
+fragmented|1632|5.453166641320458|1440|5.359813361781973|-|-|-|-|7|1|true
+mixed_medium|1107|8.753909474111301|965|9.47129630105101|-|-|-|-|9|3|true
+underloaded_mixed_n4_s101|0|1.3897775487965545|0|0.8668971961844839|-|-|-|-|4|1|true
+underloaded_mixed_n8_s101|0|5.219242450810059|0|2.483294665863155|-|-|-|-|8|5|true
+balanced_contention_n4_s101|430|2.8157981614527716|430|2.8157981614527716|-|-|-|-|2|0|true
+balanced_contention_n8_s101|504|5.132090344300422|430|4.904936760075897|-|-|-|-|7|2|true
+overloaded_priority_n4_s101|1132|4.9209547483463005|1132|4.9209547483463005|-|-|-|-|2|0|true
+overloaded_priority_n8_s101|2118|9.902274847842481|2118|9.902274847842481|-|-|-|-|4|0|true
+fragmented_availability_n4_s101|638|2.9898287355984037|638|2.9898287355984037|-|-|-|-|4|0|true
+fragmented_availability_n8_s101|784|5.770806658000473|784|5.615599138661745|-|-|-|-|8|1|true
+tight_deadlines_n4_s101|492|3.0911713238456637|492|3.0911713238456637|-|-|-|-|3|0|true
+tight_deadlines_n8_s101|454|7.760198827243419|454|7.760198827243419|-|-|-|-|6|0|true
+minimum_split_traps_n4_s101|1302|7.76750922242524|1302|7.76750922242524|-|-|-|-|1|0|true
+minimum_split_traps_n8_s101|2852|13.28813819184556|2852|13.28813819184556|-|-|-|-|3|0|true

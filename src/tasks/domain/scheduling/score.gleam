@@ -5,7 +5,7 @@ import gleam/option
 import gleam/order
 import tasks/domain/due
 import tasks/domain/model as task_model
-import tasks/domain/policy.{Asap, NearDeadline, Spread}
+import tasks/domain/policy
 import tasks/domain/scheduling/invariant
 import tasks/domain/scheduling/model.{type ScheduleBlock, type Score, Score}
 
@@ -229,16 +229,8 @@ fn integrate_segment(
 }
 
 fn squared_error(policy, x, actual) -> Float {
-  let difference = actual -. policy_value(policy, x)
+  let difference = actual -. policy.value(policy, x)
   difference *. difference
-}
-
-pub fn policy_value(policy, x) -> Float {
-  case policy {
-    Asap -> 1.0 -. { 1.0 -. x } *. { 1.0 -. x }
-    Spread -> x
-    NearDeadline -> x *. x
-  }
 }
 
 pub fn placed_minutes(task_id: Int, blocks: List(ScheduleBlock)) -> Int {

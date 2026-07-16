@@ -1,4 +1,5 @@
 import gleam/float
+import gleam/list
 import gleam/option.{Some}
 import gleam/time/timestamp
 import gleeunit/should
@@ -26,9 +27,27 @@ fn close(actual: Float, expected: Float) {
 }
 
 pub fn policy_curves_and_empty_progress_integrals_test() {
-  score.policy_value(Asap, 0.5) |> should.equal(0.75)
-  score.policy_value(Spread, 0.5) |> should.equal(0.5)
-  score.policy_value(NearDeadline, 0.5) |> should.equal(0.25)
+  policy.value(Asap, 0.0) |> should.equal(0.0)
+  policy.value(Asap, 0.5) |> should.equal(0.75)
+  policy.value(Asap, 1.0) |> should.equal(1.0)
+  policy.value(Spread, 0.0) |> should.equal(0.0)
+  policy.value(Spread, 0.5) |> should.equal(0.5)
+  policy.value(Spread, 1.0) |> should.equal(1.0)
+  policy.value(NearDeadline, 0.0) |> should.equal(0.0)
+  policy.value(NearDeadline, 0.5) |> should.equal(0.25)
+  policy.value(NearDeadline, 1.0) |> should.equal(1.0)
+
+  policy.inverse(Asap, 0.0) |> should.equal(0.0)
+  policy.inverse(Asap, 1.0) |> should.equal(1.0)
+  close(policy.inverse(Asap, 0.5), 0.2928932188134524)
+  policy.inverse(Spread, 0.5) |> should.equal(0.5)
+  close(policy.inverse(NearDeadline, 0.5), 0.7071067811865476)
+  policy.inverse(NearDeadline, 1.0) |> should.equal(1.0)
+  [Asap, Spread, NearDeadline]
+  |> list.each(fn(value) {
+    policy.inverse(value, -0.5) |> should.equal(0.0)
+    policy.inverse(value, 1.5) |> should.equal(1.0)
+  })
 
   close(score.policy_error(task(Asap), [], 0), 8.0 /. 15.0)
   close(score.policy_error(task(Spread), [], 0), 1.0 /. 3.0)

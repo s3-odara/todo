@@ -9,6 +9,7 @@ import tasks/domain/availability.{
 import tasks/domain/due
 import tasks/domain/model.{Pending, Todo}
 import tasks/domain/policy.{Asap, NearDeadline, Spread}
+import tasks/domain/scheduling/greedy
 import tasks/domain/scheduling/hill_climb
 import tasks/domain/scheduling/invariant
 import tasks/domain/scheduling/model as scheduling_model
@@ -181,6 +182,34 @@ pub fn pair_rebuild_can_replace_low_priority_work_atomically_test() {
   ])
   invariant.validate_generation(result.blocks, [low, high], projected, 0, 0)
   |> should.be_ok
+}
+
+pub fn exact_s7_schedule_and_score_are_characterized_test() {
+  let projected = [AbsoluteInterval(0, 480)]
+  let tasks = [
+    Todo(1, "one", 3, 4, Some(due.from_unix_seconds(240)), Pending, Asap, 2),
+    Todo(2, "two", 3, 1, Some(due.from_unix_seconds(360)), Pending, Spread, 2),
+    Todo(3, "three", 5, 4, Some(due.from_unix_seconds(240)), Pending, Spread, 2),
+  ]
+  let initial = greedy.build(tasks, projected, 0, 0)
+  let result = hill_climb.climb(initial, tasks, projected, 0, 0)
+  let expected_blocks = [
+    scheduling_model.ScheduleBlock(
+      3,
+      timestamp.from_unix_seconds(0),
+      timestamp.from_unix_seconds(240),
+    ),
+    scheduling_model.ScheduleBlock(
+      2,
+      timestamp.from_unix_seconds(240),
+      timestamp.from_unix_seconds(360),
+    ),
+  ]
+  let expected_score = scheduling_model.Score(33, 4.558518518518518)
+  result.blocks |> should.equal(expected_blocks)
+  score.evaluate(tasks, result.blocks, 0) |> should.equal(expected_score)
+  result.accepted_moves |> should.equal(1)
+  result.accepted_scores |> should.equal([expected_score])
 }
 
 pub fn empty_availability_reports_all_unscheduled_test() {

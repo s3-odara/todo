@@ -30,6 +30,12 @@ fn block(start, end) {
   )
 }
 
+pub fn effective_minimum_split_boundaries_test() {
+  model.effective_minimum_split(task(20, 30)) |> should.equal(20)
+  model.effective_minimum_split(task(30, 30)) |> should.equal(30)
+  model.effective_minimum_split(task(60, 30)) |> should.equal(30)
+}
+
 pub fn generation_validator_accepts_short_estimate_exception_test() {
   invariant.validate_generation(
     [block(0, 1200)],

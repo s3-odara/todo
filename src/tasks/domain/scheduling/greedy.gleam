@@ -6,7 +6,7 @@ import gleam/order
 import gleam/time/timestamp
 import tasks/domain/due
 import tasks/domain/model as task_model
-import tasks/domain/policy.{Asap, NearDeadline, Spread}
+import tasks/domain/policy
 import tasks/domain/scheduling/invariant
 import tasks/domain/scheduling/model as scheduling_model
 import tasks/domain/scheduling/score
@@ -130,7 +130,7 @@ fn placement_candidates(
           int.max(maximum, { interval.end - interval.start } / 60)
         })
       let block_length = int.min(remaining, maximum_capacity)
-      case block_length < effective_minimum(task) {
+      case block_length < task_model.effective_minimum_split(task) {
         True -> []
         False ->
           // More scheduled minutes always win the primary objective. Choose the
@@ -180,9 +180,13 @@ fn anchors(
   }
   let span = int.to_float(due_seconds - planning_start)
   let ideal_start =
-    int.to_float(planning_start) +. inverse(task.scheduling_policy, y0) *. span
+    int.to_float(planning_start)
+    +. policy.inverse(task.scheduling_policy, y0)
+    *. span
   let ideal_end =
-    int.to_float(planning_start) +. inverse(task.scheduling_policy, y1) *. span
+    int.to_float(planning_start)
+    +. policy.inverse(task.scheduling_policy, y1)
+    *. span
   [
     interval.start,
     interval.end - block_length * 60,
@@ -231,32 +235,8 @@ fn due_seconds(task: task_model.Todo) -> Int {
   }
 }
 
-fn inverse(policy, y) {
-  let bounded = float.max(0.0, float.min(1.0, y))
-  case policy {
-    Asap ->
-      case float.square_root(1.0 -. bounded) {
-        Ok(root) -> 1.0 -. root
-        Error(_) -> 0.0
-      }
-    Spread -> bounded
-    NearDeadline ->
-      case float.square_root(bounded) {
-        Ok(root) -> root
-        Error(_) -> 0.0
-      }
-  }
-}
-
 fn rounded_local(value, offset) {
   float.round({ value +. int.to_float(offset) } /. 60.0) * 60 - offset
-}
-
-fn effective_minimum(task: task_model.Todo) -> Int {
-  case task.estimate_minutes < task.minimum_split_minutes {
-    True -> task.estimate_minutes
-    False -> task.minimum_split_minutes
-  }
 }
 
 fn unique_ints(values: List(Int)) -> List(Int) {

@@ -146,6 +146,13 @@ pub fn persisted_schedule_round_trip_and_snapshot_validation_test() {
   json.decode(json.encode(state)) |> should.equal(Ok(state))
 }
 
+pub fn version_one_non_null_schedule_has_byte_exact_canonical_encoding_test() {
+  let text =
+    "{\"version\":1,\"tasks\":[{\"id\":1,\"title\":\"old snapshot\",\"estimate_minutes\":0,\"priority\":3,\"due\":null,\"status\":\"done\",\"scheduling_policy\":\"asap\",\"minimum_split_minutes\":45}],\"availability\":{\"weekly\":[],\"overrides\":[]},\"current_schedule\":{\"generated_at\":1,\"planning_start\":0,\"utc_offset_seconds\":0,\"blocks\":[{\"task_id\":1,\"start\":60,\"end\":120}]}}"
+  let assert Ok(value) = json.decode(text)
+  json.encode(value) |> should.equal(text)
+}
+
 pub fn corrupt_persisted_schedule_is_rejected_test() {
   let task =
     "{\"id\":1,\"title\":\"x\",\"estimate_minutes\":0,\"priority\":3,\"due\":null,\"status\":\"done\",\"scheduling_policy\":\"spread\",\"minimum_split_minutes\":30}"
