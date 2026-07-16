@@ -1,4 +1,3 @@
-import gleam/erlang/process
 import gleam/int
 import gleam/list
 import gleam/option
@@ -8,6 +7,7 @@ import tasks/domain/scheduling/invariant
 import tasks/domain/scheduling/model as scheduling_model
 import tasks/domain/scheduling/score
 import tasks/domain/scheduling/search.{type SearchSpace, SearchSpace}
+import tasks/runtime/parallel
 
 pub const accepted_move_limit = 1000
 
@@ -49,20 +49,6 @@ type SearchState {
     accepted_moves: Int,
     accepted_scores_reversed: List(scheduling_model.Score),
   )
-}
-
-@external(erlang, "tasks_runtime_ffi", "schedulers_online")
-fn runtime_schedulers_online() -> Int
-
-pub fn online_scheduler_count() -> Int {
-  int.max(runtime_schedulers_online(), 1)
-}
-
-pub fn worker_count(useful_work: Int) -> Int {
-  case useful_work <= 0 {
-    True -> 0
-    False -> int.min(online_scheduler_count(), useful_work)
-  }
 }
 
 pub fn improve(initial, tasks, space) {
@@ -132,40 +118,14 @@ fn evaluate_candidates(
   current_score,
   space,
 ) {
-  let count = list.length(rebuild_candidates)
-  let workers = worker_count(count)
-  case workers <= 1 {
-    True ->
-      evaluate_chunk(
-        rebuild_candidates,
-        blocks,
-        current_contributions,
-        current_score,
-        space,
-      )
-    False -> {
-      let chunk_size = { count + workers - 1 } / workers
-      let chunks = chunks(rebuild_candidates, chunk_size, [])
-      let results = process.new_subject()
-      chunks
-      |> list.each(fn(chunk) {
-        process.spawn(fn() {
-          process.send(
-            results,
-            evaluate_chunk(
-              chunk,
-              blocks,
-              current_contributions,
-              current_score,
-              space,
-            ),
-          )
-        })
-        Nil
-      })
-      collect_results(results, list.length(chunks), option.None)
-    }
-  }
+  parallel.map_chunks_reduce(
+    rebuild_candidates,
+    option.None,
+    fn(chunk) {
+      evaluate_chunk(chunk, blocks, current_contributions, current_score, space)
+    },
+    merge_candidate,
+  )
 }
 
 fn evaluate_chunk(
@@ -200,27 +160,10 @@ fn evaluate_chunk(
   })
 }
 
-fn chunks(items: List(a), size: Int, acc: List(List(a))) -> List(List(a)) {
-  case items {
-    [] -> list.reverse(acc)
-    _ -> {
-      let #(chunk, rest) = list.split(items, at: size)
-      chunks(rest, size, [chunk, ..acc])
-    }
-  }
-}
-
-fn collect_results(results, remaining, best) {
-  case remaining {
-    0 -> best
-    _ -> {
-      let candidate = process.receive_forever(results)
-      let merged = case candidate {
-        option.None -> best
-        option.Some(candidate) -> choose_better(best, candidate)
-      }
-      collect_results(results, remaining - 1, merged)
-    }
+fn merge_candidate(best, candidate) {
+  case candidate {
+    option.None -> best
+    option.Some(candidate) -> choose_better(best, candidate)
   }
 }
 
