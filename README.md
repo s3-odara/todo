@@ -80,10 +80,39 @@ gleam test --target erlang
 gleam build --target erlang
 ```
 
-Run the deterministic scheduling benchmark with:
+### Scheduling quality benchmark
+
+The deterministic benchmark ranks solutions by the scheduler's lexicographic objective: lower priority-weighted unscheduled minutes first, then lower policy error. Run a suite and save its pipe-separated output with:
 
 ```sh
-scripts/benchmark_scheduling.sh
+scripts/benchmark_scheduling.sh quick > candidate.psv
 ```
 
-It runs focused and generated search scenarios, reports the initial and final lexicographic score, and separately times greedy construction and hill climbing in microseconds. Each timing is a five-run average after warm-up; compilation and availability projection are excluded.
+Available suites are:
+
+- `quick` (default): focused regressions and a small profile matrix for iteration.
+- `full`: the tuning profiles with five fixed seeds.
+- `holdout`: the same profiles with disjoint seeds; reserve this for validating a proposed algorithm change.
+- `oracle`: tiny cases compared with an exhaustive minute-level optimum.
+- `stress`: large task sets around the 20,000-candidate boundary; this may take substantially longer.
+- `all`: focused, full, holdout, and oracle suites; it deliberately excludes stress.
+
+Each row reports initial and final scores, oracle regret where available, validity, and one timing each for greedy construction and hill climbing. There is no warm-up or repetition. Compilation and availability projection are excluded, and timings are diagnostic rather than part of the quality ranking.
+
+Compare a quick or full result with the checked-in `6af6520` full baseline:
+
+```sh
+scripts/compare_scheduling_quality.sh \
+  benchmark/baselines/6af6520-full.psv candidate.psv
+```
+
+The report's wins and losses are from the candidate's perspective. A full baseline may contain scenarios absent from a quick candidate, but every candidate scenario must have a baseline entry. Comparing holdout or stress results across revisions requires a corresponding result captured from the baseline revision.
+
+Summarize an oracle run without a baseline:
+
+```sh
+scripts/benchmark_scheduling.sh oracle > oracle.psv
+scripts/compare_scheduling_quality.sh oracle.psv
+```
+
+Baseline files contain quality fields only; timings are intentionally excluded. Keep a baseline immutable and add a new commit-named file after intentionally accepting a quality change.
