@@ -45,12 +45,22 @@ pub fn climb(
   planning_start: Int,
   offset: Int,
 ) -> HillResult {
-  climb_loop(initial, tasks, projected, planning_start, offset, 0, [])
+  climb_loop(
+    initial,
+    tasks,
+    rebuilds(tasks),
+    projected,
+    planning_start,
+    offset,
+    0,
+    [],
+  )
 }
 
 fn climb_loop(
   blocks,
   tasks,
+  rebuild_candidates,
   projected,
   planning_start,
   offset,
@@ -64,7 +74,7 @@ fn climb_loop(
         score.contributions(tasks, blocks, planning_start)
       let current_score = score.total(current_contributions)
       let candidate =
-        rebuilds(tasks)
+        rebuild_candidates
         |> list.fold(option.None, fn(best, rebuild) {
           let Rebuild(selected) = rebuild
           let greedy.RebuildResult(next, replacements) =
@@ -102,6 +112,7 @@ fn climb_loop(
               climb_loop(
                 valid,
                 tasks,
+                rebuild_candidates,
                 projected,
                 planning_start,
                 offset,

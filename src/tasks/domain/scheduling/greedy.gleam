@@ -84,9 +84,12 @@ fn place_task(
   planning_start: Int,
   offset: Int,
 ) -> PlacementResult {
-  let candidates =
+  let bounded_candidates =
     placement_candidates(blocks, task, projected, planning_start, offset)
     |> list.take(candidate_limit)
+  let candidates =
+    bounded_candidates
+    |> maximum_duration_candidates
     |> list.map(fn(block) {
       let next = invariant.canonicalize([block, ..blocks])
       // Other tasks are identical across these candidates, so their scores cancel.
@@ -179,6 +182,20 @@ fn anchors(
     int.max(interval.start, int.min(start, interval.end - block_length * 60))
   })
   |> unique_ints
+}
+
+fn maximum_duration_candidates(
+  candidates: List(scheduling_model.ScheduleBlock),
+) -> List(scheduling_model.ScheduleBlock) {
+  let maximum =
+    list.fold(candidates, 0, fn(maximum, block) {
+      int.max(maximum, block_duration(block))
+    })
+  list.filter(candidates, fn(block) { block_duration(block) == maximum })
+}
+
+fn block_duration(block: scheduling_model.ScheduleBlock) -> Int {
+  invariant.seconds(block.end) - invariant.seconds(block.start)
 }
 
 fn best(candidates: List(Candidate)) -> option.Option(Candidate) {
