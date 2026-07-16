@@ -19,26 +19,82 @@ pub type Comparison {
   Worse
 }
 
+pub type Contribution {
+  Contribution(task_id: Int, score: Score)
+}
+
 pub fn evaluate(
   tasks: List(task_model.Todo),
   blocks: List(ScheduleBlock),
   planning_start: Int,
 ) -> Score {
-  list.fold(tasks, Score(0, 0.0), fn(score, task) {
-    let weight = priority_weight(task.priority)
-    let placed = placed_minutes(task.id, blocks)
+  contributions(tasks, blocks, planning_start)
+  |> total
+}
+
+pub fn contributions(
+  tasks: List(task_model.Todo),
+  blocks: List(ScheduleBlock),
+  planning_start: Int,
+) -> List(Contribution) {
+  list.map(tasks, fn(task) {
+    Contribution(task.id, evaluate_task(task, blocks, planning_start))
+  })
+}
+
+pub fn evaluate_task(
+  task: task_model.Todo,
+  blocks: List(ScheduleBlock),
+  planning_start: Int,
+) -> Score {
+  // Filter once: policy sampling must not rescan unrelated blocks 256 times.
+  let own = list.filter(blocks, fn(block) { block.task_id == task.id })
+  let weight = priority_weight(task.priority)
+  Score(
+    weight * int.max(0, task.estimate_minutes - placed_minutes_in(own)),
+    int.to_float(weight) *. policy_error_for_blocks(task, own, planning_start),
+  )
+}
+
+pub fn total(values: List(Contribution)) -> Score {
+  list.fold(values, Score(0, 0.0), fn(total, contribution) {
     Score(
-      score.weighted_unscheduled_minutes
-        + weight
-        * int.max(0, task.estimate_minutes - placed),
-      score.weighted_policy_error
-        +. int.to_float(weight)
-        *. policy_error(task, blocks, planning_start),
+      total.weighted_unscheduled_minutes
+        + contribution.score.weighted_unscheduled_minutes,
+      total.weighted_policy_error +. contribution.score.weighted_policy_error,
     )
   })
 }
 
+pub fn replace_contributions(
+  current: List(Contribution),
+  replacements: List(Contribution),
+) -> List(Contribution) {
+  // Preserve task order so Float addition and deterministic tie-breaking stay stable.
+  list.map(current, fn(contribution) { replacement(contribution, replacements) })
+}
+
+fn replacement(current: Contribution, replacements: List(Contribution)) {
+  case replacements {
+    [] -> current
+    [candidate, ..rest] ->
+      case candidate.task_id == current.task_id {
+        True -> candidate
+        False -> replacement(current, rest)
+      }
+  }
+}
+
 pub fn policy_error(
+  task: task_model.Todo,
+  blocks: List(ScheduleBlock),
+  planning_start: Int,
+) -> Float {
+  let own = list.filter(blocks, fn(block) { block.task_id == task.id })
+  policy_error_for_blocks(task, own, planning_start)
+}
+
+fn policy_error_for_blocks(
   task: task_model.Todo,
   blocks: List(ScheduleBlock),
   planning_start: Int,
@@ -93,9 +149,7 @@ fn progress(
   sample: Float,
 ) -> Float {
   let worked_seconds =
-    blocks
-    |> list.filter(fn(block) { block.task_id == task.id })
-    |> list.fold(0.0, fn(total, block) {
+    list.fold(blocks, 0.0, fn(total, block) {
       let start = int.to_float(invariant.seconds(block.start))
       let end = int.to_float(invariant.seconds(block.end))
       case sample <=. start {
@@ -109,7 +163,11 @@ fn progress(
 pub fn placed_minutes(task_id: Int, blocks: List(ScheduleBlock)) -> Int {
   blocks
   |> list.filter(fn(block) { block.task_id == task_id })
-  |> list.fold(0, fn(total, block) {
+  |> placed_minutes_in
+}
+
+fn placed_minutes_in(blocks: List(ScheduleBlock)) -> Int {
+  list.fold(blocks, 0, fn(total, block) {
     total
     + { invariant.seconds(block.end) - invariant.seconds(block.start) }
     / 60

@@ -22,6 +22,20 @@ type Candidate {
   )
 }
 
+pub type RebuildResult {
+  RebuildResult(
+    blocks: List(scheduling_model.ScheduleBlock),
+    contributions: List(score.Contribution),
+  )
+}
+
+type PlacementResult {
+  PlacementResult(
+    blocks: List(scheduling_model.ScheduleBlock),
+    score: scheduling_model.Score,
+  )
+}
+
 pub fn build(
   tasks: List(task_model.Todo),
   projected: List(AbsoluteInterval),
@@ -31,26 +45,32 @@ pub fn build(
   tasks
   |> initial_order
   |> list.fold([], fn(blocks, task) {
-    place_task(blocks, task, tasks, projected, planning_start, offset)
+    place_task(blocks, task, projected, planning_start, offset).blocks
   })
 }
 
 pub fn rebuild(
   blocks: List(scheduling_model.ScheduleBlock),
   selected: List(task_model.Todo),
-  all_tasks: List(task_model.Todo),
   projected: List(AbsoluteInterval),
   planning_start: Int,
   offset: Int,
-) -> List(scheduling_model.ScheduleBlock) {
+) -> RebuildResult {
   let selected_ids = list.map(selected, fn(task) { task.id })
   let base =
     blocks
     |> list.filter(fn(block) { !list.contains(selected_ids, block.task_id) })
     |> invariant.canonicalize
-  list.fold(selected, base, fn(current, task) {
-    place_task(current, task, all_tasks, projected, planning_start, offset)
-  })
+  let #(rebuilt, contributions) =
+    list.fold(selected, #(base, []), fn(state, task) {
+      let #(current, contributions) = state
+      let placed = place_task(current, task, projected, planning_start, offset)
+      #(placed.blocks, [
+        score.Contribution(task.id, placed.score),
+        ..contributions
+      ])
+    })
+  RebuildResult(rebuilt, list.reverse(contributions))
 }
 
 pub fn initial_order(tasks: List(task_model.Todo)) -> List(task_model.Todo) {
@@ -60,29 +80,23 @@ pub fn initial_order(tasks: List(task_model.Todo)) -> List(task_model.Todo) {
 fn place_task(
   blocks: List(scheduling_model.ScheduleBlock),
   task: task_model.Todo,
-  all_tasks: List(task_model.Todo),
   projected: List(AbsoluteInterval),
   planning_start: Int,
   offset: Int,
-) -> List(scheduling_model.ScheduleBlock) {
+) -> PlacementResult {
   let candidates =
     placement_candidates(blocks, task, projected, planning_start, offset)
     |> list.take(candidate_limit)
     |> list.map(fn(block) {
       let next = invariant.canonicalize([block, ..blocks])
-      Candidate(block, next, score.evaluate(all_tasks, next, planning_start))
+      // Other tasks are identical across these candidates, so their scores cancel.
+      Candidate(block, next, score.evaluate_task(task, next, planning_start))
     })
   case best(candidates) {
-    option.None -> blocks
+    option.None ->
+      PlacementResult(blocks, score.evaluate_task(task, blocks, planning_start))
     option.Some(candidate) ->
-      place_task(
-        candidate.blocks,
-        task,
-        all_tasks,
-        projected,
-        planning_start,
-        offset,
-      )
+      place_task(candidate.blocks, task, projected, planning_start, offset)
   }
 }
 

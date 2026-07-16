@@ -59,24 +59,22 @@ fn climb_loop(
   case accepted >= accepted_move_limit {
     True -> HillResult(blocks, accepted, list.reverse(scores))
     False -> {
-      let current_score = score.evaluate(tasks, blocks, planning_start)
+      let current_contributions =
+        score.contributions(tasks, blocks, planning_start)
+      let current_score = score.total(current_contributions)
       let candidate =
         rebuilds(tasks)
         |> list.fold(option.None, fn(best, rebuild) {
           let Rebuild(selected) = rebuild
-          let next =
-            greedy.rebuild(
-              blocks,
-              selected,
-              tasks,
-              projected,
-              planning_start,
-              offset,
-            )
+          let greedy.RebuildResult(next, replacements) =
+            greedy.rebuild(blocks, selected, projected, planning_start, offset)
           case next == blocks {
             True -> best
             False -> {
-              let next_score = score.evaluate(tasks, next, planning_start)
+              // A rebuild changes only its selected tasks; reuse every other score.
+              let next_score =
+                score.replace_contributions(current_contributions, replacements)
+                |> score.total
               case score.strictly_better(next_score, than: current_score) {
                 False -> best
                 True -> choose_better(best, Candidate(next, next_score))

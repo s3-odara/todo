@@ -48,3 +48,35 @@ pub fn block_progress_and_priority_weight_test() {
   let close = value.weighted_policy_error <. 0.000000000001
   close |> should.be_true
 }
+
+pub fn task_contributions_preserve_total_and_ordered_replacement_test() {
+  let first = task(Spread)
+  let second =
+    Todo(
+      2,
+      "second",
+      30,
+      5,
+      Some(due.from_unix_seconds(3600)),
+      Pending,
+      Asap,
+      30,
+    )
+  let blocks = [
+    scheduling_model.ScheduleBlock(
+      1,
+      timestamp.from_unix_seconds(0),
+      timestamp.from_unix_seconds(1800),
+    ),
+  ]
+  let contributions = score.contributions([first, second], blocks, 0)
+  score.total(contributions)
+  |> should.equal(score.evaluate([first, second], blocks, 0))
+
+  let replacement = score.Contribution(2, scheduling_model.Score(0, 0.25))
+  score.replace_contributions(contributions, [replacement])
+  |> should.equal([
+    score.Contribution(1, score.evaluate_task(first, blocks, 0)),
+    replacement,
+  ])
+}
