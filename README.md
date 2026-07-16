@@ -79,3 +79,11 @@ gleam format --check src test
 gleam test --target erlang
 gleam build --target erlang
 ```
+
+Run the deterministic scheduling benchmark with:
+
+```sh
+scripts/benchmark_scheduling.sh
+```
+
+It runs focused and generated search scenarios, reports the initial and final lexicographic score, and separately times greedy construction and hill climbing in microseconds. Each timing is a five-run average after warm-up; compilation and availability projection are excluded.
