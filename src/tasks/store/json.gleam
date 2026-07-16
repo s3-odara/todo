@@ -2,7 +2,7 @@ import gleam/dynamic/decode
 import gleam/int
 import gleam/json
 import gleam/list
-import gleam/option.{None}
+import gleam/option.{type Option, None, Some}
 import gleam/order
 import gleam/result
 import gleam/string
@@ -17,6 +17,7 @@ import tasks/domain/availability.{
 import tasks/domain/due
 import tasks/domain/model.{type Status, type Todo, Done, Pending, Todo}
 import tasks/domain/policy.{type SchedulingPolicy, Asap, NearDeadline, Spread}
+import tasks/domain/scheduling/invariant as scheduling_invariant
 import tasks/domain/scheduling/model as scheduling_model
 import tasks/domain/validation
 
@@ -32,14 +33,14 @@ fn state_decoder() {
   use availability <- decode.field("availability", availability_decoder())
   use current_schedule <- decode.field(
     "current_schedule",
-    decode.optional(decode.dynamic),
+    decode.optional(schedule_decoder()),
   )
-  case version, current_schedule {
-    1, None -> decode.success(AppState(1, tasks, availability, None))
-    _, _ ->
+  case version {
+    1 -> decode.success(AppState(1, tasks, availability, current_schedule))
+    _ ->
       decode.failure(
-        AppState(1, tasks, availability, None),
-        expected: "version 1 AppState with a null current_schedule",
+        AppState(1, tasks, availability, current_schedule),
+        expected: "version 1 AppState",
       )
   }
 }
@@ -162,8 +163,48 @@ fn weekday_decoder() {
   })
 }
 
+fn schedule_decoder() {
+  use generated_at <- decode.field(
+    "generated_at",
+    decode.int |> decode.map(timestamp.from_unix_seconds),
+  )
+  use planning_start <- decode.field(
+    "planning_start",
+    decode.int |> decode.map(timestamp.from_unix_seconds),
+  )
+  use utc_offset_seconds <- decode.field("utc_offset_seconds", decode.int)
+  use blocks <- decode.field(
+    "blocks",
+    decode.list(of: schedule_block_decoder()),
+  )
+  decode.success(scheduling_model.SavedSchedule(
+    generated_at,
+    planning_start,
+    utc_offset_seconds,
+    blocks,
+  ))
+}
+
+fn schedule_block_decoder() {
+  use task_id <- decode.field("task_id", decode.int)
+  use start <- decode.field(
+    "start",
+    decode.int |> decode.map(timestamp.from_unix_seconds),
+  )
+  use end <- decode.field(
+    "end",
+    decode.int |> decode.map(timestamp.from_unix_seconds),
+  )
+  decode.success(scheduling_model.ScheduleBlock(task_id, start, end))
+}
+
 fn validate_state(state: AppState) -> Result(AppState, String) {
-  let AppState(tasks: tasks, availability: value, ..) = state
+  let AppState(
+    tasks: tasks,
+    availability: value,
+    current_schedule: schedule,
+    ..,
+  ) = state
   let Availability(weekly, overrides) = value
   case
     unique_ids(tasks, [])
@@ -183,9 +224,30 @@ fn validate_state(state: AppState) -> Result(AppState, String) {
     && list.all(overrides, fn(entry) {
       availability.is_canonical(entry.intervals)
     })
+    && valid_schedule(schedule, tasks)
   {
     True -> Ok(state)
     False -> Error("invalid JSON")
+  }
+}
+
+fn valid_schedule(
+  schedule: Option(scheduling_model.SavedSchedule),
+  tasks: List(Todo),
+) -> Bool {
+  case schedule {
+    None -> True
+    Some(saved) ->
+      case
+        scheduling_invariant.validate_persisted(
+          saved.blocks,
+          tasks,
+          saved.utc_offset_seconds,
+        )
+      {
+        Ok(_) -> True
+        Error(_) -> False
+      }
   }
 }
 

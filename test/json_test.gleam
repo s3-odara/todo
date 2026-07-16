@@ -1,12 +1,14 @@
 import gleam/list
 import gleam/option.{None, Some}
 import gleam/time/calendar.{Date, July}
+import gleam/time/timestamp
 import gleeunit/should
 import tasks/domain/app_state.{AppState}
 import tasks/domain/availability
 import tasks/domain/due
 import tasks/domain/model.{Done, Todo}
 import tasks/domain/policy.{Asap}
+import tasks/domain/scheduling/model as scheduling_model
 import tasks/store/json
 
 fn state_json(tasks: String, version: String) -> String {
@@ -121,10 +123,50 @@ pub fn duplicate_or_invalid_tasks_are_rejected_test() {
     json.decode(state_json("[" <> valid <> "," <> valid <> "]", "1"))
 }
 
-pub fn non_null_schedule_is_deferred_and_rejected_in_phase_one_test() {
+pub fn malformed_non_null_schedule_is_rejected_test() {
   let text =
     "{\"version\":1,\"tasks\":[],\"availability\":{\"weekly\":[],\"overrides\":[]},\"current_schedule\":{}}"
   let assert Error(_) = json.decode(text)
+}
+
+pub fn persisted_schedule_round_trip_and_snapshot_validation_test() {
+  let task = Todo(1, "old snapshot", 0, 3, None, Done, Asap, 45)
+  let schedule =
+    scheduling_model.SavedSchedule(
+      timestamp.from_unix_seconds(1),
+      timestamp.from_unix_seconds(0),
+      0,
+      [
+        scheduling_model.ScheduleBlock(
+          1,
+          timestamp.from_unix_seconds(60),
+          timestamp.from_unix_seconds(120),
+        ),
+      ],
+    )
+  let state = AppState(1, [task], availability.empty(), Some(schedule))
+  json.decode(json.encode(state)) |> should.equal(Ok(state))
+}
+
+pub fn corrupt_persisted_schedule_is_rejected_test() {
+  let task =
+    "{\"id\":1,\"title\":\"x\",\"estimate_minutes\":0,\"priority\":3,\"due\":null,\"status\":\"done\",\"scheduling_policy\":\"spread\",\"minimum_split_minutes\":30}"
+  let schedules = [
+    "{\"generated_at\":0,\"planning_start\":0,\"utc_offset_seconds\":0,\"blocks\":[{\"task_id\":2,\"start\":60,\"end\":120}]}",
+    "{\"generated_at\":0,\"planning_start\":0,\"utc_offset_seconds\":0,\"blocks\":[{\"task_id\":1,\"start\":61,\"end\":120}]}",
+    "{\"generated_at\":0,\"planning_start\":0,\"utc_offset_seconds\":0,\"blocks\":[{\"task_id\":1,\"start\":120,\"end\":60}]}",
+    "{\"generated_at\":0,\"planning_start\":0,\"utc_offset_seconds\":0,\"blocks\":[{\"task_id\":1,\"start\":60,\"end\":120},{\"task_id\":1,\"start\":120,\"end\":180}]}",
+  ]
+  schedules
+  |> list.each(fn(schedule) {
+    let text =
+      "{\"version\":1,\"tasks\":["
+      <> task
+      <> "],\"availability\":{\"weekly\":[],\"overrides\":[]},\"current_schedule\":"
+      <> schedule
+      <> "}"
+    let assert Error(_) = json.decode(text)
+  })
 }
 
 pub fn malformed_or_incomplete_json_is_rejected_test() {
