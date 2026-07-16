@@ -13,7 +13,7 @@ import tasks/domain/scheduling/score
 import tasks/domain/scheduling/search.{type SearchSpace, SearchSpace}
 import tasks/domain/scheduling/timeline.{type AbsoluteInterval, AbsoluteInterval}
 
-pub const candidate_limit = 20_000
+pub const placement_candidate_limit = 20_000
 
 type Candidate {
   Candidate(
@@ -79,7 +79,7 @@ fn place_task(
   let SearchSpace(_, planning_start, _) = space
   let bounded_candidates =
     placement_candidates(blocks, task, space)
-    |> list.take(candidate_limit)
+    |> list.take(placement_candidate_limit)
   let own =
     blocks
     |> list.filter(fn(existing) { existing.task_id == task.id })
