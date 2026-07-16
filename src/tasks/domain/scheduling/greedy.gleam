@@ -91,7 +91,6 @@ fn place_task(
     |> list.filter(fn(existing) { existing.task_id == task.id })
   let candidates =
     bounded_candidates
-    |> maximum_duration_candidates
     |> list.map(fn(block) {
       let next_own = invariant.canonicalize([block, ..own])
       // Other tasks are identical across these candidates, so their scores cancel.
@@ -121,39 +120,47 @@ fn placement_candidates(
     option.None, _ -> []
     option.Some(deadline), False -> {
       let due_seconds = due.to_unix_seconds(deadline)
-      timeline.free_intervals(projected, blocks)
-      |> list.flat_map(fn(interval) {
-        let clipped =
+      let intervals =
+        timeline.free_intervals(projected, blocks)
+        |> list.map(fn(interval) {
           AbsoluteInterval(interval.start, int.min(interval.end, due_seconds))
-        let capacity = { clipped.end - clipped.start } / 60
-        case capacity <= 0 {
-          True -> []
-          False -> {
-            candidate_lengths(task, remaining, capacity)
-            |> list.flat_map(fn(minutes) {
-              anchors(task, placed, clipped, minutes, planning_start, offset)
-              |> list.map(fn(start) {
-                scheduling_model.ScheduleBlock(
-                  task.id,
-                  timestamp.from_unix_seconds(start),
-                  timestamp.from_unix_seconds(start + minutes * 60),
+        })
+      let maximum_capacity =
+        list.fold(intervals, 0, fn(maximum, interval) {
+          int.max(maximum, { interval.end - interval.start } / 60)
+        })
+      let block_length = int.min(remaining, maximum_capacity)
+      case block_length < effective_minimum(task) {
+        True -> []
+        False ->
+          // More scheduled minutes always win the primary objective. Choose the
+          // global maximum before the cap so fragmentation cannot hide it.
+          intervals
+          |> list.flat_map(fn(interval) {
+            let capacity = { interval.end - interval.start } / 60
+            case capacity < block_length {
+              True -> []
+              False ->
+                anchors(
+                  task,
+                  placed,
+                  interval,
+                  block_length,
+                  planning_start,
+                  offset,
                 )
-              })
-            })
-          }
-        }
-      })
+                |> list.map(fn(start) {
+                  scheduling_model.ScheduleBlock(
+                    task.id,
+                    timestamp.from_unix_seconds(start),
+                    timestamp.from_unix_seconds(start + block_length * 60),
+                  )
+                })
+            }
+          })
+      }
     }
   }
-}
-
-fn candidate_lengths(task, remaining, capacity) -> List(Int) {
-  let minimum = effective_minimum(task)
-  [minimum, int.min(remaining, capacity), remaining - minimum]
-  |> unique_ints
-  |> list.filter(fn(value) {
-    value >= minimum && value <= remaining && value <= capacity
-  })
 }
 
 fn anchors(
@@ -186,20 +193,6 @@ fn anchors(
     int.max(interval.start, int.min(start, interval.end - block_length * 60))
   })
   |> unique_ints
-}
-
-fn maximum_duration_candidates(
-  candidates: List(scheduling_model.ScheduleBlock),
-) -> List(scheduling_model.ScheduleBlock) {
-  let maximum =
-    list.fold(candidates, 0, fn(maximum, block) {
-      int.max(maximum, block_duration(block))
-    })
-  list.filter(candidates, fn(block) { block_duration(block) == maximum })
-}
-
-fn block_duration(block: scheduling_model.ScheduleBlock) -> Int {
-  invariant.seconds(block.end) - invariant.seconds(block.start)
 }
 
 fn best(candidates: List(Candidate)) -> option.Option(Candidate) {
