@@ -1,16 +1,21 @@
 import gleam/option.{None, Some}
 import gleam/time/calendar
+import gleam/time/duration
 import gleam/time/timestamp
 import gleeunit/should
 import tasks/domain/app_state.{AppState}
 import tasks/domain/availability
 import tasks/domain/due
-import tasks/domain/filter.{ListFilter, PendingOnly, Today}
+import tasks/domain/filter.{
+  AllScheduled, AllStatuses, ListFilter, PendingOnly, ScheduledDate,
+  ScheduledExact, Today,
+}
 import tasks/domain/model.{
   AlreadyDone, Done, NotFound, Pending, Todo, ValidatedAdd,
 }
 import tasks/domain/policy.{Spread}
 import tasks/domain/scheduling/model as scheduling_model
+import tasks/domain/scheduling/scheduler
 import todo_app/service
 import todo_app/store.{Store}
 
@@ -227,6 +232,72 @@ pub fn availability_list_does_not_save_test() {
   let store = Store(fn() { Ok(state) }, fn(_) { panic as "save must not run" })
   service.availability_list(store)
   |> should.equal(Ok(availability.empty()))
+}
+
+pub fn scheduled_list_joins_current_task_status_without_saving_test() {
+  let offset = duration.hours(9)
+  let start =
+    timestamp.from_calendar(
+      calendar.Date(2026, calendar.July, 24),
+      calendar.TimeOfDay(9, 0, 0, 0),
+      offset,
+    )
+  let end = timestamp.add(start, duration.minutes(60))
+  let task = Todo(1, "current title", 60, 3, None, Done, Spread, 30)
+  let schedule =
+    scheduling_model.SavedSchedule(start, start, 32_400, [
+      scheduling_model.ScheduleBlock(1, start, end),
+    ])
+  let store =
+    Store(fn() { Ok(state_with_schedule([task], schedule)) }, fn(_) {
+      panic as "save must not run"
+    })
+
+  service.scheduled_list(store, AllStatuses, AllScheduled, None)
+  |> should.equal(
+    Ok(
+      service.ScheduledListing(32_400, [
+        service.ScheduledItem(
+          scheduling_model.ScheduleBlock(1, start, end),
+          task,
+        ),
+      ]),
+    ),
+  )
+  service.scheduled_list(
+    store,
+    PendingOnly,
+    ScheduledExact(ScheduledDate(calendar.Date(2026, calendar.July, 24))),
+    None,
+  )
+  |> should.equal(Ok(service.ScheduledListing(32_400, [])))
+}
+
+pub fn generate_schedule_replaces_snapshot_and_saves_report_only_in_result_test() {
+  let now =
+    timestamp.from_calendar(
+      calendar.Date(2026, calendar.July, 24),
+      calendar.TimeOfDay(12, 0, 1, 0),
+      calendar.utc_offset,
+    )
+  let task =
+    Todo(1, "x", 60, 3, Some(due_at("2026-07-25T12:00")), Pending, Spread, 30)
+  let old = saved_schedule()
+  let store =
+    Store(fn() { Ok(state_with_schedule([task], old)) }, fn(state) {
+      state.current_schedule |> should.not_equal(Some(old))
+      let assert Some(saved) = state.current_schedule
+      saved.blocks |> should.equal([])
+      Ok(Nil)
+    })
+
+  let assert Ok(result) =
+    service.generate_schedule(
+      store,
+      scheduler.context(now, calendar.utc_offset),
+    )
+  result.report.unscheduled
+  |> should.equal([scheduling_model.UnscheduledTask(1, 60)])
 }
 
 pub fn a_done_save_failure_is_reported_test() {

@@ -2,17 +2,22 @@ import gleam/list
 import gleam/option.{None, Some}
 import gleam/time/calendar.{Date, July}
 import gleam/time/duration
+import gleam/time/timestamp
 import gleeunit/should
 import tasks/domain/app_state.{AppState}
 import tasks/domain/availability
 import tasks/domain/due
 import tasks/domain/filter.{
-  AllStatuses, DoneOnly, Exact, ListFilter, Overdue, PendingOnly, Range, Today,
+  AllScheduled, AllStatuses, DoneOnly, Exact, ListFilter, Overdue, PendingOnly,
+  Range, ScheduledDate, ScheduledExact, ScheduledList, ScheduledRange,
+  ScheduledToday, TaskList, Today,
 }
 import tasks/domain/model.{Done, Pending, Todo, ValidatedAdd}
 import tasks/domain/policy.{Asap, NearDeadline, Spread}
+import tasks/domain/scheduling/model as scheduling_model
 import todo_app/cli
 import todo_app/runtime
+import todo_app/service
 import todo_app/store.{Store}
 
 fn today() {
@@ -78,6 +83,8 @@ pub fn help_lists_the_available_commands_test() {
         "               [--minimum-split DURATION]",
         "todo list [--done | --all] [--due today|overdue|YYYY-MM-DD]",
         "          [--due-since YYYY-MM-DD] [--due-until YYYY-MM-DD]",
+        "todo list --scheduled [today|YYYY-MM-DD] [--done | --all]",
+        "todo list [--scheduled-since YYYY-MM-DD] [--scheduled-until YYYY-MM-DD]",
         "  default: pending; --done: done; --all: both",
         "  due dates use local time; overdue is before now; ranges are inclusive",
         "  --due excludes undated tasks and cannot be combined with due ranges",
@@ -86,6 +93,7 @@ pub fn help_lists_the_available_commands_test() {
         "todo availability set --date YYYY-MM-DD --from HH:MM --to HH:MM",
         "todo availability close|reset --date YYYY-MM-DD",
         "todo availability list",
+        "todo schedule",
       ],
       [],
     ),
@@ -276,35 +284,109 @@ pub fn done_parses_its_id_test() {
 
 pub fn list_status_options_parse_to_typed_filters_test() {
   parse(["list"])
-  |> should.equal(Ok(cli.List(ListFilter(PendingOnly, None))))
+  |> should.equal(Ok(cli.List(TaskList(ListFilter(PendingOnly, None)))))
   parse(["list", "--done"])
-  |> should.equal(Ok(cli.List(ListFilter(DoneOnly, None))))
+  |> should.equal(Ok(cli.List(TaskList(ListFilter(DoneOnly, None)))))
   parse(["list", "--all"])
-  |> should.equal(Ok(cli.List(ListFilter(AllStatuses, None))))
+  |> should.equal(Ok(cli.List(TaskList(ListFilter(AllStatuses, None)))))
+}
+
+pub fn schedule_and_scheduled_list_commands_parse_test() {
+  parse(["schedule"]) |> should.equal(Ok(cli.GenerateSchedule))
+  parse(["schedule", "extra"])
+  |> should.equal(Error("invalid command or arguments"))
+
+  parse(["list", "--scheduled"])
+  |> should.equal(Ok(cli.List(ScheduledList(PendingOnly, AllScheduled))))
+  parse(["list", "--scheduled", "today", "--done"])
+  |> should.equal(
+    Ok(cli.List(ScheduledList(DoneOnly, ScheduledExact(ScheduledToday)))),
+  )
+  parse(["list", "--scheduled", "2026-07-24", "--all"])
+  |> should.equal(
+    Ok(
+      cli.List(ScheduledList(
+        AllStatuses,
+        ScheduledExact(ScheduledDate(today())),
+      )),
+    ),
+  )
+  parse(["list", "--scheduled-since", "2026-07-24"])
+  |> should.equal(
+    Ok(
+      cli.List(ScheduledList(PendingOnly, ScheduledRange(Some(today()), None))),
+    ),
+  )
+  parse(["list", "--scheduled-until", "2026-07-24"])
+  |> should.equal(
+    Ok(
+      cli.List(ScheduledList(PendingOnly, ScheduledRange(None, Some(today())))),
+    ),
+  )
+}
+
+pub fn scheduled_list_conflicts_and_invalid_ranges_are_rejected_test() {
+  [
+    ["list", "--scheduled", "today", "--scheduled-since", "2026-07-24"],
+    ["list", "--scheduled", "--due", "today"],
+    [
+      "list",
+      "--scheduled-since",
+      "2026-07-25",
+      "--scheduled-until",
+      "2026-07-24",
+    ],
+    ["list", "--scheduled", "wat"],
+    ["list", "--scheduled-since"],
+    ["list", "--scheduled", "today", "--scheduled", "today"],
+  ]
+  |> list.each(fn(args) { parse(args) |> should.equal(Error("invalid input")) })
+}
+
+pub fn explicit_scheduled_list_does_not_read_clock_test() {
+  runtime.run(
+    cli.List(ScheduledList(PendingOnly, AllScheduled)),
+    store_with([]),
+    clock_must_not_run,
+  )
+  |> should.equal(cli.Outcome(0, ["No scheduled tasks."], []))
 }
 
 pub fn list_due_options_parse_to_typed_filters_test() {
   parse(["list", "--due", "today"])
-  |> should.equal(Ok(cli.List(ListFilter(PendingOnly, Some(Today)))))
+  |> should.equal(Ok(cli.List(TaskList(ListFilter(PendingOnly, Some(Today))))))
   parse(["list", "--due", "overdue"])
-  |> should.equal(Ok(cli.List(ListFilter(PendingOnly, Some(Overdue)))))
+  |> should.equal(
+    Ok(cli.List(TaskList(ListFilter(PendingOnly, Some(Overdue))))),
+  )
   parse(["list", "--due", "2026-07-24"])
-  |> should.equal(Ok(cli.List(ListFilter(PendingOnly, Some(Exact(today()))))))
+  |> should.equal(
+    Ok(cli.List(TaskList(ListFilter(PendingOnly, Some(Exact(today())))))),
+  )
 }
 
 pub fn one_sided_list_ranges_parse_to_typed_filters_test() {
   parse(["list", "--due-since", "2026-07-24"])
   |> should.equal(
-    Ok(cli.List(ListFilter(PendingOnly, Some(Range(Some(today()), None))))),
+    Ok(
+      cli.List(
+        TaskList(ListFilter(PendingOnly, Some(Range(Some(today()), None)))),
+      ),
+    ),
   )
   parse(["list", "--due-until", "2026-07-24"])
   |> should.equal(
-    Ok(cli.List(ListFilter(PendingOnly, Some(Range(None, Some(today())))))),
+    Ok(
+      cli.List(
+        TaskList(ListFilter(PendingOnly, Some(Range(None, Some(today()))))),
+      ),
+    ),
   )
 }
 
 pub fn status_and_exact_due_options_are_order_independent_test() {
-  let expected = Ok(cli.List(ListFilter(AllStatuses, Some(Exact(today())))))
+  let expected =
+    Ok(cli.List(TaskList(ListFilter(AllStatuses, Some(Exact(today()))))))
 
   parse(["list", "--all", "--due", "2026-07-24"])
   |> should.equal(expected)
@@ -315,7 +397,11 @@ pub fn status_and_exact_due_options_are_order_independent_test() {
 pub fn list_range_options_are_order_independent_test() {
   let assert Ok(until) = due.parse_date("2026-07-25")
   let expected =
-    Ok(cli.List(ListFilter(DoneOnly, Some(Range(Some(today()), Some(until))))))
+    Ok(
+      cli.List(
+        TaskList(ListFilter(DoneOnly, Some(Range(Some(today()), Some(until))))),
+      ),
+    )
 
   parse([
     "list",
@@ -439,10 +525,31 @@ pub fn tasks_are_rendered_as_tab_separated_rows_test() {
   )
 }
 
+pub fn scheduled_rows_use_the_saved_offset_and_current_task_test() {
+  let start = due.instant(due_at("2026-07-24T00:00"))
+  let end = timestamp.add(start, duration.minutes(30))
+  let task = Todo(1, "x", 30, 3, None, Done, Spread, 30)
+  cli.scheduled_listed(
+    service.ScheduledListing(32_400, [
+      service.ScheduledItem(scheduling_model.ScheduleBlock(1, start, end), task),
+    ]),
+  )
+  |> should.equal(
+    cli.Outcome(
+      0,
+      [
+        "START\tEND\tID\tSTATUS\tTITLE",
+        "2026-07-24T09:00\t2026-07-24T09:30\t1\tdone\tx",
+      ],
+      [],
+    ),
+  )
+}
+
 pub fn stored_due_is_rendered_with_the_current_local_offset_test() {
   let japan = duration.hours(9)
   let assert Ok(stored) = due.input("2026-07-24T09:00", japan)
-  let command = cli.List(ListFilter(PendingOnly, None))
+  let command = cli.List(TaskList(ListFilter(PendingOnly, None)))
 
   runtime.run(
     command,
