@@ -1,9 +1,8 @@
 import gleam/dynamic/decode
 import gleam/json
 import gleam/result
-import tasks/domain/model.{
-  type Due, type Status, type Todo, Done, Due, Pending, Todo,
-}
+import tasks/domain/due
+import tasks/domain/model.{type Status, type Todo, Done, Pending, Todo}
 
 pub fn decode(text: String) -> Result(List(Todo), String) {
   json.parse(from: text, using: decode.list(of: task_decoder()))
@@ -12,14 +11,14 @@ pub fn decode(text: String) -> Result(List(Todo), String) {
 
 fn task_decoder() {
   // The file is app-owned, so decode only the structure needed to rebuild a
-  // Todo; do not revalidate domain values or reject unknown fields.
+  // Todo; do not revalidate unrelated domain values or reject unknown fields.
   use id <- decode.field("id", decode.int)
   use title <- decode.field("title", decode.string)
   use estimate <- decode.field("estimate_minutes", decode.int)
   use priority <- decode.field("priority", decode.int)
   use due <- decode.field(
     "due",
-    decode.optional(decode.string |> decode.map(Due)),
+    decode.optional(decode.int |> decode.map(due.from_unix_seconds)),
   )
   use status <- decode.field("status", status_decoder())
   decode.success(Todo(id, title, estimate, priority, due, status))
@@ -51,8 +50,9 @@ fn task_json(task: Todo) -> json.Json {
   ])
 }
 
-fn due_json(due: Due) -> json.Json {
-  json.string(due.canonical)
+fn due_json(value) -> json.Json {
+  // CLI due values have minute precision, so Unix seconds preserve them exactly.
+  json.int(due.to_unix_seconds(value))
 }
 
 fn status_string(status: Status) -> String {

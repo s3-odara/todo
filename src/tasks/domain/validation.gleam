@@ -3,20 +3,22 @@ import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/result
 import gleam/string
-import tasks/domain/due
-import tasks/domain/model.{type Due, type ValidatedAdd, ValidatedAdd}
+import gleam/time/duration.{type Duration}
+import tasks/domain/due.{type Due}
+import tasks/domain/model.{type ValidatedAdd, ValidatedAdd}
 
 pub fn add(
   raw_title: String,
   raw_estimate: String,
   raw_priority: String,
   raw_due: Option(String),
+  offset: Duration,
 ) -> Result(ValidatedAdd, Nil) {
   case
     title(raw_title),
     estimate(raw_estimate),
     priority(raw_priority),
-    optional_due(raw_due)
+    optional_due(raw_due, offset)
   {
     Ok(clean), Ok(minutes), Ok(rank), Ok(due_value) ->
       Ok(ValidatedAdd(clean, minutes, rank, due_value))
@@ -75,10 +77,13 @@ fn estimate(value: String) -> Result(Int, Nil) {
   }
 }
 
-fn optional_due(raw: Option(String)) -> Result(Option(Due), Nil) {
+fn optional_due(
+  raw: Option(String),
+  offset: Duration,
+) -> Result(Option(Due), Nil) {
   case raw {
     None -> Ok(None)
-    Some(value) -> due.input(value) |> result.map(Some)
+    Some(value) -> due.input(value, offset) |> result.map(Some)
   }
 }
 

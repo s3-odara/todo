@@ -1,18 +1,26 @@
 import gleam/int
 import gleam/list
 import gleam/option.{type Option, None, Some}
+import gleam/order.{Gt}
 import gleam/result
 import gleam/string
+import gleam/time/calendar
+import gleam/time/duration.{type Duration}
+import tasks/domain/due.{type Due}
+import tasks/domain/filter.{
+  type DueFilter, type ListFilter, type StatusFilter, AllStatuses, DoneOnly,
+  Exact, ListFilter, Overdue, PendingOnly, Range, Today,
+}
 import tasks/domain/model.{
-  type Due, type Status, type TaskError, type Todo, type ValidatedAdd,
-  AlreadyDone, Done, NotFound, Pending,
+  type Status, type TaskError, type Todo, type ValidatedAdd, AlreadyDone, Done,
+  NotFound, Pending,
 }
 import tasks/domain/validation
 
 pub type Command {
   Help
   Add(ValidatedAdd)
-  List(include_all: Bool)
+  List(ListFilter)
   RunDone(id: Int)
 }
 
@@ -28,12 +36,26 @@ type AddOptions {
   )
 }
 
-pub fn parse(args: List(String)) -> Result(Command, String) {
+type ListOptions {
+  ListOptions(status: Option(StatusFilter), due: ListDueOptions)
+}
+
+type ListDueOptions {
+  NoDueOptions
+  DueMatch(DueFilter)
+  DueRange(since: Option(calendar.Date), until: Option(calendar.Date))
+}
+
+pub fn parse(args: List(String), offset: Duration) -> Result(Command, String) {
   case args {
     [] | ["--help"] -> Ok(Help)
     ["add", "--help"] | ["list", "--help"] | ["done", "--help"] -> Ok(Help)
-    ["list"] -> Ok(List(False))
-    ["list", "--all"] -> Ok(List(True))
+    ["list", ..flags] ->
+      flags
+      |> list_flags(ListOptions(None, NoDueOptions))
+      |> result.try(list_filter)
+      |> result.map(List)
+      |> result.map_error(fn(_) { "invalid input" })
     ["done", id] ->
       validation.done(id)
       |> result.map(RunDone)
@@ -48,6 +70,7 @@ pub fn parse(args: List(String)) -> Result(Command, String) {
           option.unwrap(estimate, or: "0m"),
           option.unwrap(priority, or: "3"),
           due,
+          offset,
         )
         |> result.map_error(fn(_) { "invalid input" })
       })
@@ -69,12 +92,117 @@ fn add_flags(flags, options: AddOptions) -> Result(AddOptions, String) {
   }
 }
 
+fn list_flags(flags, options: ListOptions) -> Result(ListOptions, Nil) {
+  case flags {
+    [] -> Ok(options)
+    ["--done", ..rest] -> {
+      use updated <- result.try(select_status(options, DoneOnly))
+      list_flags(rest, updated)
+    }
+    ["--all", ..rest] -> {
+      use updated <- result.try(select_status(options, AllStatuses))
+      list_flags(rest, updated)
+    }
+    ["--due", value, ..rest] -> {
+      use parsed <- result.try(parse_due_filter(value))
+      use updated <- result.try(select_due(options, parsed))
+      list_flags(rest, updated)
+    }
+    ["--due-since", value, ..rest] -> {
+      use parsed <- result.try(due.parse_date(value))
+      use updated <- result.try(set_since(options, parsed))
+      list_flags(rest, updated)
+    }
+    ["--due-until", value, ..rest] -> {
+      use parsed <- result.try(due.parse_date(value))
+      use updated <- result.try(set_until(options, parsed))
+      list_flags(rest, updated)
+    }
+    _ -> Error(Nil)
+  }
+}
+
+fn select_status(
+  options: ListOptions,
+  status: StatusFilter,
+) -> Result(ListOptions, Nil) {
+  case options {
+    ListOptions(status: None, ..) ->
+      Ok(ListOptions(..options, status: Some(status)))
+    _ -> Error(Nil)
+  }
+}
+
+fn select_due(
+  options: ListOptions,
+  filter: DueFilter,
+) -> Result(ListOptions, Nil) {
+  case options {
+    ListOptions(due: NoDueOptions, ..) ->
+      Ok(ListOptions(..options, due: DueMatch(filter)))
+    _ -> Error(Nil)
+  }
+}
+
+fn set_since(
+  options: ListOptions,
+  since: calendar.Date,
+) -> Result(ListOptions, Nil) {
+  case options {
+    ListOptions(due: NoDueOptions, ..) ->
+      Ok(ListOptions(..options, due: DueRange(Some(since), None)))
+    ListOptions(due: DueRange(since: None, until: until), ..) ->
+      Ok(ListOptions(..options, due: DueRange(Some(since), until)))
+    _ -> Error(Nil)
+  }
+}
+
+fn set_until(
+  options: ListOptions,
+  until: calendar.Date,
+) -> Result(ListOptions, Nil) {
+  case options {
+    ListOptions(due: NoDueOptions, ..) ->
+      Ok(ListOptions(..options, due: DueRange(None, Some(until))))
+    ListOptions(due: DueRange(since: since, until: None), ..) ->
+      Ok(ListOptions(..options, due: DueRange(since, Some(until))))
+    _ -> Error(Nil)
+  }
+}
+
+fn parse_due_filter(value: String) -> Result(DueFilter, Nil) {
+  case value {
+    "today" -> Ok(Today)
+    "overdue" -> Ok(Overdue)
+    value -> due.parse_date(value) |> result.map(Exact)
+  }
+}
+
+fn list_filter(options: ListOptions) -> Result(ListFilter, Nil) {
+  let ListOptions(status, due_options) = options
+  let status = option.unwrap(status, or: PendingOnly)
+  case due_options {
+    NoDueOptions -> Ok(ListFilter(status, None))
+    DueMatch(filter) -> Ok(ListFilter(status, Some(filter)))
+    DueRange(Some(start), Some(end)) ->
+      case calendar.naive_date_compare(start, end) {
+        Gt -> Error(Nil)
+        _ -> Ok(ListFilter(status, Some(Range(Some(start), Some(end)))))
+      }
+    DueRange(since, until) -> Ok(ListFilter(status, Some(Range(since, until))))
+  }
+}
+
 pub fn help() -> Outcome {
   Outcome(
     0,
     [
       "todo add TITLE [--estimate DURATION] [--priority PRIORITY] [--due DUE]",
-      "todo list [--all]",
+      "todo list [--done | --all] [--due today|overdue|YYYY-MM-DD]",
+      "          [--due-since YYYY-MM-DD] [--due-until YYYY-MM-DD]",
+      "  default: pending; --done: done; --all: both",
+      "  due dates use local time; overdue is before now; ranges are inclusive",
+      "  --due excludes undated tasks and cannot be combined with due ranges",
       "todo done ID",
     ],
     [],
@@ -112,15 +240,20 @@ pub fn completed(task: Todo) -> Outcome {
   )
 }
 
-pub fn listed(items: List(Todo), all: Bool) -> Outcome {
+pub fn listed(
+  items: List(Todo),
+  status: StatusFilter,
+  offset: Duration,
+) -> Outcome {
   case items {
     [] ->
       Outcome(
         0,
         [
-          case all {
-            True -> "No tasks."
-            False -> "No pending tasks."
+          case status {
+            PendingOnly -> "No pending tasks."
+            DoneOnly -> "No done tasks."
+            AllStatuses -> "No tasks."
           },
         ],
         [],
@@ -130,20 +263,20 @@ pub fn listed(items: List(Todo), all: Bool) -> Outcome {
         0,
         [
           "ID\tSTATUS\tPRIORITY\tESTIMATE\tDUE\tTITLE",
-          ..list.map(items, task_line)
+          ..list.map(items, fn(task) { task_line(task, offset) })
         ],
         [],
       )
   }
 }
 
-fn task_line(task: Todo) -> String {
+fn task_line(task: Todo, offset: Duration) -> String {
   [
     int.to_string(task.id),
     status_text(task.status),
     int.to_string(task.priority),
     int.to_string(task.estimate_minutes) <> "m",
-    due_text(task.due),
+    due_text(task.due, offset),
     task.title,
   ]
   |> string.join("\t")
@@ -156,9 +289,9 @@ fn status_text(status: Status) -> String {
   }
 }
 
-fn due_text(due: Option(Due)) -> String {
-  case due {
+fn due_text(due_value: Option(Due), offset: Duration) -> String {
+  case due_value {
     None -> "-"
-    Some(value) -> value.canonical
+    Some(value) -> due.format(value, offset)
   }
 }

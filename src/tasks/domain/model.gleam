@@ -1,12 +1,9 @@
 import gleam/option.{type Option}
+import tasks/domain/due.{type Due}
 
 pub type Status {
   Pending
   Done
-}
-
-pub type Due {
-  Due(canonical: String)
 }
 
 pub type Todo {

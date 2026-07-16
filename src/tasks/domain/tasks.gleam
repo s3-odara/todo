@@ -1,5 +1,6 @@
 import gleam/int
 import gleam/list
+import tasks/domain/filter.{type ResolvedListFilter}
 import tasks/domain/model.{
   type TaskError, type Todo, type ValidatedAdd, AlreadyDone, Done, NotFound,
   Pending, Todo, ValidatedAdd,
@@ -40,9 +41,13 @@ pub fn complete(
   }
 }
 
-pub fn visible_sorted(todos: List(Todo), include_all: Bool) -> List(Todo) {
+pub fn visible(todos: List(Todo), criteria: ResolvedListFilter) -> List(Todo) {
+  list.filter(todos, fn(task) {
+    filter.matches(criteria, task.status, task.due)
+  })
+}
+
+pub fn sorted_by_id(todos: List(Todo)) -> List(Todo) {
   // Keep display order independent of mutable task metadata.
-  todos
-  |> list.filter(fn(t) { include_all || t.status == Pending })
-  |> list.sort(by: fn(a, b) { int.compare(a.id, b.id) })
+  list.sort(todos, by: fn(a, b) { int.compare(a.id, b.id) })
 }

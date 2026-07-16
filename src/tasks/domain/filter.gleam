@@ -1,0 +1,114 @@
+import gleam/option.{type Option, None, Some}
+import gleam/order.{Lt}
+import gleam/time/calendar
+import gleam/time/duration.{type Duration}
+import gleam/time/timestamp.{type Timestamp}
+import tasks/domain/due.{type Due}
+import tasks/domain/model.{type Status, Done, Pending}
+
+pub type StatusFilter {
+  PendingOnly
+  DoneOnly
+  AllStatuses
+}
+
+pub type DueFilter {
+  Exact(calendar.Date)
+  Today
+  Overdue
+  Range(since: Option(calendar.Date), until: Option(calendar.Date))
+}
+
+pub type ListFilter {
+  ListFilter(status: StatusFilter, due: Option(DueFilter))
+}
+
+pub type ResolvedDueFilter {
+  // Half-open absolute windows make every due comparison use one representation.
+  DueWindow(since: Option(Timestamp), until: Option(Timestamp))
+}
+
+pub type ResolvedListFilter {
+  ResolvedListFilter(status: StatusFilter, due: Option(ResolvedDueFilter))
+}
+
+/// Freeze relative calendar criteria into absolute timestamp windows once.
+pub fn resolve(
+  filter: ListFilter,
+  now: Timestamp,
+  offset: Duration,
+) -> ResolvedListFilter {
+  let ListFilter(status, due_filter) = filter
+  let #(today, _) = timestamp.to_calendar(now, offset)
+  let resolved_due = case due_filter {
+    None -> None
+    Some(Exact(date)) -> Some(day_window(date, offset))
+    Some(Today) -> Some(day_window(today, offset))
+    Some(Overdue) -> Some(DueWindow(None, Some(now)))
+    Some(Range(since, until)) ->
+      Some(DueWindow(
+        option.map(since, fn(date) { start_of_day(date, offset) }),
+        option.map(until, fn(date) { end_of_day_exclusive(date, offset) }),
+      ))
+  }
+  ResolvedListFilter(status, resolved_due)
+}
+
+pub fn matches(
+  filter: ResolvedListFilter,
+  status: Status,
+  stored: Option(Due),
+) -> Bool {
+  let ResolvedListFilter(wanted_status, due_filter) = filter
+  status_matches(wanted_status, status) && due_matches(due_filter, stored)
+}
+
+fn status_matches(filter: StatusFilter, status: Status) -> Bool {
+  case filter {
+    PendingOnly -> status == Pending
+    DoneOnly -> status == Done
+    AllStatuses -> True
+  }
+}
+
+fn due_matches(filter: Option(ResolvedDueFilter), stored: Option(Due)) -> Bool {
+  case filter, stored {
+    None, _ -> True
+    Some(_), None -> False
+    Some(DueWindow(since, until)), Some(value) -> {
+      let instant = due.instant(value)
+      within_lower_bound(instant, since) && within_upper_bound(instant, until)
+    }
+  }
+}
+
+fn within_lower_bound(instant: Timestamp, since: Option(Timestamp)) -> Bool {
+  case since {
+    None -> True
+    Some(start) -> timestamp.compare(instant, start) != Lt
+  }
+}
+
+fn within_upper_bound(instant: Timestamp, until: Option(Timestamp)) -> Bool {
+  case until {
+    None -> True
+    Some(end) -> timestamp.compare(instant, end) == Lt
+  }
+}
+
+fn day_window(date: calendar.Date, offset: Duration) -> ResolvedDueFilter {
+  DueWindow(
+    Some(start_of_day(date, offset)),
+    Some(end_of_day_exclusive(date, offset)),
+  )
+}
+
+fn start_of_day(date: calendar.Date, offset: Duration) -> Timestamp {
+  timestamp.from_calendar(date, calendar.TimeOfDay(0, 0, 0, 0), offset)
+}
+
+fn end_of_day_exclusive(date: calendar.Date, offset: Duration) -> Timestamp {
+  // The app has a fixed offset rather than a timezone database, so a local day is 24h.
+  start_of_day(date, offset)
+  |> timestamp.add(duration.hours(24))
+}
