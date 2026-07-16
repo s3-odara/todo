@@ -36,11 +36,6 @@ pub type SavedSchedule {
   )
 }
 
-/// Mutable-in-the-algorithm, immutable-in-the-domain search state.
-pub type ScheduleState {
-  ScheduleState(blocks: List(ScheduleBlock))
-}
-
 pub type Score {
   Score(weighted_unscheduled_minutes: Int, weighted_policy_error: Float)
 }

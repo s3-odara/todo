@@ -5,16 +5,16 @@ import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/order
 import gleam/result
-import gleam/string
 import gleam/time/calendar
 import gleam/time/timestamp
 import tasks/domain/app_state.{type AppState, AppState}
 import tasks/domain/availability.{
   type Availability, type DateOverride, type Interval, type Weekday,
   type WeeklyAvailability, Availability, DateOverride, Fri, Interval, Mon, Sat,
-  Sun, Thu, Tue, Wed, WeeklyAvailability,
+  Sun, Thu, Tue, Wed, WeeklyAvailability, weekday_number, weekday_string,
 }
 import tasks/domain/due
+import tasks/domain/local_time
 import tasks/domain/model.{type Status, type Todo, Done, Pending, Todo}
 import tasks/domain/policy.{type SchedulingPolicy, Asap, NearDeadline, Spread}
 import tasks/domain/scheduling/invariant as scheduling_invariant
@@ -350,7 +350,7 @@ fn weekly_json(value: WeeklyAvailability) -> json.Json {
 
 fn override_json(value: DateOverride) -> json.Json {
   json.object([
-    #("date", json.string(date_string(value.date))),
+    #("date", json.string(local_time.format_date(value.date))),
     #("intervals", intervals_json(value.intervals)),
   ])
 }
@@ -420,43 +420,4 @@ fn policy_string(policy: SchedulingPolicy) -> String {
     Spread -> "spread"
     NearDeadline -> "near_deadline"
   }
-}
-
-fn weekday_number(day: Weekday) -> Int {
-  case day {
-    Mon -> 1
-    Tue -> 2
-    Wed -> 3
-    Thu -> 4
-    Fri -> 5
-    Sat -> 6
-    Sun -> 7
-  }
-}
-
-fn weekday_string(day: Weekday) -> String {
-  case day {
-    Mon -> "mon"
-    Tue -> "tue"
-    Wed -> "wed"
-    Thu -> "thu"
-    Fri -> "fri"
-    Sat -> "sat"
-    Sun -> "sun"
-  }
-}
-
-fn date_string(date: calendar.Date) -> String {
-  date.year
-  |> int.to_string
-  |> string.pad_start(4, "0")
-  |> string.append("-")
-  |> string.append(
-    date.month
-    |> calendar.month_to_int
-    |> int.to_string
-    |> string.pad_start(2, "0"),
-  )
-  |> string.append("-")
-  |> string.append(date.day |> int.to_string |> string.pad_start(2, "0"))
 }

@@ -19,10 +19,6 @@ pub fn canonicalize(blocks: List(ScheduleBlock)) -> List(ScheduleBlock) {
   |> list.reverse
 }
 
-pub fn is_canonical(blocks: List(ScheduleBlock)) -> Bool {
-  blocks == canonicalize(blocks)
-}
-
 /// Validate a newly generated state against all live scheduling constraints.
 pub fn validate_generation(
   blocks: List(ScheduleBlock),
@@ -162,10 +158,6 @@ fn merge_adjacent(
         False -> merge_adjacent(rest, [next, current, ..previous])
       }
   }
-}
-
-pub fn sort_blocks(blocks: List(ScheduleBlock)) -> List(ScheduleBlock) {
-  list.sort(blocks, by: block_compare)
 }
 
 pub fn block_compare(a: ScheduleBlock, b: ScheduleBlock) -> order.Order {

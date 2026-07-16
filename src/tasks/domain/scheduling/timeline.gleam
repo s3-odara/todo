@@ -199,7 +199,7 @@ fn interval_compare(a: AbsoluteInterval, b: AbsoluteInterval) -> order.Order {
   }
 }
 
-pub fn seconds(value) -> Int {
+fn seconds(value) -> Int {
   let #(seconds, _) = timestamp.to_unix_seconds_and_nanoseconds(value)
   seconds
 }

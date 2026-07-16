@@ -1,5 +1,7 @@
 import datebook/date
 import datebook/weekday
+import gleam/int
+import gleam/string
 import gleam/time/calendar.{type Date}
 
 pub type Weekday {
@@ -10,6 +12,19 @@ pub type Weekday {
   Fri
   Sat
   Sun
+}
+
+/// Format a date using the canonical representation shared by CLI and storage.
+pub fn format_date(value: Date) -> String {
+  [
+    value.year |> int.to_string |> string.pad_start(4, "0"),
+    value.month
+      |> calendar.month_to_int
+      |> int.to_string
+      |> string.pad_start(2, "0"),
+    value.day |> int.to_string |> string.pad_start(2, "0"),
+  ]
+  |> string.join("-")
 }
 
 /// Return the domain weekday for a valid Gregorian date.

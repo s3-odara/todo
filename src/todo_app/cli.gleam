@@ -15,6 +15,7 @@ import tasks/domain/filter.{
   Range, ScheduledDate, ScheduledExact, ScheduledList, ScheduledRange,
   ScheduledToday, TaskList, Today,
 }
+import tasks/domain/local_time
 import tasks/domain/model.{
   type Status, type TaskError, type Todo, type ValidatedAdd, AlreadyDone, Done,
   NotFound, Pending,
@@ -475,7 +476,7 @@ pub fn availability_listed(value: Availability) -> Outcome {
         })
       let override_lines =
         list.flat_map(overrides, fn(entry) {
-          let date = date_text(entry.date)
+          let date = local_time.format_date(entry.date)
           case entry.intervals {
             [] -> ["override\t" <> date <> "\tclosed"]
             intervals ->
@@ -503,18 +504,6 @@ fn minute_text(value: Int) -> String {
   let hour = value / 60 |> int.to_string |> string.pad_start(2, "0")
   let minute = value % 60 |> int.to_string |> string.pad_start(2, "0")
   hour <> ":" <> minute
-}
-
-fn date_text(date: calendar.Date) -> String {
-  [
-    date.year |> int.to_string |> string.pad_start(4, "0"),
-    date.month
-      |> calendar.month_to_int
-      |> int.to_string
-      |> string.pad_start(2, "0"),
-    date.day |> int.to_string |> string.pad_start(2, "0"),
-  ]
-  |> string.join("-")
 }
 
 pub fn listed(
@@ -655,7 +644,7 @@ fn excluded_reason(reason: scheduling_model.ExcludedReason) -> String {
 fn timestamp_text(value: Timestamp, offset: Duration) -> String {
   let #(date, time) = timestamp.to_calendar(value, offset)
   [
-    date_text(date),
+    local_time.format_date(date),
     "T",
     time.hours |> int.to_string |> string.pad_start(2, "0"),
     ":",
