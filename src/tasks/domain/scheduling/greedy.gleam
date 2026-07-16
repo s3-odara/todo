@@ -1,19 +1,22 @@
+import gleam/float
 import gleam/int
 import gleam/list
 import gleam/option
 import gleam/order
-import gleam/result
+import gleam/time/timestamp
 import tasks/domain/due
 import tasks/domain/model as task_model
+import tasks/domain/policy.{Asap, NearDeadline, Spread}
 import tasks/domain/scheduling/invariant
 import tasks/domain/scheduling/model as scheduling_model
-import tasks/domain/scheduling/move
 import tasks/domain/scheduling/score
-import tasks/domain/scheduling/timeline.{type AbsoluteInterval}
+import tasks/domain/scheduling/timeline.{type AbsoluteInterval, AbsoluteInterval}
 
-pub type Candidate {
+pub const candidate_limit = 20_000
+
+type Candidate {
   Candidate(
-    repack: move.Repack,
+    block: scheduling_model.ScheduleBlock,
     blocks: List(scheduling_model.ScheduleBlock),
     score: scheduling_model.Score,
   )
@@ -25,111 +28,215 @@ pub fn build(
   planning_start: Int,
   offset: Int,
 ) -> List(scheduling_model.ScheduleBlock) {
-  build_from([], tasks, projected, planning_start, offset)
+  tasks
+  |> initial_order
+  |> list.fold([], fn(blocks, task) {
+    place_task(blocks, task, tasks, projected, planning_start, offset)
+  })
 }
 
-fn build_from(blocks, tasks, projected, planning_start, offset) {
+pub fn rebuild(
+  blocks: List(scheduling_model.ScheduleBlock),
+  selected: List(task_model.Todo),
+  all_tasks: List(task_model.Todo),
+  projected: List(AbsoluteInterval),
+  planning_start: Int,
+  offset: Int,
+) -> List(scheduling_model.ScheduleBlock) {
+  let selected_ids = list.map(selected, fn(task) { task.id })
+  let base =
+    blocks
+    |> list.filter(fn(block) { !list.contains(selected_ids, block.task_id) })
+    |> invariant.canonicalize
+  list.fold(selected, base, fn(current, task) {
+    place_task(current, task, all_tasks, projected, planning_start, offset)
+  })
+}
+
+pub fn initial_order(tasks: List(task_model.Todo)) -> List(task_model.Todo) {
+  list.sort(tasks, by: task_compare)
+}
+
+fn place_task(
+  blocks: List(scheduling_model.ScheduleBlock),
+  task: task_model.Todo,
+  all_tasks: List(task_model.Todo),
+  projected: List(AbsoluteInterval),
+  planning_start: Int,
+  offset: Int,
+) -> List(scheduling_model.ScheduleBlock) {
   let candidates =
-    move.add_candidates(blocks, tasks, projected, planning_start, offset)
-    |> list.filter_map(fn(repack) {
-      move.apply_repack(
-        blocks,
-        repack,
-        tasks,
+    placement_candidates(blocks, task, projected, planning_start, offset)
+    |> list.take(candidate_limit)
+    |> list.map(fn(block) {
+      let next = invariant.canonicalize([block, ..blocks])
+      Candidate(block, next, score.evaluate(all_tasks, next, planning_start))
+    })
+  case best(candidates) {
+    option.None -> blocks
+    option.Some(candidate) ->
+      place_task(
+        candidate.blocks,
+        task,
+        all_tasks,
         projected,
         planning_start,
         offset,
       )
-      |> result.map(fn(result) {
-        Candidate(repack, result, score.evaluate(tasks, result, planning_start))
-      })
-    })
-  case best(candidates, tasks) {
-    option.None -> blocks
-    option.Some(candidate) ->
-      build_from(candidate.blocks, tasks, projected, planning_start, offset)
   }
 }
 
-fn best(candidates: List(Candidate), tasks: List(task_model.Todo)) {
+fn placement_candidates(
+  blocks: List(scheduling_model.ScheduleBlock),
+  task: task_model.Todo,
+  projected: List(AbsoluteInterval),
+  planning_start: Int,
+  offset: Int,
+) -> List(scheduling_model.ScheduleBlock) {
+  let remaining = task.estimate_minutes - score.placed_minutes(task.id, blocks)
+  case task.due, remaining <= 0 {
+    _, True -> []
+    option.None, _ -> []
+    option.Some(deadline), False -> {
+      let due_seconds = due.to_unix_seconds(deadline)
+      timeline.free_intervals(projected, blocks)
+      |> list.flat_map(fn(interval) {
+        let clipped =
+          AbsoluteInterval(interval.start, int.min(interval.end, due_seconds))
+        let capacity = { clipped.end - clipped.start } / 60
+        case capacity <= 0 {
+          True -> []
+          False -> {
+            candidate_lengths(task, remaining, capacity)
+            |> list.flat_map(fn(minutes) {
+              anchors(task, blocks, clipped, minutes, planning_start, offset)
+              |> list.map(fn(start) {
+                scheduling_model.ScheduleBlock(
+                  task.id,
+                  timestamp.from_unix_seconds(start),
+                  timestamp.from_unix_seconds(start + minutes * 60),
+                )
+              })
+            })
+          }
+        }
+      })
+    }
+  }
+}
+
+fn candidate_lengths(task, remaining, capacity) -> List(Int) {
+  let minimum = effective_minimum(task)
+  [minimum, int.min(remaining, capacity), remaining - minimum]
+  |> unique_ints
+  |> list.filter(fn(value) {
+    value >= minimum && value <= remaining && value <= capacity
+  })
+}
+
+fn anchors(
+  task: task_model.Todo,
+  blocks: List(scheduling_model.ScheduleBlock),
+  interval: AbsoluteInterval,
+  block_length: Int,
+  planning_start: Int,
+  offset: Int,
+) -> List(Int) {
+  let placed = score.placed_minutes(task.id, blocks)
+  let estimate = int.to_float(task.estimate_minutes)
+  let y0 = int.to_float(placed) /. estimate
+  let y1 = int.to_float(placed + block_length) /. estimate
+  let due_seconds = case task.due {
+    option.Some(value) -> due.to_unix_seconds(value)
+    option.None -> interval.end
+  }
+  let span = int.to_float(due_seconds - planning_start)
+  let ideal_start =
+    int.to_float(planning_start) +. inverse(task.scheduling_policy, y0) *. span
+  let ideal_end =
+    int.to_float(planning_start) +. inverse(task.scheduling_policy, y1) *. span
+  [
+    interval.start,
+    interval.end - block_length * 60,
+    rounded_local(ideal_start, offset),
+    rounded_local(ideal_end, offset) - block_length * 60,
+  ]
+  |> list.map(fn(start) {
+    int.max(interval.start, int.min(start, interval.end - block_length * 60))
+  })
+  |> unique_ints
+}
+
+fn best(candidates: List(Candidate)) -> option.Option(Candidate) {
   list.fold(candidates, option.None, fn(current, candidate) {
     case current {
       option.None -> option.Some(candidate)
-      option.Some(existing) ->
-        case candidate_compare(candidate, existing, tasks) {
-          order.Lt -> option.Some(candidate)
-          _ -> current
+      option.Some(Candidate(block: existing_block, score: existing_score, ..)) ->
+        case score.compare(candidate.score, existing_score) {
+          score.Better -> option.Some(candidate)
+          score.Worse -> current
+          score.Equal ->
+            case invariant.block_key_compare(candidate.block, existing_block) {
+              order.Lt -> option.Some(candidate)
+              _ -> current
+            }
         }
     }
   })
 }
 
-fn candidate_compare(a: Candidate, b: Candidate, tasks) {
-  case score.compare(a.score, b.score) {
-    score.Better -> order.Lt
-    score.Worse -> order.Gt
-    score.Equal -> tie_compare(a.repack, b.repack, tasks)
-  }
-}
-
-fn tie_compare(a: move.Repack, b: move.Repack, tasks) {
-  case list.first(a.insert), list.first(b.insert) {
-    Ok(ab), Ok(bb) ->
-      case task_for(tasks, ab.task_id), task_for(tasks, bb.task_id) {
-        Ok(at), Ok(bt) -> compare_task_and_block(at, ab, bt, bb, a, b)
-        _, _ -> move.repack_compare(a, b)
-      }
-    _, _ -> move.repack_compare(a, b)
-  }
-}
-
-fn compare_task_and_block(
-  at: task_model.Todo,
-  ab: scheduling_model.ScheduleBlock,
-  bt: task_model.Todo,
-  bb: scheduling_model.ScheduleBlock,
-  a: move.Repack,
-  b: move.Repack,
-) -> order.Order {
-  case int.compare(bt.priority, at.priority) {
+fn task_compare(a: task_model.Todo, b: task_model.Todo) -> order.Order {
+  case int.compare(b.priority, a.priority) {
     order.Eq ->
-      case int.compare(due_seconds(at), due_seconds(bt)) {
-        order.Eq ->
-          case int.compare(at.id, bt.id) {
-            order.Eq ->
-              case
-                int.compare(
-                  invariant.seconds(ab.start),
-                  invariant.seconds(bb.start),
-                )
-              {
-                order.Eq ->
-                  case
-                    int.compare(
-                      invariant.seconds(ab.end),
-                      invariant.seconds(bb.end),
-                    )
-                  {
-                    order.Eq -> move.repack_compare(a, b)
-                    other -> other
-                  }
-                other -> other
-              }
-            other -> other
-          }
+      case int.compare(due_seconds(a), due_seconds(b)) {
+        order.Eq -> int.compare(a.id, b.id)
         other -> other
       }
     other -> other
   }
 }
 
-fn task_for(tasks: List(task_model.Todo), id: Int) {
-  list.find(tasks, fn(task) { task.id == id })
-}
-
-fn due_seconds(task: task_model.Todo) {
+fn due_seconds(task: task_model.Todo) -> Int {
   case task.due {
     option.Some(value) -> due.to_unix_seconds(value)
     option.None -> 0
   }
+}
+
+fn inverse(policy, y) {
+  let bounded = float.max(0.0, float.min(1.0, y))
+  case policy {
+    Asap ->
+      case float.square_root(1.0 -. bounded) {
+        Ok(root) -> 1.0 -. root
+        Error(_) -> 0.0
+      }
+    Spread -> bounded
+    NearDeadline ->
+      case float.square_root(bounded) {
+        Ok(root) -> root
+        Error(_) -> 0.0
+      }
+  }
+}
+
+fn rounded_local(value, offset) {
+  float.round({ value +. int.to_float(offset) } /. 60.0) * 60 - offset
+}
+
+fn effective_minimum(task: task_model.Todo) -> Int {
+  case task.estimate_minutes < task.minimum_split_minutes {
+    True -> task.estimate_minutes
+    False -> task.minimum_split_minutes
+  }
+}
+
+fn unique_ints(values: List(Int)) -> List(Int) {
+  list.fold(values, [], fn(acc, value) {
+    case list.contains(acc, value) {
+      True -> acc
+      False -> [value, ..acc]
+    }
+  })
+  |> list.reverse
 }

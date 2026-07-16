@@ -1,4 +1,3 @@
-import gleam/list
 import gleam/option.{None, Some}
 import gleam/time/duration
 import gleam/time/timestamp
@@ -10,10 +9,11 @@ import tasks/domain/availability.{
 import tasks/domain/due
 import tasks/domain/model.{Pending, Todo}
 import tasks/domain/policy.{Asap, NearDeadline, Spread}
+import tasks/domain/scheduling/hill_climb
 import tasks/domain/scheduling/invariant
 import tasks/domain/scheduling/model as scheduling_model
-import tasks/domain/scheduling/move
 import tasks/domain/scheduling/scheduler
+import tasks/domain/scheduling/score
 import tasks/domain/scheduling/timeline.{AbsoluteInterval}
 
 fn state(tasks, availability) {
@@ -124,100 +124,54 @@ pub fn policy_secondary_objective_moves_work_earlier_or_later_test() {
   ordered |> should.be_true
 }
 
-pub fn kind_specific_generators_and_atomic_apply_test() {
-  let projected = [AbsoluteInterval(0, 10_800)]
-  let tasks = [
+pub fn pair_rebuild_can_replace_low_priority_work_atomically_test() {
+  let projected = [AbsoluteInterval(0, 3600)]
+  let low =
     Todo(
       1,
-      "one",
-      120,
-      3,
-      Some(due.from_unix_seconds(10_800)),
+      "low",
+      60,
+      1,
+      Some(due.from_unix_seconds(3600)),
       Pending,
       Spread,
       30,
-    ),
+    )
+  let high =
     Todo(
       2,
-      "two",
-      120,
-      3,
-      Some(due.from_unix_seconds(10_800)),
+      "high",
+      60,
+      5,
+      Some(due.from_unix_seconds(3600)),
       Pending,
       Spread,
       30,
-    ),
-  ]
-  let a =
+    )
+  let initial = [
     scheduling_model.ScheduleBlock(
       1,
       timestamp.from_unix_seconds(0),
       timestamp.from_unix_seconds(3600),
-    )
-  let b =
+    ),
+  ]
+  let before = score.evaluate([low, high], initial, 0)
+  let result = hill_climb.climb(initial, [low, high], projected, 0, 0)
+  let after = score.evaluate([low, high], result.blocks, 0)
+
+  score.strictly_better(after, than: before) |> should.be_true
+  result.accepted_moves |> should.equal(1)
+  result.accepted_scores |> should.equal([after])
+  result.blocks
+  |> should.equal([
     scheduling_model.ScheduleBlock(
       2,
+      timestamp.from_unix_seconds(0),
       timestamp.from_unix_seconds(3600),
-      timestamp.from_unix_seconds(5400),
-    )
-  let has_add = move.add_candidates([], tasks, projected, 0, 0) != []
-  has_add |> should.be_true
-  let has_relocate = move.relocate_candidates([a], tasks, projected, 0, 0) != []
-  has_relocate |> should.be_true
-  let has_swap = move.swap_candidates([a, b], tasks) != []
-  has_swap |> should.be_true
-  let has_split = move.split_candidates([a], tasks, projected, 0, 0) != []
-  has_split |> should.be_true
-  let a2 =
-    scheduling_model.ScheduleBlock(
-      1,
-      timestamp.from_unix_seconds(5400),
-      timestamp.from_unix_seconds(7200),
-    )
-  let has_merge = move.merge_candidates([a, a2], tasks, projected, 0, 0) != []
-  has_merge |> should.be_true
-  move.apply_repack(
-    [],
-    move.Repack(move.Relocate, [a], [b]),
-    tasks,
-    projected,
-    0,
-    0,
-  )
-  |> should.be_error
-}
-
-pub fn candidate_universe_is_bounded_during_generation_test() {
-  let projected = separated_intervals(7001, 0, [])
-  let large_task =
-    Todo(
-      1,
-      "large",
-      100_000,
-      3,
-      Some(due.from_unix_seconds(2_000_000)),
-      Pending,
-      Spread,
-      1,
-    )
-  let candidates = move.add_candidates([], [large_task], projected, 0, 0)
-
-  list.length(candidates) |> should.equal(move.candidate_limit)
-  candidates
-  |> should.equal(list.sort(candidates, by: move.repack_compare))
-  move.all_candidates([], [large_task], projected, 0, 0)
-  |> should.equal(candidates)
-}
-
-fn separated_intervals(count, start, acc) {
-  case count {
-    0 -> list.reverse(acc)
-    _ ->
-      separated_intervals(count - 1, start + 180, [
-        AbsoluteInterval(start, start + 120),
-        ..acc
-      ])
-  }
+    ),
+  ])
+  invariant.validate_generation(result.blocks, [low, high], projected, 0, 0)
+  |> should.be_ok
 }
 
 pub fn empty_availability_reports_all_unscheduled_test() {

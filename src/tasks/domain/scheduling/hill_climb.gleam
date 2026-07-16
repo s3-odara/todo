@@ -1,14 +1,16 @@
+import gleam/int
 import gleam/list
 import gleam/option
-import gleam/order
-import gleam/result
 import tasks/domain/model as task_model
+import tasks/domain/scheduling/greedy
+import tasks/domain/scheduling/invariant
 import tasks/domain/scheduling/model as scheduling_model
-import tasks/domain/scheduling/move
 import tasks/domain/scheduling/score
 import tasks/domain/scheduling/timeline.{type AbsoluteInterval}
 
 pub const accepted_move_limit = 1000
+
+pub const candidate_limit = 20_000
 
 pub type HillResult {
   HillResult(
@@ -18,9 +20,14 @@ pub type HillResult {
   )
 }
 
+// Rebuilding one task or an ordered pair subsumes block-level add, move,
+// split, merge, and swap operations without five separate mutation paths.
+type Rebuild {
+  Rebuild(tasks: List(task_model.Todo))
+}
+
 type Candidate {
   Candidate(
-    repack: move.Repack,
     blocks: List(scheduling_model.ScheduleBlock),
     score: scheduling_model.Score,
   )
@@ -53,62 +60,121 @@ fn climb_loop(
     True -> HillResult(blocks, accepted, list.reverse(scores))
     False -> {
       let current_score = score.evaluate(tasks, blocks, planning_start)
-      let candidates =
-        move.all_candidates(blocks, tasks, projected, planning_start, offset)
-        |> list.filter_map(fn(repack) {
-          move.apply_repack(
-            blocks,
-            repack,
-            tasks,
-            projected,
-            planning_start,
-            offset,
-          )
-          |> result.map(fn(next) {
-            Candidate(repack, next, score.evaluate(tasks, next, planning_start))
-          })
+      let candidate =
+        rebuilds(tasks)
+        |> list.fold(option.None, fn(best, rebuild) {
+          let Rebuild(selected) = rebuild
+          let next =
+            greedy.rebuild(
+              blocks,
+              selected,
+              tasks,
+              projected,
+              planning_start,
+              offset,
+            )
+          case next == blocks {
+            True -> best
+            False -> {
+              let next_score = score.evaluate(tasks, next, planning_start)
+              case score.strictly_better(next_score, than: current_score) {
+                False -> best
+                True -> choose_better(best, Candidate(next, next_score))
+              }
+            }
+          }
         })
-        |> list.filter(fn(candidate) {
-          score.strictly_better(candidate.score, than: current_score)
-        })
-      case best(candidates) {
+      case candidate {
         option.None -> HillResult(blocks, accepted, list.reverse(scores))
-        option.Some(candidate) ->
-          climb_loop(
-            candidate.blocks,
-            tasks,
-            projected,
-            planning_start,
-            offset,
-            accepted + 1,
-            [candidate.score, ..scores],
-          )
-      }
-    }
-  }
-}
-
-fn best(candidates: List(Candidate)) -> option.Option(Candidate) {
-  case candidates {
-    [] -> option.None
-    [first, ..rest] -> option.Some(best_loop(rest, first))
-  }
-}
-
-fn best_loop(candidates: List(Candidate), existing: Candidate) -> Candidate {
-  case candidates {
-    [] -> existing
-    [candidate, ..rest] -> {
-      let chosen = case score.compare(candidate.score, existing.score) {
-        score.Better -> candidate
-        score.Worse -> existing
-        score.Equal ->
-          case move.repack_compare(candidate.repack, existing.repack) {
-            order.Lt -> candidate
-            _ -> existing
+        option.Some(Candidate(next, next_score)) ->
+          // Greedy construction should already be valid; validate accepted states
+          // so a placement bug cannot propagate through the search.
+          case
+            invariant.validate_generation(
+              next,
+              tasks,
+              projected,
+              planning_start,
+              offset,
+            )
+          {
+            Error(_) -> HillResult(blocks, accepted, list.reverse(scores))
+            Ok(valid) ->
+              climb_loop(
+                valid,
+                tasks,
+                projected,
+                planning_start,
+                offset,
+                accepted + 1,
+                [next_score, ..scores],
+              )
           }
       }
-      best_loop(rest, chosen)
     }
   }
+}
+
+fn choose_better(
+  current: option.Option(Candidate),
+  candidate: Candidate,
+) -> option.Option(Candidate) {
+  case current {
+    option.None -> option.Some(candidate)
+    option.Some(existing) ->
+      case score.compare(candidate.score, existing.score) {
+        score.Better -> option.Some(candidate)
+        // Stable enumeration is the deterministic tie-break.
+        score.Equal | score.Worse -> current
+      }
+  }
+}
+
+fn rebuilds(tasks: List(task_model.Todo)) -> List(Rebuild) {
+  let ordered = list.sort(tasks, by: task_id_compare)
+  let singles =
+    ordered
+    |> list.take(candidate_limit)
+    |> list.map(fn(task) { Rebuild([task]) })
+  let remaining = candidate_limit - list.length(singles)
+  case remaining <= 0 {
+    True -> singles
+    False -> list.append(singles, pair_rebuilds(ordered, remaining, []))
+  }
+}
+
+fn pair_rebuilds(
+  tasks: List(task_model.Todo),
+  remaining: Int,
+  acc: List(Rebuild),
+) -> List(Rebuild) {
+  case tasks, remaining <= 0 {
+    _, True -> list.reverse(acc)
+    [], _ | [_], _ -> list.reverse(acc)
+    [first, ..rest], False -> pairs_with(first, rest, rest, remaining, acc)
+  }
+}
+
+fn pairs_with(
+  first: task_model.Todo,
+  candidates: List(task_model.Todo),
+  next_outer: List(task_model.Todo),
+  remaining: Int,
+  acc: List(Rebuild),
+) -> List(Rebuild) {
+  case candidates, remaining {
+    _, remaining if remaining <= 0 -> list.reverse(acc)
+    [], _ -> pair_rebuilds(next_outer, remaining, acc)
+    [second, ..], 1 -> list.reverse([Rebuild([first, second]), ..acc])
+    [second, ..rest], _ ->
+      pairs_with(first, rest, next_outer, remaining - 2, [
+        Rebuild([second, first]),
+        Rebuild([first, second]),
+        ..acc
+      ])
+  }
+}
+
+fn task_id_compare(a: task_model.Todo, b: task_model.Todo) {
+  int.compare(a.id, b.id)
 }
