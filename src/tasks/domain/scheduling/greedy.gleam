@@ -114,7 +114,8 @@ fn placement_candidates(
   planning_start: Int,
   offset: Int,
 ) -> List(scheduling_model.ScheduleBlock) {
-  let remaining = task.estimate_minutes - score.placed_minutes(task.id, blocks)
+  let placed = score.placed_minutes(task.id, blocks)
+  let remaining = task.estimate_minutes - placed
   case task.due, remaining <= 0 {
     _, True -> []
     option.None, _ -> []
@@ -130,7 +131,7 @@ fn placement_candidates(
           False -> {
             candidate_lengths(task, remaining, capacity)
             |> list.flat_map(fn(minutes) {
-              anchors(task, blocks, clipped, minutes, planning_start, offset)
+              anchors(task, placed, clipped, minutes, planning_start, offset)
               |> list.map(fn(start) {
                 scheduling_model.ScheduleBlock(
                   task.id,
@@ -157,13 +158,12 @@ fn candidate_lengths(task, remaining, capacity) -> List(Int) {
 
 fn anchors(
   task: task_model.Todo,
-  blocks: List(scheduling_model.ScheduleBlock),
+  placed: Int,
   interval: AbsoluteInterval,
   block_length: Int,
   planning_start: Int,
   offset: Int,
 ) -> List(Int) {
-  let placed = score.placed_minutes(task.id, blocks)
   let estimate = int.to_float(task.estimate_minutes)
   let y0 = int.to_float(placed) /. estimate
   let y1 = int.to_float(placed + block_length) /. estimate
