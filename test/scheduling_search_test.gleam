@@ -17,7 +17,7 @@ import tasks/domain/scheduling/scheduler
 import tasks/domain/scheduling/timeline.{AbsoluteInterval}
 
 fn state(tasks, availability) {
-  AppState(1, tasks, availability, None)
+  AppState(tasks, availability, None)
 }
 
 fn task(id, estimate, priority) {

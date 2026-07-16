@@ -36,10 +36,10 @@ fn state_decoder() {
     decode.optional(schedule_decoder()),
   )
   case version {
-    1 -> decode.success(AppState(1, tasks, availability, current_schedule))
+    1 -> decode.success(AppState(tasks, availability, current_schedule))
     _ ->
       decode.failure(
-        AppState(1, tasks, availability, current_schedule),
+        AppState(tasks, availability, current_schedule),
         expected: "version 1 AppState",
       )
   }
@@ -199,12 +199,8 @@ fn schedule_block_decoder() {
 }
 
 fn validate_state(state: AppState) -> Result(AppState, String) {
-  let AppState(
-    tasks: tasks,
-    availability: value,
-    current_schedule: schedule,
-    ..,
-  ) = state
+  let AppState(tasks: tasks, availability: value, current_schedule: schedule) =
+    state
   let Availability(weekly, overrides) = value
   case
     unique_ids(tasks, [])
@@ -291,7 +287,8 @@ fn unique_ids(tasks: List(Todo), seen: List(Int)) -> Bool {
 }
 
 pub fn encode(state: AppState) -> String {
-  let AppState(_, tasks, availability, current_schedule) = state
+  // The version belongs to this storage envelope, not to the domain state.
+  let AppState(tasks, availability, current_schedule) = state
   json.object([
     #("version", json.int(1)),
     #(

@@ -45,7 +45,7 @@ fn run(args, store) {
 }
 
 fn state_with(tasks) {
-  AppState(1, tasks, availability.empty(), None)
+  AppState(tasks, availability.empty(), None)
 }
 
 fn store_with(tasks) {

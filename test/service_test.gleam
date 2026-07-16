@@ -20,7 +20,7 @@ import todo_app/service
 import todo_app/store.{Store}
 
 fn state_with(tasks) {
-  AppState(1, tasks, availability.empty(), None)
+  AppState(tasks, availability.empty(), None)
 }
 
 fn store_with(tasks) {
@@ -28,7 +28,7 @@ fn store_with(tasks) {
 }
 
 fn state_with_schedule(tasks, schedule) {
-  AppState(1, tasks, availability.empty(), Some(schedule))
+  AppState(tasks, availability.empty(), Some(schedule))
 }
 
 fn saved_schedule() {

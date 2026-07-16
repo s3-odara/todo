@@ -58,26 +58,29 @@ type AvailabilityOptions {
 }
 
 type ListOptions {
-  ListOptions(
-    status: Option(StatusFilter),
-    due: ListDueOptions,
-    scheduled: ListScheduledOptions,
-  )
+  ListOptions(status: Option(StatusFilter), temporal: TemporalOptions)
 }
 
-type ListDueOptions {
-  NoDueOptions
+type TemporalOptions {
+  NoTemporalOptions
   DueMatch(DueFilter)
-  DueRange(since: Option(calendar.Date), until: Option(calendar.Date))
+  ScheduledMatch(ScheduledFilter)
+  DueRange(DateRange)
+  ScheduledRangeOptions(DateRange)
 }
 
-type ListScheduledOptions {
-  NoScheduledOptions
-  ScheduledMatch(ScheduledFilter)
-  ScheduledRangeOptions(
-    since: Option(calendar.Date),
-    until: Option(calendar.Date),
-  )
+type DateRange {
+  DateRange(since: Option(calendar.Date), until: Option(calendar.Date))
+}
+
+type RangeKind {
+  DueRangeKind
+  ScheduledRangeKind
+}
+
+type Bound {
+  Since
+  Until
 }
 
 pub fn parse(
@@ -101,7 +104,7 @@ pub fn parse(
       |> result.map_error(fn(_) { "invalid input" })
     ["list", ..flags] ->
       flags
-      |> list_flags(ListOptions(None, NoDueOptions, NoScheduledOptions))
+      |> list_flags(ListOptions(None, NoTemporalOptions))
       |> result.try(list_filter)
       |> result.map(List)
       |> result.map_error(fn(_) { "invalid input" })
@@ -225,12 +228,22 @@ fn list_flags(flags, options: ListOptions) -> Result(ListOptions, Nil) {
       }
     ["--scheduled-since", value, ..rest] -> {
       use parsed <- result.try(due.parse_date(value))
-      use updated <- result.try(set_scheduled_since(options, parsed))
+      use updated <- result.try(set_range(
+        options,
+        ScheduledRangeKind,
+        Since,
+        parsed,
+      ))
       list_flags(rest, updated)
     }
     ["--scheduled-until", value, ..rest] -> {
       use parsed <- result.try(due.parse_date(value))
-      use updated <- result.try(set_scheduled_until(options, parsed))
+      use updated <- result.try(set_range(
+        options,
+        ScheduledRangeKind,
+        Until,
+        parsed,
+      ))
       list_flags(rest, updated)
     }
     ["--due", value, ..rest] -> {
@@ -240,12 +253,12 @@ fn list_flags(flags, options: ListOptions) -> Result(ListOptions, Nil) {
     }
     ["--due-since", value, ..rest] -> {
       use parsed <- result.try(due.parse_date(value))
-      use updated <- result.try(set_since(options, parsed))
+      use updated <- result.try(set_range(options, DueRangeKind, Since, parsed))
       list_flags(rest, updated)
     }
     ["--due-until", value, ..rest] -> {
       use parsed <- result.try(due.parse_date(value))
-      use updated <- result.try(set_until(options, parsed))
+      use updated <- result.try(set_range(options, DueRangeKind, Until, parsed))
       list_flags(rest, updated)
     }
     _ -> Error(Nil)
@@ -268,8 +281,8 @@ fn select_due(
   filter: DueFilter,
 ) -> Result(ListOptions, Nil) {
   case options {
-    ListOptions(due: NoDueOptions, scheduled: NoScheduledOptions, ..) ->
-      Ok(ListOptions(..options, due: DueMatch(filter)))
+    ListOptions(temporal: NoTemporalOptions, ..) ->
+      Ok(ListOptions(..options, temporal: DueMatch(filter)))
     _ -> Error(Nil)
   }
 }
@@ -279,81 +292,44 @@ fn select_scheduled(
   filter: ScheduledFilter,
 ) -> Result(ListOptions, Nil) {
   case options {
-    ListOptions(due: NoDueOptions, scheduled: NoScheduledOptions, ..) ->
-      Ok(ListOptions(..options, scheduled: ScheduledMatch(filter)))
+    ListOptions(temporal: NoTemporalOptions, ..) ->
+      Ok(ListOptions(..options, temporal: ScheduledMatch(filter)))
     _ -> Error(Nil)
   }
 }
 
-fn set_since(
+fn set_range(
   options: ListOptions,
-  since: calendar.Date,
+  kind: RangeKind,
+  bound: Bound,
+  date: calendar.Date,
 ) -> Result(ListOptions, Nil) {
-  case options {
-    ListOptions(due: NoDueOptions, scheduled: NoScheduledOptions, ..) ->
-      Ok(ListOptions(..options, due: DueRange(Some(since), None)))
-    ListOptions(due: DueRange(since: None, until: until), ..) ->
-      Ok(ListOptions(..options, due: DueRange(Some(since), until)))
-    _ -> Error(Nil)
+  let current = case options.temporal, kind {
+    NoTemporalOptions, _ -> Ok(DateRange(None, None))
+    DueRange(range), DueRangeKind -> Ok(range)
+    ScheduledRangeOptions(range), ScheduledRangeKind -> Ok(range)
+    _, _ -> Error(Nil)
   }
+  use range <- result.try(current)
+  use updated <- result.try(set_bound(range, bound, date))
+  let temporal = case kind {
+    DueRangeKind -> DueRange(updated)
+    ScheduledRangeKind -> ScheduledRangeOptions(updated)
+  }
+  Ok(ListOptions(..options, temporal: temporal))
 }
 
-fn set_until(
-  options: ListOptions,
-  until: calendar.Date,
-) -> Result(ListOptions, Nil) {
-  case options {
-    ListOptions(due: NoDueOptions, scheduled: NoScheduledOptions, ..) ->
-      Ok(ListOptions(..options, due: DueRange(None, Some(until))))
-    ListOptions(due: DueRange(since: since, until: None), ..) ->
-      Ok(ListOptions(..options, due: DueRange(since, Some(until))))
-    _ -> Error(Nil)
-  }
-}
-
-fn set_scheduled_since(
-  options: ListOptions,
-  since: calendar.Date,
-) -> Result(ListOptions, Nil) {
-  case options {
-    ListOptions(due: NoDueOptions, scheduled: NoScheduledOptions, ..) ->
-      Ok(
-        ListOptions(
-          ..options,
-          scheduled: ScheduledRangeOptions(Some(since), None),
-        ),
-      )
-    ListOptions(scheduled: ScheduledRangeOptions(since: None, until: until), ..) ->
-      Ok(
-        ListOptions(
-          ..options,
-          scheduled: ScheduledRangeOptions(Some(since), until),
-        ),
-      )
-    _ -> Error(Nil)
-  }
-}
-
-fn set_scheduled_until(
-  options: ListOptions,
-  until: calendar.Date,
-) -> Result(ListOptions, Nil) {
-  case options {
-    ListOptions(due: NoDueOptions, scheduled: NoScheduledOptions, ..) ->
-      Ok(
-        ListOptions(
-          ..options,
-          scheduled: ScheduledRangeOptions(None, Some(until)),
-        ),
-      )
-    ListOptions(scheduled: ScheduledRangeOptions(since: since, until: None), ..) ->
-      Ok(
-        ListOptions(
-          ..options,
-          scheduled: ScheduledRangeOptions(since, Some(until)),
-        ),
-      )
-    _ -> Error(Nil)
+fn set_bound(
+  range: DateRange,
+  bound: Bound,
+  date: calendar.Date,
+) -> Result(DateRange, Nil) {
+  case range, bound {
+    DateRange(since: None, until: until), Since ->
+      Ok(DateRange(Some(date), until))
+    DateRange(since: since, until: None), Until ->
+      Ok(DateRange(since, Some(date)))
+    _, _ -> Error(Nil)
   }
 }
 
@@ -376,29 +352,34 @@ fn parse_due_filter(value: String) -> Result(DueFilter, Nil) {
 }
 
 fn list_filter(options: ListOptions) -> Result(ListQuery, Nil) {
-  let ListOptions(status, due_options, scheduled_options) = options
+  let ListOptions(status, temporal) = options
   let status = option.unwrap(status, or: PendingOnly)
-  case due_options, scheduled_options {
-    NoDueOptions, NoScheduledOptions -> Ok(TaskList(ListFilter(status, None)))
-    DueMatch(filter), NoScheduledOptions ->
-      Ok(TaskList(ListFilter(status, Some(filter))))
-    DueRange(Some(start), Some(end)), NoScheduledOptions ->
-      case calendar.naive_date_compare(start, end) {
-        Gt -> Error(Nil)
-        _ ->
-          Ok(TaskList(ListFilter(status, Some(Range(Some(start), Some(end))))))
-      }
-    DueRange(since, until), NoScheduledOptions ->
+  case temporal {
+    NoTemporalOptions -> Ok(TaskList(ListFilter(status, None)))
+    DueMatch(filter) -> Ok(TaskList(ListFilter(status, Some(filter))))
+    ScheduledMatch(filter) -> Ok(ScheduledList(status, filter))
+    DueRange(range) -> {
+      use #(since, until) <- result.try(validated_range(range))
       Ok(TaskList(ListFilter(status, Some(Range(since, until)))))
-    NoDueOptions, ScheduledMatch(filter) -> Ok(ScheduledList(status, filter))
-    NoDueOptions, ScheduledRangeOptions(Some(start), Some(end)) ->
+    }
+    ScheduledRangeOptions(range) -> {
+      use #(since, until) <- result.try(validated_range(range))
+      Ok(ScheduledList(status, ScheduledRange(since, until)))
+    }
+  }
+}
+
+fn validated_range(
+  range: DateRange,
+) -> Result(#(Option(calendar.Date), Option(calendar.Date)), Nil) {
+  let DateRange(since, until) = range
+  case since, until {
+    Some(start), Some(end) ->
       case calendar.naive_date_compare(start, end) {
         Gt -> Error(Nil)
-        _ -> Ok(ScheduledList(status, ScheduledRange(Some(start), Some(end))))
+        _ -> Ok(#(since, until))
       }
-    NoDueOptions, ScheduledRangeOptions(since, until) ->
-      Ok(ScheduledList(status, ScheduledRange(since, until)))
-    _, _ -> Error(Nil)
+    _, _ -> Ok(#(since, until))
   }
 }
 

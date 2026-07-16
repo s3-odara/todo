@@ -23,7 +23,6 @@ pub fn version_one_app_state_round_trip_test() {
   let deadline = due.from_unix_seconds(1_768_173_540)
   let state =
     AppState(
-      1,
       [Todo(2, "日本語: # \\\"", 0, 5, Some(deadline), Done, Asap, 45)],
       availability.empty(),
       None,
@@ -35,7 +34,7 @@ pub fn tasks_are_encoded_in_canonical_id_order_test() {
   let first = Todo(1, "first", 0, 3, None, Done, Asap, 30)
   let second = Todo(2, "second", 0, 3, None, Done, Asap, 30)
   let encoded =
-    json.encode(AppState(1, [second, first], availability.empty(), None))
+    json.encode(AppState([second, first], availability.empty(), None))
 
   encoded
   |> should.equal(
@@ -56,7 +55,7 @@ pub fn availability_round_trip_is_canonical_and_preserves_closed_dates_test() {
       ],
       [availability.DateOverride(Date(2026, July, 21), [])],
     )
-  let encoded = json.encode(AppState(1, [], value, None))
+  let encoded = json.encode(AppState([], value, None))
   encoded
   |> should.equal(
     "{\"version\":1,\"tasks\":[],\"availability\":{\"weekly\":[{\"day\":\"mon\",\"intervals\":[{\"from\":540,\"to\":720}]},{\"day\":\"fri\",\"intervals\":[{\"from\":780,\"to\":840}]}],\"overrides\":[{\"date\":\"2026-07-21\",\"intervals\":[]}]},\"current_schedule\":null}",
@@ -64,7 +63,6 @@ pub fn availability_round_trip_is_canonical_and_preserves_closed_dates_test() {
   json.decode(encoded)
   |> should.equal(
     Ok(AppState(
-      1,
       [],
       availability.Availability(
         [
@@ -144,7 +142,7 @@ pub fn persisted_schedule_round_trip_and_snapshot_validation_test() {
         ),
       ],
     )
-  let state = AppState(1, [task], availability.empty(), Some(schedule))
+  let state = AppState([task], availability.empty(), Some(schedule))
   json.decode(json.encode(state)) |> should.equal(Ok(state))
 }
 

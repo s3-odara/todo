@@ -13,7 +13,7 @@ const root = "/tmp/todo-app-file-test"
 pub fn missing_file_is_an_empty_version_one_state_test() {
   let _ = simplifile.delete_all([root])
   file.load(root <> "/missing.json")
-  |> should.equal(Ok(AppState(1, [], availability.empty(), None)))
+  |> should.equal(Ok(AppState([], availability.empty(), None)))
 }
 
 pub fn save_creates_parent_and_round_trips_version_one_state_test() {
@@ -21,7 +21,6 @@ pub fn save_creates_parent_and_round_trips_version_one_state_test() {
   let path = root <> "/nested/tasks.json"
   let state =
     AppState(
-      1,
       [Todo(1, "write report", 30, 3, None, Pending, Spread, 30)],
       availability.empty(),
       None,
