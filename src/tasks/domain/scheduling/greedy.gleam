@@ -31,7 +31,6 @@ pub fn build(
 fn build_from(blocks, tasks, projected, planning_start, offset) {
   let candidates =
     move.add_candidates(blocks, tasks, projected, planning_start, offset)
-    |> list.take(move.candidate_limit)
     |> list.filter_map(fn(repack) {
       move.apply_repack(
         blocks,

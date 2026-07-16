@@ -1,3 +1,4 @@
+import gleam/list
 import gleam/option.{None, Some}
 import gleam/time/duration
 import gleam/time/timestamp
@@ -184,6 +185,39 @@ pub fn kind_specific_generators_and_atomic_apply_test() {
     0,
   )
   |> should.be_error
+}
+
+pub fn candidate_universe_is_bounded_during_generation_test() {
+  let projected = separated_intervals(7001, 0, [])
+  let large_task =
+    Todo(
+      1,
+      "large",
+      100_000,
+      3,
+      Some(due.from_unix_seconds(2_000_000)),
+      Pending,
+      Spread,
+      1,
+    )
+  let candidates = move.add_candidates([], [large_task], projected, 0, 0)
+
+  list.length(candidates) |> should.equal(move.candidate_limit)
+  candidates
+  |> should.equal(list.sort(candidates, by: move.repack_compare))
+  move.all_candidates([], [large_task], projected, 0, 0)
+  |> should.equal(candidates)
+}
+
+fn separated_intervals(count, start, acc) {
+  case count {
+    0 -> list.reverse(acc)
+    _ ->
+      separated_intervals(count - 1, start + 180, [
+        AbsoluteInterval(start, start + 120),
+        ..acc
+      ])
+  }
 }
 
 pub fn empty_availability_reports_all_unscheduled_test() {

@@ -29,6 +29,10 @@ pub type Repack {
   )
 }
 
+type CandidateBuffer {
+  CandidateBuffer(values: List(Repack), count: Int, limit: Int)
+}
+
 pub const candidate_limit = 20_000
 
 pub fn kind_rank(kind: MoveKind) -> Int {
@@ -62,20 +66,38 @@ pub fn add_candidates(
   planning_start: Int,
   offset: Int,
 ) -> List(Repack) {
-  tasks
-  |> list.flat_map(fn(task) {
-    placements(
+  add_candidates_up_to(
+    blocks,
+    tasks,
+    projected,
+    planning_start,
+    offset,
+    candidate_limit,
+  )
+}
+
+fn add_candidates_up_to(
+  blocks: List(ScheduleBlock),
+  tasks: List(task_model.Todo),
+  projected: List(AbsoluteInterval),
+  planning_start: Int,
+  offset: Int,
+  limit: Int,
+) -> List(Repack) {
+  let free = timeline_free(projected, blocks)
+  list.fold(tasks, new_buffer(limit), fn(acc, task) {
+    fold_placements(
       task,
       blocks,
-      timeline_free(projected, blocks),
+      free,
       planning_start,
       offset,
       [],
+      acc,
+      fn(acc, block) { bounded_insert(acc, Repack(Add, [], [block])) },
     )
-    |> list.map(fn(block) { Repack(Add, [], [block]) })
   })
-  |> unique_repacks
-  |> list.sort(by: repack_compare)
+  |> buffer_values
 }
 
 pub fn relocate_candidates(
@@ -85,53 +107,78 @@ pub fn relocate_candidates(
   planning_start: Int,
   offset: Int,
 ) -> List(Repack) {
-  blocks
-  |> list.flat_map(fn(block) {
+  relocate_candidates_up_to(
+    blocks,
+    tasks,
+    projected,
+    planning_start,
+    offset,
+    candidate_limit,
+  )
+}
+
+fn relocate_candidates_up_to(
+  blocks: List(ScheduleBlock),
+  tasks: List(task_model.Todo),
+  projected: List(AbsoluteInterval),
+  planning_start: Int,
+  offset: Int,
+  limit: Int,
+) -> List(Repack) {
+  list.fold(blocks, new_buffer(limit), fn(acc, block) {
     let base = delete_once(blocks, block)
     case find_task(tasks, block.task_id) {
-      Error(_) -> []
+      Error(_) -> acc
       Ok(task) ->
-        placements(
+        fold_placements(
           task,
           base,
           timeline_free(projected, base),
           planning_start,
           offset,
           [length(block)],
+          acc,
+          fn(acc, candidate) {
+            case length(candidate) == length(block) && candidate != block {
+              True ->
+                bounded_insert(acc, Repack(Relocate, [block], [candidate]))
+              False -> acc
+            }
+          },
         )
-        |> list.filter(fn(candidate) {
-          length(candidate) == length(block) && candidate != block
-        })
-        |> list.map(fn(candidate) { Repack(Relocate, [block], [candidate]) })
     }
   })
-  |> unique_repacks
-  |> list.sort(by: repack_compare)
+  |> buffer_values
 }
 
 pub fn swap_candidates(
   blocks: List(ScheduleBlock),
   tasks: List(task_model.Todo),
 ) -> List(Repack) {
-  pairs(blocks)
-  |> list.filter_map(fn(pair) {
-    let #(a, b) = pair
+  swap_candidates_up_to(blocks, tasks, candidate_limit)
+}
+
+fn swap_candidates_up_to(
+  blocks: List(ScheduleBlock),
+  tasks: List(task_model.Todo),
+  limit: Int,
+) -> List(Repack) {
+  fold_pairs(blocks, new_buffer(limit), fn(acc, a, b) {
     case a.task_id == b.task_id {
-      True -> Error(Nil)
+      True -> acc
       False -> {
         let inserted = [
           ScheduleBlock(b.task_id, a.start, a.end),
           ScheduleBlock(a.task_id, b.start, b.end),
         ]
         case valid_insert_lengths(inserted, tasks) {
-          True -> Ok(Repack(Swap, [a, b], inserted))
-          False -> Error(Nil)
+          True -> bounded_insert(acc, Repack(Swap, [a, b], inserted))
+          False -> acc
         }
       }
     }
   })
-  |> unique_repacks
-  |> list.sort(by: repack_compare)
+  |> buffer_values
 }
 
 pub fn split_candidates(
@@ -141,42 +188,78 @@ pub fn split_candidates(
   planning_start: Int,
   offset: Int,
 ) -> List(Repack) {
-  blocks
-  |> list.flat_map(fn(block) {
+  split_candidates_up_to(
+    blocks,
+    tasks,
+    projected,
+    planning_start,
+    offset,
+    candidate_limit,
+  )
+}
+
+fn split_candidates_up_to(
+  blocks: List(ScheduleBlock),
+  tasks: List(task_model.Todo),
+  projected: List(AbsoluteInterval),
+  planning_start: Int,
+  offset: Int,
+  limit: Int,
+) -> List(Repack) {
+  list.fold(blocks, new_buffer(limit), fn(acc, block) {
     case find_task(tasks, block.task_id) {
-      Error(_) -> []
+      Error(_) -> acc
       Ok(task) -> {
         let minimum = effective_minimum(task)
         let total = length(block)
         case total >= minimum * 2 {
-          False -> []
+          False -> acc
           True -> {
             let left_length = total / 2
             let right_length = total - left_length
             let base = delete_once(blocks, block)
-            let free = timeline_free(projected, base)
-            placements(task, base, free, planning_start, offset, [left_length])
-            |> list.filter(fn(first) { length(first) == left_length })
-            |> list.flat_map(fn(first) {
-              let with_first = invariant.canonicalize([first, ..base])
-              placements(
-                task,
-                with_first,
-                timeline_free(projected, with_first),
-                planning_start,
-                offset,
-                [right_length],
-              )
-              |> list.filter(fn(second) { length(second) == right_length })
-              |> list.map(fn(second) { Repack(Split, [block], [first, second]) })
-            })
+            fold_placements(
+              task,
+              base,
+              timeline_free(projected, base),
+              planning_start,
+              offset,
+              [left_length],
+              acc,
+              fn(acc, first) {
+                case length(first) == left_length {
+                  False -> acc
+                  True -> {
+                    let with_first = invariant.canonicalize([first, ..base])
+                    fold_placements(
+                      task,
+                      with_first,
+                      timeline_free(projected, with_first),
+                      planning_start,
+                      offset,
+                      [right_length],
+                      acc,
+                      fn(acc, second) {
+                        case length(second) == right_length {
+                          True ->
+                            bounded_insert(
+                              acc,
+                              Repack(Split, [block], [first, second]),
+                            )
+                          False -> acc
+                        }
+                      },
+                    )
+                  }
+                }
+              },
+            )
           }
         }
       }
     }
   })
-  |> unique_repacks
-  |> list.sort(by: repack_compare)
+  |> buffer_values
 }
 
 pub fn merge_candidates(
@@ -186,34 +269,53 @@ pub fn merge_candidates(
   planning_start: Int,
   offset: Int,
 ) -> List(Repack) {
-  pairs(blocks)
-  |> list.flat_map(fn(pair) {
-    let #(a, b) = pair
+  merge_candidates_up_to(
+    blocks,
+    tasks,
+    projected,
+    planning_start,
+    offset,
+    candidate_limit,
+  )
+}
+
+fn merge_candidates_up_to(
+  blocks: List(ScheduleBlock),
+  tasks: List(task_model.Todo),
+  projected: List(AbsoluteInterval),
+  planning_start: Int,
+  offset: Int,
+  limit: Int,
+) -> List(Repack) {
+  fold_pairs(blocks, new_buffer(limit), fn(acc, a, b) {
     case a.task_id == b.task_id {
-      False -> []
+      False -> acc
       True -> {
         let base = delete_once(delete_once(blocks, a), b)
         case find_task(tasks, a.task_id) {
-          Error(_) -> []
+          Error(_) -> acc
           Ok(task) ->
-            placements(
+            fold_placements(
               task,
               base,
               timeline_free(projected, base),
               planning_start,
               offset,
               [length(a) + length(b)],
+              acc,
+              fn(acc, candidate) {
+                case length(candidate) == length(a) + length(b) {
+                  True ->
+                    bounded_insert(acc, Repack(Merge, [a, b], [candidate]))
+                  False -> acc
+                }
+              },
             )
-            |> list.filter(fn(candidate) {
-              length(candidate) == length(a) + length(b)
-            })
-            |> list.map(fn(candidate) { Repack(Merge, [a, b], [candidate]) })
         }
       }
     }
   })
-  |> unique_repacks
-  |> list.sort(by: repack_compare)
+  |> buffer_values
 }
 
 pub fn all_candidates(
@@ -223,32 +325,84 @@ pub fn all_candidates(
   planning_start: Int,
   offset: Int,
 ) -> List(Repack) {
-  [
-    relocate_candidates(blocks, tasks, projected, planning_start, offset),
-    swap_candidates(blocks, tasks),
-    split_candidates(blocks, tasks, projected, planning_start, offset),
-    merge_candidates(blocks, tasks, projected, planning_start, offset),
-    add_candidates(blocks, tasks, projected, planning_start, offset),
-  ]
-  |> list.flatten
-  |> unique_repacks
-  |> list.sort(by: repack_compare)
-  |> list.take(candidate_limit)
+  let add =
+    add_candidates_up_to(
+      blocks,
+      tasks,
+      projected,
+      planning_start,
+      offset,
+      candidate_limit,
+    )
+  let relocate = case candidate_limit - list.length(add) {
+    0 -> []
+    remaining ->
+      relocate_candidates_up_to(
+        blocks,
+        tasks,
+        projected,
+        planning_start,
+        offset,
+        remaining,
+      )
+  }
+  let swap = case candidate_limit - list.length(add) - list.length(relocate) {
+    0 -> []
+    remaining -> swap_candidates_up_to(blocks, tasks, remaining)
+  }
+  let split = case
+    candidate_limit
+    - list.length(add)
+    - list.length(relocate)
+    - list.length(swap)
+  {
+    0 -> []
+    remaining ->
+      split_candidates_up_to(
+        blocks,
+        tasks,
+        projected,
+        planning_start,
+        offset,
+        remaining,
+      )
+  }
+  let merge = case
+    candidate_limit
+    - list.length(add)
+    - list.length(relocate)
+    - list.length(swap)
+    - list.length(split)
+  {
+    0 -> []
+    remaining ->
+      merge_candidates_up_to(
+        blocks,
+        tasks,
+        projected,
+        planning_start,
+        offset,
+        remaining,
+      )
+  }
+  [add, relocate, swap, split, merge] |> list.flatten
 }
 
-fn placements(
+fn fold_placements(
   task: task_model.Todo,
   blocks: List(ScheduleBlock),
   free: List(AbsoluteInterval),
   planning_start: Int,
   offset: Int,
   forced_lengths: List(Int),
-) -> List(ScheduleBlock) {
+  initial: accumulator,
+  collect: fn(accumulator, ScheduleBlock) -> accumulator,
+) -> accumulator {
   let remaining = task.estimate_minutes - score.placed_minutes(task.id, blocks)
   case remaining <= 0 {
-    True -> []
+    True -> initial
     False ->
-      list.flat_map(free, fn(interval) {
+      list.fold(free, initial, fn(acc, interval) {
         let due_seconds = case task.due {
           option.Some(value) -> due.to_unix_seconds(value)
           option.None -> interval.start
@@ -257,7 +411,7 @@ fn placements(
           AbsoluteInterval(interval.start, int.min(interval.end, due_seconds))
         let capacity = { clipped.end - clipped.start } / 60
         case capacity <= 0 {
-          True -> []
+          True -> acc
           False -> {
             let minimum = effective_minimum(task)
             let cap = int.min(remaining, capacity)
@@ -269,13 +423,16 @@ fn placements(
             raw_lengths
             |> unique_ints
             |> list.filter(fn(value) { value >= minimum && value <= cap })
-            |> list.flat_map(fn(value) {
+            |> list.fold(acc, fn(acc, value) {
               anchors(task, blocks, clipped, value, planning_start, offset)
-              |> list.map(fn(start) {
-                ScheduleBlock(
-                  task.id,
-                  timestamp.from_unix_seconds(start),
-                  timestamp.from_unix_seconds(start + value * 60),
+              |> list.fold(acc, fn(acc, start) {
+                collect(
+                  acc,
+                  ScheduleBlock(
+                    task.id,
+                    timestamp.from_unix_seconds(start),
+                    timestamp.from_unix_seconds(start + value * 60),
+                  ),
                 )
               })
             })
@@ -401,11 +558,18 @@ fn delete_once(values, target) {
   }
 }
 
-fn pairs(values: List(ScheduleBlock)) -> List(#(ScheduleBlock, ScheduleBlock)) {
+fn fold_pairs(
+  values: List(ScheduleBlock),
+  initial: accumulator,
+  collect: fn(accumulator, ScheduleBlock, ScheduleBlock) -> accumulator,
+) -> accumulator {
   case values {
-    [] -> []
-    [first, ..rest] ->
-      list.append(list.map(rest, fn(second) { #(first, second) }), pairs(rest))
+    [] -> initial
+    [first, ..rest] -> {
+      let next =
+        list.fold(rest, initial, fn(acc, second) { collect(acc, first, second) })
+      fold_pairs(rest, next, collect)
+    }
   }
 }
 
@@ -419,14 +583,60 @@ fn unique_ints(values) {
   |> list.reverse
 }
 
-fn unique_repacks(values) {
-  list.fold(values, [], fn(acc, value) {
-    case list.contains(acc, value) {
-      True -> acc
-      False -> [value, ..acc]
+fn new_buffer(limit: Int) -> CandidateBuffer {
+  CandidateBuffer([], 0, limit)
+}
+
+fn buffer_values(buffer: CandidateBuffer) -> List(Repack) {
+  list.reverse(buffer.values)
+}
+
+fn bounded_insert(buffer: CandidateBuffer, value: Repack) -> CandidateBuffer {
+  let CandidateBuffer(values, count, limit) = buffer
+  case values, count >= limit {
+    _, True ->
+      case values {
+        [greatest, ..] ->
+          case repack_compare(value, greatest) {
+            order.Gt -> buffer
+            order.Eq -> buffer
+            order.Lt -> {
+              let #(next, inserted) = insert_unique_descending(values, value)
+              case inserted {
+                True -> CandidateBuffer(list.drop(next, 1), count, limit)
+                False -> buffer
+              }
+            }
+          }
+        [] -> buffer
+      }
+    _, False -> {
+      let #(next, inserted) = insert_unique_descending(values, value)
+      CandidateBuffer(
+        next,
+        case inserted {
+          True -> count + 1
+          False -> count
+        },
+        limit,
+      )
     }
-  })
-  |> list.reverse
+  }
+}
+
+fn insert_unique_descending(values: List(Repack), value: Repack) {
+  case values {
+    [] -> #([value], True)
+    [first, ..rest] ->
+      case repack_compare(value, first) {
+        order.Gt -> #([value, first, ..rest], True)
+        order.Eq -> #(values, False)
+        order.Lt -> {
+          let #(next, inserted) = insert_unique_descending(rest, value)
+          #([first, ..next], inserted)
+        }
+      }
+  }
 }
 
 pub fn repack_compare(a: Repack, b: Repack) -> order.Order {

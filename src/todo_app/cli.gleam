@@ -422,6 +422,12 @@ pub fn help() -> Outcome {
       "todo availability close|reset --date YYYY-MM-DD",
       "todo availability list",
       "todo schedule",
+      "  DURATION is an ASCII integer plus m or h; DAY is mon..sun",
+      "  dates are YYYY-MM-DD; due times are YYYY-MM-DD[THH:MM]",
+      "  availability times are HH:MM (00:00..24:00); date overrides replace weekly hours",
+      "  scheduling uses one fixed UTC offset; timezone databases and DST transitions are not modeled",
+      "  the saved snapshot survives edits and is replaced only by todo schedule",
+      "  storage is version 1 JSON AppState; current_schedule is null or metadata plus blocks",
     ],
     [],
   )
