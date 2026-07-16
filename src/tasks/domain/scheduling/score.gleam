@@ -22,6 +22,14 @@ pub type Contribution {
   Contribution(task_id: Int, score: Score)
 }
 
+type IntegrationState {
+  IntegrationState(
+    previous_end_seconds: Int,
+    completed_seconds: Float,
+    accumulated_error: Float,
+  )
+}
+
 pub fn evaluate(
   tasks: List(task_model.Todo),
   blocks: List(ScheduleBlock),
@@ -115,9 +123,6 @@ fn policy_error_for_blocks(
             planning_start,
             span,
             estimate,
-            planning_start,
-            0.0,
-            0.0,
           )
         }
       }
@@ -134,49 +139,41 @@ fn integrate_blocks(
   planning_start: Int,
   span: Float,
   estimate: Float,
-  previous_end: Int,
-  completed: Float,
-  error: Float,
 ) -> Float {
-  case blocks {
-    [] ->
-      error
-      +. integrate_segment(
-        policy,
-        normalized(previous_end, planning_start, span),
-        1.0,
-        completed /. estimate,
-        0.0,
-      )
-    [block, ..rest] -> {
+  let initial = IntegrationState(planning_start, 0.0, 0.0)
+  let final =
+    list.fold(blocks, initial, fn(state, block) {
+      let IntegrationState(previous_end, completed, error) = state
       let start = block.start_seconds
       let end = block.end_seconds
       let gap_start = normalized(previous_end, planning_start, span)
       let block_start = normalized(start, planning_start, span)
       let block_end = normalized(end, planning_start, span)
       let progress = completed /. estimate
-      let next_error =
-        error
-        +. integrate_segment(policy, gap_start, block_start, progress, 0.0)
-        +. integrate_segment(
+      let gap_error =
+        integrate_segment(policy, gap_start, block_start, progress, 0.0)
+      let work_error =
+        integrate_segment(
           policy,
           block_start,
           block_end,
           progress,
           span /. estimate,
         )
-      integrate_blocks(
-        policy,
-        rest,
-        planning_start,
-        span,
-        estimate,
+      IntegrationState(
         end,
         completed +. int.to_float(end - start),
-        next_error,
+        { error +. gap_error } +. work_error,
       )
-    }
-  }
+    })
+  final.accumulated_error
+  +. integrate_segment(
+    policy,
+    normalized(final.previous_end_seconds, planning_start, span),
+    1.0,
+    final.completed_seconds /. estimate,
+    0.0,
+  )
 }
 
 fn normalized(seconds: Int, planning_start: Int, span: Float) -> Float {

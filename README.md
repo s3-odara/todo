@@ -59,7 +59,7 @@ spread:        x
 near_deadline: x^2
 ```
 
-A constructive greedy pass orders tasks by priority, deadline, and ID, then places each task at a small set of policy-aware anchors. Deterministic best-improvement hill climbing rebuilds either one task or an ordered pair of tasks, which covers adding, relocating, splitting, merging, and swapping work without separate block-edit operations. The search evaluates at most 20,000 rebuilds per step and accepts at most 1,000 improvements. It is reproducible and constraint-preserving but remains a finite heuristic, not a mathematical global-optimum guarantee.
+A constructive greedy pass orders tasks by priority, deadline, and ID, then places each task at a small set of policy-aware anchors. Deterministic best-improvement hill climbing rebuilds one task, an ordered pair, or an ordered triple, which covers adding, relocating, splitting, merging, and swapping work without separate block-edit operations. The search evaluates at most 20,000 rebuilds per step and accepts at most 1,000 improvements. It is reproducible and constraint-preserving but remains a finite heuristic, not a mathematical global-optimum guarantee.
 
 A successful generation replaces the single saved schedule snapshot. Adding/completing tasks or changing availability does **not** alter that snapshot; only the next `schedule` regenerates it. Scheduled listing reads saved blocks without searching or saving, joins them to current task titles/statuses, and supports all dates, `today`, an explicit date, or inclusive `--scheduled-since`/`--scheduled-until` ranges. Date overlap and display use the offset saved with the schedule. There is no timezone-database or DST transition handling: one fixed offset applies to the whole generated horizon.
 
