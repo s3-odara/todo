@@ -10,6 +10,7 @@ import tasks/domain/policy
 import tasks/domain/scheduling/invariant
 import tasks/domain/scheduling/model as scheduling_model
 import tasks/domain/scheduling/score
+import tasks/domain/scheduling/search.{type SearchSpace, SearchSpace}
 import tasks/domain/scheduling/timeline.{type AbsoluteInterval, AbsoluteInterval}
 
 pub const candidate_limit = 20_000
@@ -37,23 +38,17 @@ type PlacementResult {
 
 pub fn build(
   tasks: List(task_model.Todo),
-  projected: List(AbsoluteInterval),
-  planning_start: Int,
-  offset: Int,
+  space: SearchSpace,
 ) -> List(scheduling_model.ScheduleBlock) {
   tasks
   |> initial_order
-  |> list.fold([], fn(blocks, task) {
-    place_task(blocks, task, projected, planning_start, offset).blocks
-  })
+  |> list.fold([], fn(blocks, task) { place_task(blocks, task, space).blocks })
 }
 
 pub fn rebuild(
   blocks: List(scheduling_model.ScheduleBlock),
   selected: List(task_model.Todo),
-  projected: List(AbsoluteInterval),
-  planning_start: Int,
-  offset: Int,
+  space: SearchSpace,
 ) -> RebuildResult {
   let selected_ids = list.map(selected, fn(task) { task.id })
   let base =
@@ -63,7 +58,7 @@ pub fn rebuild(
   let #(rebuilt, contributions) =
     list.fold(selected, #(base, []), fn(state, task) {
       let #(current, contributions) = state
-      let placed = place_task(current, task, projected, planning_start, offset)
+      let placed = place_task(current, task, space)
       #(placed.blocks, [
         score.Contribution(task.id, placed.score),
         ..contributions
@@ -79,12 +74,11 @@ pub fn initial_order(tasks: List(task_model.Todo)) -> List(task_model.Todo) {
 fn place_task(
   blocks: List(scheduling_model.ScheduleBlock),
   task: task_model.Todo,
-  projected: List(AbsoluteInterval),
-  planning_start: Int,
-  offset: Int,
+  space: SearchSpace,
 ) -> PlacementResult {
+  let SearchSpace(_, planning_start, _) = space
   let bounded_candidates =
-    placement_candidates(blocks, task, projected, planning_start, offset)
+    placement_candidates(blocks, task, space)
     |> list.take(candidate_limit)
   let own =
     blocks
@@ -101,7 +95,7 @@ fn place_task(
       PlacementResult(blocks, score.evaluate_task(task, blocks, planning_start))
     option.Some(candidate) -> {
       let next = invariant.canonicalize([candidate.block, ..blocks])
-      place_task(next, task, projected, planning_start, offset)
+      place_task(next, task, space)
     }
   }
 }
@@ -109,10 +103,9 @@ fn place_task(
 fn placement_candidates(
   blocks: List(scheduling_model.ScheduleBlock),
   task: task_model.Todo,
-  projected: List(AbsoluteInterval),
-  planning_start: Int,
-  offset: Int,
+  space: SearchSpace,
 ) -> List(scheduling_model.ScheduleBlock) {
+  let SearchSpace(projected, planning_start, offset) = space
   let placed = score.placed_minutes(task.id, blocks)
   let remaining = task.estimate_minutes - placed
   case task.due, remaining <= 0 {

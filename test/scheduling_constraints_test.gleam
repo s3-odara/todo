@@ -7,6 +7,7 @@ import tasks/domain/model.{Pending, Todo}
 import tasks/domain/policy.{Spread}
 import tasks/domain/scheduling/invariant
 import tasks/domain/scheduling/model as scheduling_model
+import tasks/domain/scheduling/search.{SearchSpace}
 import tasks/domain/scheduling/timeline.{AbsoluteInterval}
 
 fn task(estimate, minimum) {
@@ -40,9 +41,7 @@ pub fn generation_validator_accepts_short_estimate_exception_test() {
   invariant.validate_generation(
     [block(0, 1200)],
     [task(20, 30)],
-    [AbsoluteInterval(0, 3600)],
-    0,
-    0,
+    SearchSpace([AbsoluteInterval(0, 3600)], 0, 0),
   )
   |> should.be_ok
 }
@@ -59,9 +58,7 @@ pub fn generation_validator_rejects_hard_constraint_violations_test() {
     invariant.validate_generation(
       blocks,
       [task(30, 30)],
-      [AbsoluteInterval(0, 3600)],
-      0,
-      0,
+      SearchSpace([AbsoluteInterval(0, 3600)], 0, 0),
     )
     |> should.be_error
   })
@@ -77,9 +74,7 @@ pub fn nanosecond_block_boundaries_are_rejected_test() {
   invariant.validate_generation(
     [nano_block],
     [task(30, 30)],
-    [AbsoluteInterval(0, 3600)],
-    0,
-    0,
+    SearchSpace([AbsoluteInterval(0, 3600)], 0, 0),
   )
   |> should.be_error
 }

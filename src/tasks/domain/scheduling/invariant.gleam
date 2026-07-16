@@ -6,6 +6,7 @@ import gleam/time/timestamp
 import tasks/domain/due
 import tasks/domain/model as task_model
 import tasks/domain/scheduling/model.{type ScheduleBlock, ScheduleBlock}
+import tasks/domain/scheduling/search.{type SearchSpace, SearchSpace}
 import tasks/domain/scheduling/timeline.{type AbsoluteInterval}
 
 pub type InvariantError {
@@ -23,10 +24,9 @@ pub fn canonicalize(blocks: List(ScheduleBlock)) -> List(ScheduleBlock) {
 pub fn validate_generation(
   blocks: List(ScheduleBlock),
   tasks: List(task_model.Todo),
-  projected: List(AbsoluteInterval),
-  planning_start: Int,
-  utc_offset_seconds: Int,
+  space: SearchSpace,
 ) -> Result(List(ScheduleBlock), InvariantError) {
+  let SearchSpace(projected, planning_start, utc_offset_seconds) = space
   let canonical = canonicalize(blocks)
   case
     blocks == canonical

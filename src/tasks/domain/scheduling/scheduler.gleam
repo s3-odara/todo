@@ -15,6 +15,7 @@ import tasks/domain/scheduling/model.{
   GenerationResult, PlanningContext, SavedSchedule, UnscheduledTask,
 }
 import tasks/domain/scheduling/score
+import tasks/domain/scheduling/search.{SearchSpace}
 import tasks/domain/scheduling/timeline
 
 pub type SchedulingError {
@@ -69,17 +70,11 @@ pub fn generate(
       }
     }),
   )
-  let initial = greedy.build(eligible, projected, planning_start, offset)
-  let blocks =
-    hill_climb.improve(initial, eligible, projected, planning_start, offset)
+  let space = SearchSpace(projected, planning_start, offset)
+  let initial = greedy.build(eligible, space)
+  let blocks = hill_climb.improve(initial, eligible, space)
   use canonical <- result.try(
-    invariant.validate_generation(
-      blocks,
-      eligible,
-      projected,
-      planning_start,
-      offset,
-    )
+    invariant.validate_generation(blocks, eligible, space)
     |> result.map_error(fn(_) { InvalidGeneratedSchedule }),
   )
   let unscheduled =

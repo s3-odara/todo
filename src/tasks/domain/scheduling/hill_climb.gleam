@@ -7,7 +7,7 @@ import tasks/domain/scheduling/greedy
 import tasks/domain/scheduling/invariant
 import tasks/domain/scheduling/model as scheduling_model
 import tasks/domain/scheduling/score
-import tasks/domain/scheduling/timeline.{type AbsoluteInterval}
+import tasks/domain/scheduling/search.{type SearchSpace, SearchSpace}
 
 pub const accepted_move_limit = 1000
 
@@ -36,7 +36,18 @@ type Candidate {
   Candidate(
     index: Int,
     blocks: List(scheduling_model.ScheduleBlock),
+    contributions: List(score.Contribution),
     score: scheduling_model.Score,
+  )
+}
+
+type SearchState {
+  SearchState(
+    blocks: List(scheduling_model.ScheduleBlock),
+    contributions: List(score.Contribution),
+    total_score: scheduling_model.Score,
+    accepted_moves: Int,
+    accepted_scores_reversed: List(scheduling_model.Score),
   )
 }
 
@@ -54,81 +65,59 @@ pub fn worker_count(useful_work: Int) -> Int {
   }
 }
 
-pub fn improve(initial, tasks, projected, planning_start, offset) {
-  climb(initial, tasks, projected, planning_start, offset).blocks
+pub fn improve(initial, tasks, space) {
+  climb(initial, tasks, space).blocks
 }
 
 pub fn climb(
   initial: List(scheduling_model.ScheduleBlock),
   tasks: List(task_model.Todo),
-  projected: List(AbsoluteInterval),
-  planning_start: Int,
-  offset: Int,
+  space: SearchSpace,
 ) -> HillResult {
+  let SearchSpace(_, planning_start, _) = space
+  let contributions = score.contributions(tasks, initial, planning_start)
   climb_loop(
-    initial,
+    SearchState(initial, contributions, score.total(contributions), 0, []),
     tasks,
     rebuilds(tasks)
       |> list.index_map(fn(rebuild, index) { IndexedRebuild(index, rebuild) }),
-    projected,
-    planning_start,
-    offset,
-    0,
-    [],
+    space,
   )
 }
 
-fn climb_loop(
-  blocks,
-  tasks,
-  rebuild_candidates,
-  projected,
-  planning_start,
-  offset,
-  accepted,
-  scores,
-) {
+fn climb_loop(state, tasks, rebuild_candidates, space) {
+  let SearchState(blocks, contributions, current_score, accepted, scores) =
+    state
   case accepted >= accepted_move_limit {
     True -> HillResult(blocks, accepted, list.reverse(scores))
     False -> {
-      let current_contributions =
-        score.contributions(tasks, blocks, planning_start)
-      let current_score = score.total(current_contributions)
       let candidate =
         evaluate_candidates(
           rebuild_candidates,
           blocks,
-          current_contributions,
+          contributions,
           current_score,
-          projected,
-          planning_start,
-          offset,
+          space,
         )
       case candidate {
         option.None -> HillResult(blocks, accepted, list.reverse(scores))
-        option.Some(Candidate(_, next, next_score)) ->
+        option.Some(Candidate(_, next, next_contributions, next_score)) ->
           // Greedy construction should already be valid; validate accepted states
           // so a placement bug cannot propagate through the search.
-          case
-            invariant.validate_generation(
-              next,
-              tasks,
-              projected,
-              planning_start,
-              offset,
-            )
-          {
+          case invariant.validate_generation(next, tasks, space) {
             Error(_) -> HillResult(blocks, accepted, list.reverse(scores))
             Ok(valid) ->
               climb_loop(
-                valid,
+                SearchState(
+                  valid,
+                  next_contributions,
+                  next_score,
+                  accepted + 1,
+                  [next_score, ..scores],
+                ),
                 tasks,
                 rebuild_candidates,
-                projected,
-                planning_start,
-                offset,
-                accepted + 1,
-                [next_score, ..scores],
+                space,
               )
           }
       }
@@ -141,9 +130,7 @@ fn evaluate_candidates(
   blocks,
   current_contributions,
   current_score,
-  projected,
-  planning_start,
-  offset,
+  space,
 ) {
   let count = list.length(rebuild_candidates)
   let workers = worker_count(count)
@@ -154,9 +141,7 @@ fn evaluate_candidates(
         blocks,
         current_contributions,
         current_score,
-        projected,
-        planning_start,
-        offset,
+        space,
       )
     False -> {
       let chunk_size = { count + workers - 1 } / workers
@@ -172,9 +157,7 @@ fn evaluate_candidates(
               blocks,
               current_contributions,
               current_score,
-              projected,
-              planning_start,
-              offset,
+              space,
             ),
           )
         })
@@ -190,25 +173,27 @@ fn evaluate_chunk(
   blocks,
   current_contributions,
   current_score,
-  projected,
-  planning_start,
-  offset,
+  space,
 ) {
   rebuild_candidates
   |> list.fold(option.None, fn(best, indexed) {
     let IndexedRebuild(index, Rebuild(selected)) = indexed
     let greedy.RebuildResult(next, replacements) =
-      greedy.rebuild(blocks, selected, projected, planning_start, offset)
+      greedy.rebuild(blocks, selected, space)
     case next == blocks {
       True -> best
       False -> {
         // A rebuild changes only its selected tasks; reuse every other score.
-        let next_score =
+        let next_contributions =
           score.replace_contributions(current_contributions, replacements)
-          |> score.total
+        let next_score = score.total(next_contributions)
         case score.strictly_better(next_score, than: current_score) {
           False -> best
-          True -> choose_better(best, Candidate(index, next, next_score))
+          True ->
+            choose_better(
+              best,
+              Candidate(index, next, next_contributions, next_score),
+            )
         }
       }
     }

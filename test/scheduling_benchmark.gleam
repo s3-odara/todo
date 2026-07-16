@@ -13,6 +13,7 @@ import tasks/domain/scheduling/hill_climb
 import tasks/domain/scheduling/invariant
 import tasks/domain/scheduling/model as scheduling_model
 import tasks/domain/scheduling/score
+import tasks/domain/scheduling/search.{SearchSpace}
 import tasks/domain/scheduling/timeline.{type AbsoluteInterval, AbsoluteInterval}
 
 @external(erlang, "scheduling_benchmark_ffi", "monotonic_microseconds")
@@ -84,11 +85,12 @@ fn run(scenario: Scenario) {
   let Scenario(name, tasks, projected, oracle_horizon) = scenario
   // One timing preserves a useful diagnostic without making deterministic quality
   // cases five times slower. Runtime is not used to rank solution quality.
+  let space = SearchSpace(projected, 0, 0)
   let greedy_started = monotonic_microseconds()
-  let initial = greedy.build(tasks, projected, 0, 0)
+  let initial = greedy.build(tasks, space)
   let greedy_elapsed = monotonic_microseconds() - greedy_started
   let hill_started = monotonic_microseconds()
-  let result = hill_climb.climb(initial, tasks, projected, 0, 0)
+  let result = hill_climb.climb(initial, tasks, space)
   let hill_elapsed = monotonic_microseconds() - hill_started
   let initial_value = score.evaluate(tasks, initial, 0)
   let value = score.evaluate(tasks, result.blocks, 0)
@@ -96,9 +98,7 @@ fn run(scenario: Scenario) {
     None -> None
     Some(horizon) -> exact_optimum(tasks, projected, horizon)
   }
-  let valid = case
-    invariant.validate_generation(result.blocks, tasks, projected, 0, 0)
-  {
+  let valid = case invariant.validate_generation(result.blocks, tasks, space) {
     Ok(_) -> "true"
     Error(_) -> "false"
   }
@@ -464,7 +464,13 @@ fn exact_assignments(
         |> list.reverse
         |> assignment_blocks(0, [])
         |> invariant.canonicalize
-      case invariant.validate_generation(blocks, tasks, projected, 0, 0) {
+      case
+        invariant.validate_generation(
+          blocks,
+          tasks,
+          SearchSpace(projected, 0, 0),
+        )
+      {
         Error(_) -> best
         Ok(valid) -> choose_score(best, score.evaluate(tasks, valid, 0))
       }

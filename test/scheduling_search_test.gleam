@@ -15,6 +15,7 @@ import tasks/domain/scheduling/invariant
 import tasks/domain/scheduling/model as scheduling_model
 import tasks/domain/scheduling/scheduler
 import tasks/domain/scheduling/score
+import tasks/domain/scheduling/search.{SearchSpace}
 import tasks/domain/scheduling/timeline.{AbsoluteInterval}
 
 pub fn hill_climb_worker_count_tracks_runtime_schedulers_test() {
@@ -78,9 +79,7 @@ pub fn deterministic_generation_respects_availability_test() {
   invariant.validate_generation(
     blocks,
     [task(1, 60, 3)],
-    [AbsoluteInterval(0, 7200)],
-    0,
-    0,
+    SearchSpace([AbsoluteInterval(0, 7200)], 0, 0),
   )
   |> should.be_ok
 }
@@ -166,7 +165,8 @@ pub fn pair_rebuild_can_replace_low_priority_work_atomically_test() {
     ),
   ]
   let before = score.evaluate([low, high], initial, 0)
-  let result = hill_climb.climb(initial, [low, high], projected, 0, 0)
+  let space = SearchSpace(projected, 0, 0)
+  let result = hill_climb.climb(initial, [low, high], space)
   let after = score.evaluate([low, high], result.blocks, 0)
 
   score.strictly_better(after, than: before) |> should.be_true
@@ -180,7 +180,7 @@ pub fn pair_rebuild_can_replace_low_priority_work_atomically_test() {
       timestamp.from_unix_seconds(3600),
     ),
   ])
-  invariant.validate_generation(result.blocks, [low, high], projected, 0, 0)
+  invariant.validate_generation(result.blocks, [low, high], space)
   |> should.be_ok
 }
 
@@ -191,8 +191,9 @@ pub fn exact_s7_schedule_and_score_are_characterized_test() {
     Todo(2, "two", 3, 1, Some(due.from_unix_seconds(360)), Pending, Spread, 2),
     Todo(3, "three", 5, 4, Some(due.from_unix_seconds(240)), Pending, Spread, 2),
   ]
-  let initial = greedy.build(tasks, projected, 0, 0)
-  let result = hill_climb.climb(initial, tasks, projected, 0, 0)
+  let space = SearchSpace(projected, 0, 0)
+  let initial = greedy.build(tasks, space)
+  let result = hill_climb.climb(initial, tasks, space)
   let expected_blocks = [
     scheduling_model.ScheduleBlock(
       3,
