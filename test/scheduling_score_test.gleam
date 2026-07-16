@@ -71,6 +71,42 @@ pub fn partial_block_and_gap_have_exact_piecewise_error_test() {
   )
 }
 
+pub fn pre_refactor_piecewise_float_fixtures_are_preserved_test() {
+  // These literals were captured before the fold refactor. They intentionally
+  // are not derived from policy curves or another integration implementation.
+  let partial = [block(0, 1800)]
+  let touching = [
+    block(0, 1200),
+    block(1200, 2400),
+    block(2400, 3600),
+  ]
+  let with_gaps = [
+    block(300, 900),
+    block(1500, 2400),
+    block(3000, 3600),
+  ]
+
+  close(score.policy_error(task(Asap), partial, 0), 0.10625000000000001)
+  close(score.policy_error(task(Spread), partial, 0), 0.04166666666666667)
+  close(score.policy_error(task(NearDeadline), partial, 0), 0.04375)
+
+  // Full touching Spread progress has exact zero error; the other policy
+  // literals retain the narrow tolerance used for quadrature results.
+  score.policy_error(task(Spread), touching, 0) |> should.equal(0.0)
+  close(score.policy_error(task(Asap), touching, 0), 0.03333333333333334)
+  close(
+    score.policy_error(task(NearDeadline), touching, 0),
+    0.03333333333333334,
+  )
+
+  close(score.policy_error(task(Asap), with_gaps, 0), 0.1806536136831276)
+  close(score.policy_error(task(Spread), with_gaps, 0), 0.06983024691358025)
+  close(
+    score.policy_error(task(NearDeadline), with_gaps, 0),
+    0.025673546810699596,
+  )
+}
+
 pub fn invalid_planning_windows_return_zero_test() {
   let no_span =
     Todo(

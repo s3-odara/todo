@@ -7,7 +7,7 @@ import tasks/domain/app_state.{AppState}
 import tasks/domain/availability
 import tasks/domain/due
 import tasks/domain/filter.{
-  AllScheduled, AllStatuses, ListFilter, PendingOnly, ScheduledDate,
+  AllScheduled, AllStatuses, DueWindow, ListFilter, PendingOnly, ScheduledDate,
   ScheduledExact, Today,
 }
 import tasks/domain/model.{
@@ -273,6 +273,52 @@ pub fn scheduled_list_joins_current_task_status_without_saving_test() {
     None,
   )
   |> should.equal(Ok(service.ScheduledListing(32_400, [])))
+}
+
+pub fn scheduled_overlap_uses_half_open_bounds_with_negative_seconds_test() {
+  let window =
+    Some(DueWindow(
+      Some(timestamp.from_unix_seconds(0)),
+      Some(timestamp.from_unix_seconds(86_400)),
+    ))
+
+  // Ending exactly at the lower bound and starting exactly at the exclusive
+  // upper bound do not overlap.
+  filter.block_overlaps(-60, 0, window) |> should.be_false
+  filter.block_overlaps(86_400, 86_460, window) |> should.be_false
+
+  // Crossing either boundary overlaps; the first case also fixes negative Unix
+  // second handling at the service/filter boundary.
+  filter.block_overlaps(-60, 60, window) |> should.be_true
+  filter.block_overlaps(86_340, 86_460, window) |> should.be_true
+}
+
+pub fn scheduled_list_includes_a_negative_seconds_block_crossing_day_start_test() {
+  let task = Todo(1, "epoch crossing", 2, 3, None, Pending, Spread, 1)
+  let block = scheduling_model.ScheduleBlock(1, -60, 60)
+  let schedule =
+    scheduling_model.SavedSchedule(
+      timestamp.from_unix_seconds(-60),
+      timestamp.from_unix_seconds(-60),
+      0,
+      [block],
+    )
+
+  service.scheduled_list(
+    Store(fn() { Ok(state_with_schedule([task], schedule)) }, fn(_) {
+      panic as "save must not run"
+    }),
+    AllStatuses,
+    ScheduledExact(ScheduledDate(calendar.Date(1970, calendar.January, 1))),
+    None,
+  )
+  |> should.equal(
+    Ok(
+      service.ScheduledListing(0, [
+        service.ScheduledItem(block, task),
+      ]),
+    ),
+  )
 }
 
 pub fn generate_schedule_replaces_snapshot_and_saves_report_only_in_result_test() {

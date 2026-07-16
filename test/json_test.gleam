@@ -149,6 +149,14 @@ pub fn version_one_non_null_schedule_has_byte_exact_canonical_encoding_test() {
   json.encode(value) |> should.equal(text)
 }
 
+pub fn negative_seconds_non_null_schedule_round_trips_canonical_bytes_test() {
+  let text =
+    "{\"version\":1,\"tasks\":[{\"id\":1,\"title\":\"before epoch\",\"estimate_minutes\":1,\"priority\":3,\"due\":null,\"status\":\"done\",\"scheduling_policy\":\"asap\",\"minimum_split_minutes\":1}],\"availability\":{\"weekly\":[],\"overrides\":[]},\"current_schedule\":{\"generated_at\":-120,\"planning_start\":-60,\"utc_offset_seconds\":0,\"blocks\":[{\"task_id\":1,\"start\":-60,\"end\":0}]}}"
+  let assert Ok(value) = json.decode(text)
+
+  json.encode(value) |> should.equal(text)
+}
+
 pub fn corrupt_persisted_schedule_is_rejected_test() {
   let task =
     "{\"id\":1,\"title\":\"x\",\"estimate_minutes\":0,\"priority\":3,\"due\":null,\"status\":\"done\",\"scheduling_policy\":\"spread\",\"minimum_split_minutes\":30}"
