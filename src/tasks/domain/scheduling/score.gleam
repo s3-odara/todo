@@ -105,15 +105,103 @@ fn policy_error_for_blocks(
       let span = int.to_float(due_seconds - planning_start)
       case span >. 0.0 {
         False -> 0.0
-        True ->
-          sample_sum(task, blocks, planning_start, span, 0, 0.0)
-          /. int.to_float(sample_count)
+        True -> {
+          let sum = case sweep_safe(blocks, option.None) {
+            True ->
+              sample_sum_sweep(task, blocks, planning_start, span, 0, 0.0, 0.0)
+            False -> sample_sum(task, blocks, planning_start, span, 0, 0.0)
+          }
+          sum /. int.to_float(sample_count)
+        }
       }
     }
     _, _ -> 0.0
   }
 }
 
+fn sweep_safe(
+  blocks: List(ScheduleBlock),
+  previous_end: option.Option(Int),
+) -> Bool {
+  case blocks {
+    [] -> True
+    [block, ..rest] -> {
+      let start = invariant.seconds(block.start)
+      let end = invariant.seconds(block.end)
+      start < end
+      && case previous_end {
+        option.None -> sweep_safe(rest, option.Some(end))
+        option.Some(previous) ->
+          start >= previous && sweep_safe(rest, option.Some(end))
+      }
+    }
+  }
+}
+
+fn sample_sum_sweep(
+  task: task_model.Todo,
+  blocks: List(ScheduleBlock),
+  planning_start: Int,
+  span: Float,
+  k: Int,
+  sum: Float,
+  completed_work: Float,
+) -> Float {
+  case k >= sample_count {
+    True -> sum
+    False -> {
+      let x = { int.to_float(k) +. 0.5 } /. int.to_float(sample_count)
+      let sample = int.to_float(planning_start) +. x *. span
+      let #(remaining, completed) =
+        advance_completed(blocks, sample, completed_work)
+      let worked_seconds = case remaining {
+        [] -> completed
+        [block, ..] -> {
+          let start = int.to_float(invariant.seconds(block.start))
+          case sample <=. start {
+            True -> completed
+            False -> completed +. sample -. start
+          }
+        }
+      }
+      let actual =
+        worked_seconds /. { int.to_float(task.estimate_minutes) *. 60.0 }
+      let desired = policy_value(task.scheduling_policy, x)
+      let difference = actual -. desired
+      sample_sum_sweep(
+        task,
+        remaining,
+        planning_start,
+        span,
+        k + 1,
+        sum +. difference *. difference,
+        completed,
+      )
+    }
+  }
+}
+
+fn advance_completed(
+  blocks: List(ScheduleBlock),
+  sample: Float,
+  completed_work: Float,
+) -> #(List(ScheduleBlock), Float) {
+  case blocks {
+    [] -> #(blocks, completed_work)
+    [block, ..rest] -> {
+      let end = int.to_float(invariant.seconds(block.end))
+      case sample >=. end {
+        False -> #(blocks, completed_work)
+        True -> {
+          let start = int.to_float(invariant.seconds(block.start))
+          advance_completed(rest, sample, completed_work +. end -. start)
+        }
+      }
+    }
+  }
+}
+
+// Fallback retains the public API's behavior for arbitrary block lists.
 fn sample_sum(task, blocks, planning_start, span, k, sum) {
   case k >= sample_count {
     True -> sum

@@ -17,7 +17,6 @@ pub const candidate_limit = 20_000
 type Candidate {
   Candidate(
     block: scheduling_model.ScheduleBlock,
-    blocks: List(scheduling_model.ScheduleBlock),
     score: scheduling_model.Score,
   )
 }
@@ -87,19 +86,24 @@ fn place_task(
   let bounded_candidates =
     placement_candidates(blocks, task, projected, planning_start, offset)
     |> list.take(candidate_limit)
+  let own =
+    blocks
+    |> list.filter(fn(existing) { existing.task_id == task.id })
   let candidates =
     bounded_candidates
     |> maximum_duration_candidates
     |> list.map(fn(block) {
-      let next = invariant.canonicalize([block, ..blocks])
+      let next_own = invariant.canonicalize([block, ..own])
       // Other tasks are identical across these candidates, so their scores cancel.
-      Candidate(block, next, score.evaluate_task(task, next, planning_start))
+      Candidate(block, score.evaluate_task(task, next_own, planning_start))
     })
   case best(candidates) {
     option.None ->
       PlacementResult(blocks, score.evaluate_task(task, blocks, planning_start))
-    option.Some(candidate) ->
-      place_task(candidate.blocks, task, projected, planning_start, offset)
+    option.Some(candidate) -> {
+      let next = invariant.canonicalize([candidate.block, ..blocks])
+      place_task(next, task, projected, planning_start, offset)
+    }
   }
 }
 
@@ -202,7 +206,7 @@ fn best(candidates: List(Candidate)) -> option.Option(Candidate) {
   list.fold(candidates, option.None, fn(current, candidate) {
     case current {
       option.None -> option.Some(candidate)
-      option.Some(Candidate(block: existing_block, score: existing_score, ..)) ->
+      option.Some(Candidate(block: existing_block, score: existing_score)) ->
         case score.compare(candidate.score, existing_score) {
           score.Better -> option.Some(candidate)
           score.Worse -> current
