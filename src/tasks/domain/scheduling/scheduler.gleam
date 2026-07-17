@@ -75,9 +75,10 @@ pub fn generate(
   let unscheduled =
     eligible
     |> list.map(fn(task) {
+      let own = list.filter(canonical, fn(block) { block.task_id == task.id })
       UnscheduledTask(
         task.id,
-        task.estimate_minutes - score.placed_minutes(task.id, canonical),
+        task.estimate_minutes - score.placed_minutes(own),
       )
     })
     |> list.filter(fn(entry) { entry.minutes > 0 })

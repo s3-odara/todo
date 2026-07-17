@@ -44,20 +44,22 @@ pub fn contributions(
   planning_start: Int,
 ) -> List(Contribution) {
   list.map(tasks, fn(task) {
-    Contribution(task.id, evaluate_task(task, blocks, planning_start))
+    let own = list.filter(blocks, fn(block) { block.task_id == task.id })
+    Contribution(task.id, evaluate_task(task, own, planning_start))
   })
 }
 
+/// Score one task from only that task's canonical blocks.
 pub fn evaluate_task(
   task: SchedulingTask,
-  blocks: List(ScheduleBlock),
+  own_blocks: List(ScheduleBlock),
   planning_start: Int,
 ) -> Score {
-  let own = list.filter(blocks, fn(block) { block.task_id == task.id })
   let weight = priority_weight(task.priority)
   Score(
-    weight * int.max(0, task.estimate_minutes - placed_minutes_in(own)),
-    int.to_float(weight) *. policy_error_for_blocks(task, own, planning_start),
+    weight * int.max(0, task.estimate_minutes - placed_minutes(own_blocks)),
+    int.to_float(weight)
+      *. policy_error_for_blocks(task, own_blocks, planning_start),
   )
 }
 
@@ -90,17 +92,16 @@ fn replacement(current: Contribution, replacements: List(Contribution)) {
   }
 }
 
-/// Integrates squared policy error over normalized calendar progress [0, 1].
+/// Integrate squared policy error from one task's canonical blocks.
 ///
-/// Blocks must be canonical, non-overlapping, and within the planning window.
+/// Blocks must be non-overlapping and within the planning window.
 /// Scheduling boundaries enforce this once; score evaluation stays O(B).
 pub fn policy_error(
   task: SchedulingTask,
-  blocks: List(ScheduleBlock),
+  own_blocks: List(ScheduleBlock),
   planning_start: Int,
 ) -> Float {
-  let own = list.filter(blocks, fn(block) { block.task_id == task.id })
-  policy_error_for_blocks(task, own, planning_start)
+  policy_error_for_blocks(task, own_blocks, planning_start)
 }
 
 fn policy_error_for_blocks(
@@ -222,13 +223,8 @@ fn squared_error(policy, x, actual) -> Float {
   difference *. difference
 }
 
-pub fn placed_minutes(task_id: Int, blocks: List(ScheduleBlock)) -> Int {
-  blocks
-  |> list.filter(fn(block) { block.task_id == task_id })
-  |> placed_minutes_in
-}
-
-fn placed_minutes_in(blocks: List(ScheduleBlock)) -> Int {
+/// Sum minutes from blocks already projected to one task.
+pub fn placed_minutes(blocks: List(ScheduleBlock)) -> Int {
   list.fold(blocks, 0, fn(total, block) {
     total + { block.end_seconds - block.start_seconds } / 60
   })

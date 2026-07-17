@@ -83,7 +83,8 @@ fn placement_candidates(
   space: SearchSpace,
 ) -> List(scheduling_model.ScheduleBlock) {
   let SearchSpace(projected, planning_start, offset) = space
-  let placed = score.placed_minutes(task.id, blocks)
+  let own = list.filter(blocks, fn(block) { block.task_id == task.id })
+  let placed = score.placed_minutes(own)
   let remaining = task.estimate_minutes - placed
   case remaining <= 0 {
     True -> []
