@@ -11,7 +11,7 @@ import tasks/domain/scheduling/timeline.{
   type AbsoluteInterval, type SearchSpace, AbsoluteInterval, SearchSpace,
 }
 
-pub const placement_candidate_limit = 20_000
+const placement_candidate_limit = 20_000
 
 type Candidate {
   Candidate(
@@ -44,7 +44,7 @@ pub fn rebuild(
   })
 }
 
-pub fn initial_order(
+fn initial_order(
   tasks: List(scheduling_model.SchedulingTask),
 ) -> List(scheduling_model.SchedulingTask) {
   list.sort(tasks, by: task_compare)
