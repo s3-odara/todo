@@ -197,9 +197,9 @@ fn choose_better(
     option.None -> option.Some(candidate)
     option.Some(existing) ->
       case score.compare(candidate.score, existing.score) {
-        score.Better -> option.Some(candidate)
-        score.Worse -> current
-        score.Equal ->
+        order.Lt -> option.Some(candidate)
+        order.Gt -> current
+        order.Eq ->
           case invariant.block_key_compare(candidate.block, existing.block) {
             order.Lt -> option.Some(candidate)
             _ -> current

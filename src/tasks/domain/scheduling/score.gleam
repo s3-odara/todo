@@ -11,12 +11,6 @@ pub const epsilon = 0.000000000001
 
 const gauss_node = 0.7745966692414834
 
-pub type Comparison {
-  Better
-  Equal
-  Worse
-}
-
 pub type Contribution {
   Contribution(task_id: Int, score: Score)
 }
@@ -241,26 +235,29 @@ pub fn priority_weight(priority: Int) -> Int {
   }
 }
 
-pub fn compare(a: Score, b: Score) -> Comparison {
+/// Total ordering used to rank candidates deterministically.
+///
+/// Epsilon is deliberately excluded: approximate equality is not transitive,
+/// so it cannot be composed safely by the parallel candidate reduction.
+pub fn compare(a: Score, b: Score) -> order.Order {
   case
     int.compare(a.weighted_unscheduled_minutes, b.weighted_unscheduled_minutes)
   {
-    order.Lt -> Better
-    order.Gt -> Worse
-    order.Eq -> {
-      let difference = a.weighted_policy_error -. b.weighted_policy_error
-      case float.absolute_value(difference) <=. epsilon {
-        True -> Equal
-        False ->
-          case difference <. 0.0 {
-            True -> Better
-            False -> Worse
-          }
-      }
-    }
+    order.Eq -> float.compare(a.weighted_policy_error, b.weighted_policy_error)
+    other -> other
   }
 }
 
+/// Require a meaningful improvement while keeping candidate ranking total.
 pub fn strictly_better(a: Score, than b: Score) -> Bool {
-  compare(a, b) == Better
+  case
+    int.compare(a.weighted_unscheduled_minutes, b.weighted_unscheduled_minutes)
+  {
+    order.Lt -> True
+    order.Gt -> False
+    order.Eq -> {
+      let difference = a.weighted_policy_error -. b.weighted_policy_error
+      difference <. { 0.0 -. epsilon }
+    }
+  }
 }

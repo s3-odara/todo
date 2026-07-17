@@ -4,6 +4,7 @@ import gleam/int
 import gleam/io
 import gleam/list
 import gleam/option.{type Option, None, Some}
+import gleam/order
 import tasks/domain/policy.{Asap, NearDeadline, Spread}
 import tasks/domain/scheduling/greedy
 import tasks/domain/scheduling/hill_climb
@@ -520,8 +521,8 @@ fn choose_score(
     None -> Some(candidate)
     Some(existing) ->
       case score.compare(candidate, existing) {
-        score.Better -> Some(candidate)
-        score.Equal | score.Worse -> current
+        order.Lt -> Some(candidate)
+        order.Eq | order.Gt -> current
       }
   }
 }

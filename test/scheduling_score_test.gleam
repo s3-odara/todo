@@ -1,5 +1,6 @@
 import gleam/float
 import gleam/list
+import gleam/order
 import gleeunit/should
 import tasks/domain/policy.{Asap, NearDeadline, Spread}
 import tasks/domain/scheduling/model as scheduling_model
@@ -92,17 +93,17 @@ pub fn invalid_planning_windows_return_zero_test() {
   |> should.equal(0.0)
 }
 
-pub fn score_is_lexicographic_with_fixed_epsilon_test() {
+pub fn score_ranking_is_total_and_improvement_uses_epsilon_test() {
   score.compare(
     scheduling_model.Score(1, 0.0),
     scheduling_model.Score(2, -100.0),
   )
-  |> should.equal(score.Better)
-  score.compare(
-    scheduling_model.Score(1, 1.0),
-    scheduling_model.Score(1, 1.0 +. score.epsilon /. 2.0),
-  )
-  |> should.equal(score.Equal)
+  |> should.equal(order.Lt)
+
+  let current = scheduling_model.Score(1, 1.0 +. score.epsilon /. 2.0)
+  let candidate = scheduling_model.Score(1, 1.0)
+  score.compare(candidate, current) |> should.equal(order.Lt)
+  score.strictly_better(candidate, than: current) |> should.be_false
 }
 
 pub fn block_progress_and_priority_weight_test() {

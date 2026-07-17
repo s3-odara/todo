@@ -1,5 +1,6 @@
 import gleam/list
 import gleam/option
+import gleam/order
 import tasks/domain/scheduling/greedy
 import tasks/domain/scheduling/invariant
 import tasks/domain/scheduling/model as scheduling_model
@@ -165,10 +166,9 @@ fn choose_better(
     option.None -> option.Some(candidate)
     option.Some(existing) ->
       case score.compare(candidate.score, existing.score) {
-        score.Better -> option.Some(candidate)
-        score.Equal if candidate.index < existing.index ->
-          option.Some(candidate)
-        score.Equal | score.Worse -> current
+        order.Lt -> option.Some(candidate)
+        order.Eq if candidate.index < existing.index -> option.Some(candidate)
+        order.Eq | order.Gt -> current
       }
   }
 }
