@@ -4,6 +4,7 @@ import gleam/order
 import gleam/result
 import gleam/string
 import gleam/time/calendar.{type Date}
+import tasks/domain/ascii
 import tasks/domain/local_time.{type Weekday, Fri, Mon, Sat, Sun, Thu, Tue, Wed}
 
 pub type LocalMinute =
@@ -45,8 +46,8 @@ fn parse_minute(
 ) -> Result(LocalMinute, Nil) {
   case string.to_graphemes(value) {
     [a, b, ":", c, d] -> {
-      use hour <- result.try(ascii_int([a, b]))
-      use minute <- result.try(ascii_int([c, d]))
+      use hour <- result.try(ascii.parse_digits([a, b]))
+      use minute <- result.try(ascii.parse_digits([c, d]))
       case hour, minute, allow_end_of_day {
         24, 0, True -> Ok(1440)
         hour, minute, _
@@ -241,17 +242,6 @@ pub fn weekday_string(day: Weekday) -> String {
     Fri -> "fri"
     Sat -> "sat"
     Sun -> "sun"
-  }
-}
-
-fn ascii_int(values) {
-  case
-    list.all(values, fn(value) {
-      list.contains(["0", "1", "2", "3", "4", "5", "6", "7", "8", "9"], value)
-    })
-  {
-    True -> values |> string.concat |> int.parse
-    False -> Error(Nil)
   }
 }
 

@@ -1,8 +1,8 @@
-import gleam/int
 import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/result
 import gleam/string
+import tasks/domain/ascii
 import tasks/domain/due.{type Due}
 import tasks/domain/model.{
   type Status, type Todo, type ValidatedAdd, Todo, ValidatedAdd,
@@ -149,18 +149,12 @@ fn number_between(
 fn strict_number(value: String) -> Result(Int, Nil) {
   case value {
     "0" -> Ok(0)
-    _ ->
-      case
-        string.starts_with(value, "0")
-        || value == ""
-        || !list.all(string.to_graphemes(value), is_digit)
-      {
+    _ -> {
+      let digits = string.to_graphemes(value)
+      case string.starts_with(value, "0") || !ascii.digits(digits) {
         True -> Error(Nil)
-        False -> int.parse(value)
+        False -> ascii.parse_digits(digits)
       }
+    }
   }
-}
-
-fn is_digit(c: String) -> Bool {
-  list.contains(["0", "1", "2", "3", "4", "5", "6", "7", "8", "9"], c)
 }
