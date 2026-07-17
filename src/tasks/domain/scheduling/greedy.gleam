@@ -34,10 +34,10 @@ pub fn rebuild(
   space: SearchSpace,
 ) -> List(scheduling_model.ScheduleBlock) {
   let selected_ids = list.map(selected, fn(task) { task.id })
+  // Filtering positive, non-overlapping blocks preserves canonical order.
   let base =
     blocks
     |> list.filter(fn(block) { !list.contains(selected_ids, block.task_id) })
-    |> invariant.canonicalize
   list.fold(selected, base, fn(current, task) {
     place_task(current, task, space)
   })
@@ -64,14 +64,14 @@ fn place_task(
   let candidates =
     bounded_candidates
     |> list.map(fn(block) {
-      let next_own = invariant.canonicalize([block, ..own])
+      let next_own = invariant.insert_canonical(own, block)
       // Other tasks are identical across these candidates, so their scores cancel.
       Candidate(block, score.evaluate_task(task, next_own, planning_start))
     })
   case best(candidates) {
     option.None -> blocks
     option.Some(candidate) -> {
-      let next = invariant.canonicalize([candidate.block, ..blocks])
+      let next = invariant.insert_canonical(blocks, candidate.block)
       place_task(next, task, space)
     }
   }

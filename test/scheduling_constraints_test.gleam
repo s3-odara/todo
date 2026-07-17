@@ -67,3 +67,33 @@ pub fn adjacent_same_task_blocks_are_normalized_test() {
   invariant.canonicalize([block(0, 1800), block(1800, 3600)])
   |> should.equal([block(0, 3600)])
 }
+
+pub fn canonical_insertion_orders_and_merges_blocks_test() {
+  invariant.insert_canonical(
+    [scheduling_model.ScheduleBlock(2, 600, 1200)],
+    scheduling_model.ScheduleBlock(1, 0, 600),
+  )
+  |> should.equal([
+    scheduling_model.ScheduleBlock(1, 0, 600),
+    scheduling_model.ScheduleBlock(2, 600, 1200),
+  ])
+
+  invariant.insert_canonical(
+    [
+      scheduling_model.ScheduleBlock(2, 0, 600),
+      scheduling_model.ScheduleBlock(2, 1200, 1800),
+    ],
+    scheduling_model.ScheduleBlock(1, 600, 1200),
+  )
+  |> should.equal([
+    scheduling_model.ScheduleBlock(2, 0, 600),
+    scheduling_model.ScheduleBlock(1, 600, 1200),
+    scheduling_model.ScheduleBlock(2, 1200, 1800),
+  ])
+
+  invariant.insert_canonical(
+    [block(0, 600), block(1200, 1800)],
+    block(600, 1200),
+  )
+  |> should.equal([block(0, 1800)])
+}

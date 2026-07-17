@@ -22,6 +22,38 @@ pub fn canonicalize(blocks: List(ScheduleBlock)) -> List(ScheduleBlock) {
   |> list.reverse
 }
 
+/// Insert a non-overlapping block into an already canonical schedule.
+pub fn insert_canonical(
+  blocks: List(ScheduleBlock),
+  addition: ScheduleBlock,
+) -> List(ScheduleBlock) {
+  case blocks {
+    [] -> [addition]
+    [current, ..rest] ->
+      case block_compare(addition, current) {
+        order.Lt -> prepend_merging(addition, blocks)
+        order.Eq | order.Gt ->
+          prepend_merging(current, insert_canonical(rest, addition))
+      }
+  }
+}
+
+fn prepend_merging(
+  block: ScheduleBlock,
+  following: List(ScheduleBlock),
+) -> List(ScheduleBlock) {
+  case following {
+    [next, ..rest]
+      if block.task_id == next.task_id
+      && block.end_seconds == next.start_seconds
+    -> [
+      ScheduleBlock(block.task_id, block.start_seconds, next.end_seconds),
+      ..rest
+    ]
+    _ -> [block, ..following]
+  }
+}
+
 /// Validate a newly generated state against all live scheduling constraints.
 pub fn validate_generation(
   blocks: List(ScheduleBlock),
