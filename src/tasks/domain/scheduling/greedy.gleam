@@ -54,40 +54,30 @@ fn place_task(
   task: scheduling_model.SchedulingTask,
   space: SearchSpace,
 ) -> List(scheduling_model.ScheduleBlock) {
-  let SearchSpace(_, planning_start, _) = space
-  let bounded_candidates =
-    placement_candidates(blocks, task, space)
-    |> list.take(placement_candidate_limit)
-  let own =
-    blocks
-    |> list.filter(fn(existing) { existing.task_id == task.id })
-  let candidates =
-    bounded_candidates
-    |> list.map(fn(block) {
-      let next_own = invariant.insert_canonical(own, block)
-      // Other tasks are identical across these candidates, so their scores cancel.
-      Candidate(block, score.evaluate_task(task, next_own, planning_start))
-    })
-  case best(candidates) {
+  let own_blocks =
+    list.filter(blocks, fn(existing) { existing.task_id == task.id })
+  case best_placement(blocks, own_blocks, task, space) {
     option.None -> blocks
-    option.Some(candidate) -> {
-      let next = invariant.insert_canonical(blocks, candidate.block)
-      place_task(next, task, space)
-    }
+    option.Some(candidate) ->
+      place_task(
+        invariant.insert_canonical(blocks, candidate.block),
+        task,
+        space,
+      )
   }
 }
 
-fn placement_candidates(
+fn best_placement(
   blocks: List(scheduling_model.ScheduleBlock),
+  own_blocks: List(scheduling_model.ScheduleBlock),
   task: scheduling_model.SchedulingTask,
   space: SearchSpace,
-) -> List(scheduling_model.ScheduleBlock) {
+) -> option.Option(Candidate) {
   let SearchSpace(projected, planning_start, offset) = space
-  let own = list.filter(blocks, fn(block) { block.task_id == task.id })
-  let placed = score.placed_minutes(own)
+  let placed = score.placed_minutes(own_blocks)
   let remaining = task.estimate_minutes - placed
   case remaining <= 0 {
-    True -> []
+    True -> option.None
     False -> {
       let intervals =
         timeline.free_intervals(projected, blocks)
@@ -103,34 +93,65 @@ fn placement_candidates(
         })
       let block_length = int.min(remaining, maximum_capacity)
       case block_length < scheduling_model.effective_minimum_split(task) {
-        True -> []
+        True -> option.None
         False ->
-          // More scheduled minutes always win the primary objective. Choose the
-          // global maximum before the cap so fragmentation cannot hide it.
-          intervals
-          |> list.flat_map(fn(interval) {
-            let capacity = { interval.end - interval.start } / 60
-            case capacity < block_length {
-              True -> []
-              False ->
-                anchors(
-                  task,
-                  placed,
-                  interval,
-                  block_length,
-                  planning_start,
-                  offset,
-                )
-                |> list.map(fn(start) {
-                  scheduling_model.ScheduleBlock(
-                    task.id,
-                    start,
-                    start + block_length * 60,
+          // Choose the global maximum before applying the candidate budget so
+          // fragmentation cannot hide a longer, primary-score-winning block.
+          fold_flat_map_up_to(
+            intervals,
+            placement_candidate_limit,
+            option.None,
+            fn(interval) {
+              let capacity = { interval.end - interval.start } / 60
+              case capacity < block_length {
+                True -> []
+                False ->
+                  anchors(
+                    task,
+                    placed,
+                    interval,
+                    block_length,
+                    planning_start,
+                    offset,
                   )
-                })
-            }
-          })
+              }
+            },
+            fn(best, start) {
+              let block =
+                scheduling_model.ScheduleBlock(
+                  task.id,
+                  start,
+                  start + block_length * 60,
+                )
+              let next_own = invariant.insert_canonical(own_blocks, block)
+              // Other tasks are unchanged, so their scores cancel.
+              choose_better(
+                best,
+                Candidate(
+                  block,
+                  score.evaluate_task(task, next_own, planning_start),
+                ),
+              )
+            },
+          )
       }
+    }
+  }
+}
+
+// Fold the first limit values of a flattened expansion without building it.
+fn fold_flat_map_up_to(items, limit, initial, expand, reduce) {
+  case items, limit <= 0 {
+    [], _ | _, True -> initial
+    [item, ..rest], False -> {
+      let values = expand(item) |> list.take(limit)
+      fold_flat_map_up_to(
+        rest,
+        limit - list.length(values),
+        list.fold(values, initial, reduce),
+        expand,
+        reduce,
+      )
     }
   }
 }
@@ -167,22 +188,23 @@ fn anchors(
   |> unique_ints
 }
 
-fn best(candidates: List(Candidate)) -> option.Option(Candidate) {
-  list.fold(candidates, option.None, fn(current, candidate) {
-    case current {
-      option.None -> option.Some(candidate)
-      option.Some(Candidate(block: existing_block, score: existing_score)) ->
-        case score.compare(candidate.score, existing_score) {
-          score.Better -> option.Some(candidate)
-          score.Worse -> current
-          score.Equal ->
-            case invariant.block_key_compare(candidate.block, existing_block) {
-              order.Lt -> option.Some(candidate)
-              _ -> current
-            }
-        }
-    }
-  })
+fn choose_better(
+  current: option.Option(Candidate),
+  candidate: Candidate,
+) -> option.Option(Candidate) {
+  case current {
+    option.None -> option.Some(candidate)
+    option.Some(existing) ->
+      case score.compare(candidate.score, existing.score) {
+        score.Better -> option.Some(candidate)
+        score.Worse -> current
+        score.Equal ->
+          case invariant.block_key_compare(candidate.block, existing.block) {
+            order.Lt -> option.Some(candidate)
+            _ -> current
+          }
+      }
+  }
 }
 
 fn task_compare(
