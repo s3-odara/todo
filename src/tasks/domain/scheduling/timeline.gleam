@@ -110,11 +110,7 @@ fn finish_projection(state: ProjectionState) -> List(AbsoluteInterval) {
 }
 
 /// Local midnight plus a local minute, converted through the fixed offset.
-pub fn local_minute_seconds(
-  date: calendar.Date,
-  minute: Int,
-  offset: Int,
-) -> Int {
+fn local_minute_seconds(date: calendar.Date, minute: Int, offset: Int) -> Int {
   let midnight =
     timestamp.from_calendar(
       date,

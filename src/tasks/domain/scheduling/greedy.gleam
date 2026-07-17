@@ -186,7 +186,7 @@ fn anchors(
   |> list.map(fn(start) {
     int.max(interval.start, int.min(start, interval.end - block_length * 60))
   })
-  |> unique_ints
+  |> list.unique
 }
 
 fn choose_better(
@@ -224,14 +224,4 @@ fn task_compare(
 
 fn rounded_local(value, offset) {
   float.round({ value +. int.to_float(offset) } /. 60.0) * 60 - offset
-}
-
-fn unique_ints(values: List(Int)) -> List(Int) {
-  list.fold(values, [], fn(acc, value) {
-    case list.contains(acc, value) {
-      True -> acc
-      False -> [value, ..acc]
-    }
-  })
-  |> list.reverse
 }

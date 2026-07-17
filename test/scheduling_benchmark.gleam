@@ -407,15 +407,10 @@ fn sample(seed: Int, index: Int, bound: Int) -> Int {
 }
 
 fn exact_scenarios() -> List(Scenario) {
-  integer_range(1, 30, [])
-  |> list.map(exact_scenario)
-}
-
-fn integer_range(current: Int, last: Int, acc: List(Int)) -> List(Int) {
-  case current > last {
-    True -> list.reverse(acc)
-    False -> integer_range(current + 1, last, [current, ..acc])
-  }
+  int.range(from: 1, to: 31, with: [], run: fn(scenarios, seed) {
+    [exact_scenario(seed), ..scenarios]
+  })
+  |> list.reverse
 }
 
 fn exact_scenario(seed: Int) -> Scenario {

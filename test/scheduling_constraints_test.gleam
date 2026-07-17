@@ -1,25 +1,9 @@
 import gleam/list
-import gleam/option.{Some}
 import gleeunit/should
-import tasks/domain/due
-import tasks/domain/model.{Pending, Todo}
 import tasks/domain/policy.{Spread}
 import tasks/domain/scheduling/invariant
 import tasks/domain/scheduling/model as scheduling_model
 import tasks/domain/scheduling/timeline.{AbsoluteInterval, SearchSpace}
-
-fn task(estimate, minimum) {
-  Todo(
-    1,
-    "task",
-    estimate,
-    3,
-    Some(due.from_unix_seconds(7200)),
-    Pending,
-    Spread,
-    minimum,
-  )
-}
 
 fn scheduling_task(estimate, minimum) {
   scheduling_model.SchedulingTask(1, estimate, 3, 7200, Spread, minimum)
@@ -30,9 +14,12 @@ fn block(start, end) {
 }
 
 pub fn effective_minimum_split_boundaries_test() {
-  model.effective_minimum_split(task(20, 30)) |> should.equal(20)
-  model.effective_minimum_split(task(30, 30)) |> should.equal(30)
-  model.effective_minimum_split(task(60, 30)) |> should.equal(30)
+  scheduling_model.effective_minimum_split(scheduling_task(20, 30))
+  |> should.equal(20)
+  scheduling_model.effective_minimum_split(scheduling_task(30, 30))
+  |> should.equal(30)
+  scheduling_model.effective_minimum_split(scheduling_task(60, 30))
+  |> should.equal(30)
 }
 
 pub fn generation_validator_accepts_short_estimate_exception_test() {

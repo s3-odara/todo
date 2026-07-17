@@ -51,10 +51,3 @@ pub type TaskError {
   NotFound
   AlreadyDone
 }
-
-pub fn effective_minimum_split(task: Todo) -> Int {
-  case task.estimate_minutes < task.minimum_split_minutes {
-    True -> task.estimate_minutes
-    False -> task.minimum_split_minutes
-  }
-}

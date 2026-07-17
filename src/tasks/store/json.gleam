@@ -14,7 +14,7 @@ import tasks/domain/availability.{
   weekday_string,
 }
 import tasks/domain/due
-import tasks/domain/local_time.{type Weekday, Mon}
+import tasks/domain/local_time.{Mon}
 import tasks/domain/model.{
   type Todo, Pending, Todo, parse_status, status_to_string,
 }
@@ -190,9 +190,9 @@ fn validate_state(state: AppState) -> Result(AppState, String) {
     state
   let Availability(weekly, overrides) = value
   case
-    unique_ids(tasks, [])
-    && unique_weekdays(weekly, [])
-    && unique_dates(overrides, [])
+    all_unique_by(tasks, fn(task) { task.id })
+    && all_unique_by(weekly, fn(entry) { entry.day })
+    && all_unique_by(overrides, fn(entry) { entry.date })
     && weekly
     == list.sort(weekly, by: fn(a, b) {
       int.compare(weekday_number(a.day), weekday_number(b.day))
@@ -234,43 +234,9 @@ fn valid_schedule(
   }
 }
 
-fn unique_weekdays(
-  entries: List(WeeklyAvailability),
-  seen: List(Weekday),
-) -> Bool {
-  case entries {
-    [] -> True
-    [entry, ..rest] ->
-      case list.contains(seen, entry.day) {
-        True -> False
-        False -> unique_weekdays(rest, [entry.day, ..seen])
-      }
-  }
-}
-
-fn unique_dates(
-  entries: List(DateOverride),
-  seen: List(calendar.Date),
-) -> Bool {
-  case entries {
-    [] -> True
-    [entry, ..rest] ->
-      case list.contains(seen, entry.date) {
-        True -> False
-        False -> unique_dates(rest, [entry.date, ..seen])
-      }
-  }
-}
-
-fn unique_ids(tasks: List(Todo), seen: List(Int)) -> Bool {
-  case tasks {
-    [] -> True
-    [task, ..rest] ->
-      case list.contains(seen, task.id) {
-        True -> False
-        False -> unique_ids(rest, [task.id, ..seen])
-      }
-  }
+fn all_unique_by(values: List(value), key: fn(value) -> key) -> Bool {
+  let keys = list.map(values, key)
+  keys == list.unique(keys)
 }
 
 pub fn encode(state: AppState) -> String {

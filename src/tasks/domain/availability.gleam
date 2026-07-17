@@ -4,7 +4,6 @@ import gleam/order
 import gleam/result
 import gleam/string
 import gleam/time/calendar.{type Date}
-import tasks/domain/due
 import tasks/domain/local_time.{type Weekday, Fri, Mon, Sat, Sun, Thu, Tue, Wed}
 
 pub type LocalMinute =
@@ -40,7 +39,7 @@ pub fn empty() -> Availability {
   Availability([], [])
 }
 
-pub fn parse_minute(
+fn parse_minute(
   value: String,
   allow_end_of_day: Bool,
 ) -> Result(LocalMinute, Nil) {
@@ -70,26 +69,14 @@ pub fn parse_interval(from: String, to: String) -> Result(Interval, Nil) {
 }
 
 pub fn parse_days(value: String) -> Result(List(Weekday), Nil) {
-  value
-  |> string.split(",")
-  |> parse_day_parts([], [])
-  |> result.map(fn(days) { list.reverse(days) })
-}
-
-fn parse_day_parts(parts, parsed, seen) {
-  case parts {
-    [] ->
-      case parsed {
-        [] -> Error(Nil)
-        _ -> Ok(parsed)
-      }
-    [part, ..rest] -> {
-      use day <- result.try(parse_day(part))
-      case list.contains(seen, day) {
-        True -> Error(Nil)
-        False -> parse_day_parts(rest, [day, ..parsed], [day, ..seen])
-      }
-    }
+  use days <- result.try(
+    value
+    |> string.split(",")
+    |> list.try_map(parse_day),
+  )
+  case days != [] && days == list.unique(days) {
+    True -> Ok(days)
+    False -> Error(Nil)
   }
 }
 
@@ -106,14 +93,7 @@ pub fn parse_day(value: String) -> Result(Weekday, Nil) {
   }
 }
 
-pub fn parse_date(value: String) -> Result(Date, Nil) {
-  due.parse_date(value)
-}
-
-pub fn add_intervals(
-  values: List(Interval),
-  addition: Interval,
-) -> List(Interval) {
+fn add_intervals(values: List(Interval), addition: Interval) -> List(Interval) {
   canonicalize([addition, ..values])
 }
 
@@ -147,7 +127,7 @@ pub fn weekly_add(
   })
 }
 
-pub fn weekly_delete(
+fn weekly_delete(
   value: Availability,
   days: List(Weekday),
   interval: Interval,
@@ -169,7 +149,7 @@ fn update_weekly(value, days, update) {
   )
 }
 
-pub fn date_set(
+fn date_set(
   value: Availability,
   date: Date,
   interval: Interval,

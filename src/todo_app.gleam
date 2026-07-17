@@ -2,7 +2,7 @@ import argv
 import envoy
 import gleam/io
 import gleam/list
-import gleam/option.{None, Some}
+import gleam/option
 import gleam/time/calendar
 import gleam/time/timestamp
 import tasks/domain/due
@@ -52,10 +52,7 @@ fn local_clock() {
 }
 
 fn environment(name: String) {
-  case envoy.get(name) {
-    Ok(value) -> Some(value)
-    Error(_) -> None
-  }
+  envoy.get(name) |> option.from_result
 }
 
 fn emit(outcome: Outcome) -> Nil {

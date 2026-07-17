@@ -97,20 +97,19 @@ fn build_scheduled_listing(
       let items =
         saved.blocks
         |> list.filter_map(fn(block) {
-          case find_task(state.tasks, block.task_id) {
-            Some(task) ->
-              case
-                filter.status_matches(status, task.status)
-                && filter.block_overlaps(
-                  block.start_seconds,
-                  block.end_seconds,
-                  window,
-                )
-              {
-                True -> Ok(ScheduledItem(block, task))
-                False -> Error(Nil)
-              }
-            None -> Error(Nil)
+          use task <- result.try(
+            list.find(state.tasks, fn(task) { task.id == block.task_id }),
+          )
+          case
+            filter.status_matches(status, task.status)
+            && filter.block_overlaps(
+              block.start_seconds,
+              block.end_seconds,
+              window,
+            )
+          {
+            True -> Ok(ScheduledItem(block, task))
+            False -> Error(Nil)
           }
         })
         |> list.sort(by: fn(a, b) { invariant.block_compare(a.block, b.block) })
@@ -148,17 +147,6 @@ pub fn mutate_availability(
       False -> Ok(Persist(AppState(..state, availability: updated), Nil))
     }
   })
-}
-
-fn find_task(tasks: List(Todo), id: Int) -> Option(Todo) {
-  case tasks {
-    [] -> None
-    [task, ..rest] ->
-      case task.id == id {
-        True -> Some(task)
-        False -> find_task(rest, id)
-      }
-  }
 }
 
 fn persist_state(

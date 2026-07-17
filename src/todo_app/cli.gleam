@@ -142,7 +142,7 @@ fn availability_flags(flags, options: AvailabilityOptions) {
       availability_flags(rest, AvailabilityOptions(..options, days: Some(days)))
     }
     ["--date", value, ..rest], AvailabilityOptions(date: None, ..) -> {
-      use date <- result.try(availability.parse_date(value))
+      use date <- result.try(due.parse_date(value))
       availability_flags(rest, AvailabilityOptions(..options, date: Some(date)))
     }
     ["--from", value, ..rest], AvailabilityOptions(from: None, ..) ->
@@ -619,24 +619,20 @@ pub fn schedule_generated(
   }
   Outcome(
     0,
-    list.fold(
+    list.flatten([
       [
-        [
-          "SCHEDULE\tGENERATED_AT\t"
-            <> timestamp_text(generated_at, offset)
-            <> "\tPLANNING_START\t"
-            <> timestamp_text(planning_start, offset),
-          "BLOCKS",
-        ],
-        block_lines,
-        ["UNSCHEDULED"],
-        unscheduled_lines,
-        ["EXCLUDED"],
-        excluded_lines,
+        "SCHEDULE\tGENERATED_AT\t"
+          <> timestamp_text(generated_at, offset)
+          <> "\tPLANNING_START\t"
+          <> timestamp_text(planning_start, offset),
+        "BLOCKS",
       ],
-      [],
-      fn(lines, group) { list.append(lines, group) },
-    ),
+      block_lines,
+      ["UNSCHEDULED"],
+      unscheduled_lines,
+      ["EXCLUDED"],
+      excluded_lines,
+    ]),
     [],
   )
 }

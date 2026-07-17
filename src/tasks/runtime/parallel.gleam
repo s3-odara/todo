@@ -29,7 +29,7 @@ pub fn map_chunks_reduce(
     True -> merge(initial, evaluate_chunk(items))
     False -> {
       let chunk_size = { count + workers - 1 } / workers
-      let chunks = chunks(items, chunk_size, [])
+      let chunks = list.sized_chunk(items, into: chunk_size)
       let results = process.new_subject()
       chunks
       |> list.each(fn(chunk) {
@@ -37,16 +37,6 @@ pub fn map_chunks_reduce(
         Nil
       })
       collect(results, list.length(chunks), initial, merge)
-    }
-  }
-}
-
-fn chunks(items: List(a), size: Int, acc: List(List(a))) -> List(List(a)) {
-  case items {
-    [] -> list.reverse(acc)
-    _ -> {
-      let #(chunk, rest) = list.split(items, at: size)
-      chunks(rest, size, [chunk, ..acc])
     }
   }
 }
