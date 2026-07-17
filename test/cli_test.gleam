@@ -58,7 +58,15 @@ fn clock_must_not_run() {
 }
 
 pub fn help_is_selected_when_no_command_or_a_help_flag_is_given_test() {
-  [[], ["--help"], ["add", "--help"], ["list", "--help"], ["done", "--help"]]
+  [
+    [],
+    ["--help"],
+    ["add", "--help"],
+    ["list", "--help"],
+    ["list", "scheduled", "--help"],
+    ["availability", "weekly", "add", "--help"],
+    ["done", "--help"],
+  ]
   |> list.each(fn(args) { parse(args) |> should.equal(Ok(cli.Help)) })
 }
 
@@ -82,17 +90,18 @@ pub fn help_lists_the_available_commands_test() {
         "todo add TITLE [--estimate DURATION] [--priority PRIORITY] [--due DUE]",
         "               [--scheduling-policy asap|spread|near_deadline]",
         "               [--minimum-split DURATION]",
-        "todo list [--done | --all] [--due today|overdue|YYYY-MM-DD]",
+        "todo list [--status pending|done|all] [--due today|overdue|YYYY-MM-DD]",
         "          [--due-since YYYY-MM-DD] [--due-until YYYY-MM-DD]",
-        "todo list --scheduled [today|YYYY-MM-DD] [--done | --all]",
-        "todo list [--scheduled-since YYYY-MM-DD] [--scheduled-until YYYY-MM-DD]",
-        "  default: pending; --done: done; --all: both",
+        "todo list scheduled [--status pending|done|all]",
+        "                    [--on today|YYYY-MM-DD]",
+        "                    [--since YYYY-MM-DD] [--until YYYY-MM-DD]",
+        "  default status: pending; exact dates and ranges are mutually exclusive",
         "  due dates use local time; overdue is before now; ranges are inclusive",
         "  --due excludes undated tasks and cannot be combined with due ranges",
         "todo done ID",
-        "todo availability add|delete (--day DAY[,DAY...] | --date YYYY-MM-DD) --from HH:MM --to HH:MM",
-        "todo availability set --date YYYY-MM-DD --from HH:MM --to HH:MM",
-        "todo availability close|reset --date YYYY-MM-DD",
+        "todo availability weekly add|delete --day DAY[,DAY...] --from HH:MM --to HH:MM",
+        "todo availability date add|delete|set --date YYYY-MM-DD --from HH:MM --to HH:MM",
+        "todo availability date close|reset --date YYYY-MM-DD",
         "todo availability list",
         "todo schedule",
         "  DURATION is an ASCII integer plus m or h; DAY is mon..sun",
@@ -154,10 +163,7 @@ pub fn invalid_scheduling_options_are_rejected_test() {
     ],
     ["add", "x", "--minimum-split", "30m", "--minimum-split", "1h"],
   ]
-  |> list.each(fn(args) {
-    parse(args)
-    |> should.equal(Error("invalid, duplicate, or missing option"))
-  })
+  |> list.each(fn(args) { parse(args) |> should.equal(Error("invalid input")) })
 }
 
 pub fn due_parser_is_only_called_when_due_is_present_test() {
@@ -196,18 +202,12 @@ pub fn duplicate_add_options_are_rejected_test() {
     ["add", "x", "--priority", "3", "--priority", "4"],
     ["add", "x", "--due", "2026-01-01", "--due", "2026-01-02"],
   ]
-  |> list.each(fn(args) {
-    parse(args)
-    |> should.equal(Error("invalid, duplicate, or missing option"))
-  })
+  |> list.each(fn(args) { parse(args) |> should.equal(Error("invalid input")) })
 }
 
 pub fn unknown_or_incomplete_add_options_are_rejected_test() {
   [["add", "x", "--unknown", "y"], ["add", "x", "--estimate"]]
-  |> list.each(fn(args) {
-    parse(args)
-    |> should.equal(Error("invalid, duplicate, or missing option"))
-  })
+  |> list.each(fn(args) { parse(args) |> should.equal(Error("invalid input")) })
 }
 
 pub fn invalid_command_shapes_are_rejected_test() {
@@ -226,8 +226,8 @@ pub fn availability_commands_parse_to_typed_mutations_test() {
   parse(["availability", "list"])
   |> should.equal(Ok(cli.AvailabilityList))
   parse([
-    "availability", "add", "--day", "mon,fri", "--from", "09:00", "--to",
-    "12:00",
+    "availability", "weekly", "add", "--day", "mon,fri", "--from", "09:00",
+    "--to", "12:00",
   ])
   |> should.equal(
     Ok(
@@ -237,26 +237,41 @@ pub fn availability_commands_parse_to_typed_mutations_test() {
       )),
     ),
   )
-  parse(["availability", "close", "--date", "2026-07-20"])
+  parse([
+    "availability", "weekly", "delete", "--day", "mon", "--from", "09:00",
+    "--to", "12:00",
+  ])
+  |> should.equal(
+    Ok(
+      cli.MutateAvailability(availability.DeleteWeekly(
+        [local_time.Mon],
+        availability.Interval(540, 720),
+      )),
+    ),
+  )
+  parse([
+    "availability", "date", "set", "--date", "2026-07-20", "--from", "09:00",
+    "--to", "12:00",
+  ])
+  |> should.equal(
+    Ok(
+      cli.MutateAvailability(availability.SetDate(
+        date,
+        availability.Interval(540, 720),
+      )),
+    ),
+  )
+  parse(["availability", "date", "close", "--date", "2026-07-20"])
   |> should.equal(Ok(cli.MutateAvailability(availability.CloseDate(date))))
+  parse(["availability", "date", "reset", "--date", "2026-07-20"])
+  |> should.equal(Ok(cli.MutateAvailability(availability.ResetDate(date))))
 }
 
 pub fn invalid_availability_shapes_are_rejected_test() {
   [
     [
       "availability",
-      "add",
-      "--day",
-      "mon",
-      "--date",
-      "2026-07-20",
-      "--from",
-      "09:00",
-      "--to",
-      "10:00",
-    ],
-    [
-      "availability",
+      "weekly",
       "add",
       "--day",
       "mon,mon",
@@ -265,23 +280,32 @@ pub fn invalid_availability_shapes_are_rejected_test() {
       "--to",
       "10:00",
     ],
-    ["availability", "add", "--day", "wat", "--from", "09:00", "--to", "10:00"],
-    ["availability", "add", "--day", "mon", "--from", "24:00", "--to", "24:00"],
     [
-      "availability",
-      "delete",
-      "--day",
-      "mon",
-      "--from",
+      "availability", "weekly", "add", "--day", "wat", "--from", "09:00", "--to",
       "10:00",
-      "--to",
-      "09:00",
     ],
-    ["availability", "set", "--day", "mon", "--from", "09:00", "--to", "10:00"],
-    ["availability", "close", "--date", "2026-07-20", "--from", "09:00"],
-    ["availability", "reset"],
+    [
+      "availability", "weekly", "add", "--day", "mon", "--from", "24:00", "--to",
+      "24:00",
+    ],
+    [
+      "availability", "weekly", "delete", "--day", "mon", "--from", "10:00",
+      "--to", "09:00",
+    ],
+    [
+      "availability", "weekly", "add", "--day", "mon", "--day", "fri", "--from",
+      "09:00", "--to", "10:00",
+    ],
+    ["availability", "date", "set", "--date", "2026-07-20", "--from", "09:00"],
+    ["availability", "date", "close", "--date", "2026-07-20", "--from", "09:00"],
   ]
   |> list.each(fn(args) { parse(args) |> should.equal(Error("invalid input")) })
+
+  // Old ambiguous scope syntax is intentionally unsupported.
+  parse([
+    "availability", "add", "--day", "mon", "--from", "09:00", "--to", "10:00",
+  ])
+  |> should.equal(Error("invalid command or arguments"))
 }
 
 pub fn done_parses_its_id_test() {
@@ -292,9 +316,9 @@ pub fn done_parses_its_id_test() {
 pub fn list_status_options_parse_to_typed_filters_test() {
   parse(["list"])
   |> should.equal(Ok(cli.List(TaskList(ListFilter(PendingOnly, None)))))
-  parse(["list", "--done"])
+  parse(["list", "--status", "done"])
   |> should.equal(Ok(cli.List(TaskList(ListFilter(DoneOnly, None)))))
-  parse(["list", "--all"])
+  parse(["list", "--status", "all"])
   |> should.equal(Ok(cli.List(TaskList(ListFilter(AllStatuses, None)))))
 }
 
@@ -303,13 +327,13 @@ pub fn schedule_and_scheduled_list_commands_parse_test() {
   parse(["schedule", "extra"])
   |> should.equal(Error("invalid command or arguments"))
 
-  parse(["list", "--scheduled"])
+  parse(["list", "scheduled"])
   |> should.equal(Ok(cli.List(ScheduledList(PendingOnly, AllScheduled))))
-  parse(["list", "--scheduled", "today", "--done"])
+  parse(["list", "scheduled", "--on", "today", "--status", "done"])
   |> should.equal(
     Ok(cli.List(ScheduledList(DoneOnly, ScheduledExact(ScheduledToday)))),
   )
-  parse(["list", "--scheduled", "2026-07-24", "--all"])
+  parse(["list", "scheduled", "--on", "2026-07-24", "--status", "all"])
   |> should.equal(
     Ok(
       cli.List(ScheduledList(
@@ -318,13 +342,13 @@ pub fn schedule_and_scheduled_list_commands_parse_test() {
       )),
     ),
   )
-  parse(["list", "--scheduled-since", "2026-07-24"])
+  parse(["list", "scheduled", "--since", "2026-07-24"])
   |> should.equal(
     Ok(
       cli.List(ScheduledList(PendingOnly, ScheduledRange(Some(today()), None))),
     ),
   )
-  parse(["list", "--scheduled-until", "2026-07-24"])
+  parse(["list", "scheduled", "--until", "2026-07-24"])
   |> should.equal(
     Ok(
       cli.List(ScheduledList(PendingOnly, ScheduledRange(None, Some(today())))),
@@ -334,19 +358,16 @@ pub fn schedule_and_scheduled_list_commands_parse_test() {
 
 pub fn scheduled_list_conflicts_and_invalid_ranges_are_rejected_test() {
   [
-    ["list", "--scheduled", "today", "--scheduled-since", "2026-07-24"],
-    ["list", "--scheduled", "--due", "today"],
-    [
-      "list",
-      "--scheduled-since",
-      "2026-07-25",
-      "--scheduled-until",
-      "2026-07-24",
-    ],
-    ["list", "--scheduled", "wat"],
-    ["list", "--scheduled-since"],
-    ["list", "--scheduled", "today", "--scheduled", "today"],
+    ["list", "scheduled", "--on", "today", "--since", "2026-07-24"],
+    ["list", "scheduled", "--since", "2026-07-25", "--until", "2026-07-24"],
+    ["list", "scheduled", "--on", "wat"],
+    ["list", "scheduled", "--since"],
+    ["list", "scheduled", "--on", "today", "--on", "today"],
   ]
+  |> list.each(fn(args) { parse(args) |> should.equal(Error("invalid input")) })
+
+  // Compatibility aliases would retain the old parser's ambiguity.
+  [["list", "--scheduled"], ["list", "--done"], ["list", "--all"]]
   |> list.each(fn(args) { parse(args) |> should.equal(Error("invalid input")) })
 }
 
@@ -402,9 +423,9 @@ pub fn status_and_exact_due_options_are_order_independent_test() {
   let expected =
     Ok(cli.List(TaskList(ListFilter(AllStatuses, Some(Exact(today()))))))
 
-  parse(["list", "--all", "--due", "2026-07-24"])
+  parse(["list", "--status", "all", "--due", "2026-07-24"])
   |> should.equal(expected)
-  parse(["list", "--due", "2026-07-24", "--all"])
+  parse(["list", "--due", "2026-07-24", "--status", "all"])
   |> should.equal(expected)
 }
 
@@ -419,7 +440,8 @@ pub fn list_range_options_are_order_independent_test() {
 
   parse([
     "list",
-    "--done",
+    "--status",
+    "done",
     "--due-since",
     "2026-07-24",
     "--due-until",
@@ -432,15 +454,15 @@ pub fn list_range_options_are_order_independent_test() {
     "2026-07-25",
     "--due-since",
     "2026-07-24",
-    "--done",
+    "--status",
+    "done",
   ])
   |> should.equal(expected)
 }
 
 pub fn duplicate_list_options_are_invalid_input_test() {
   [
-    ["list", "--done", "--done"],
-    ["list", "--all", "--all"],
+    ["list", "--status", "done", "--status", "all"],
     ["list", "--due", "today", "--due", "overdue"],
     ["list", "--due-since", "2026-07-24", "--due-since", "2026-07-25"],
     ["list", "--due-until", "2026-07-24", "--due-until", "2026-07-25"],
@@ -450,8 +472,6 @@ pub fn duplicate_list_options_are_invalid_input_test() {
 
 pub fn conflicting_list_options_are_invalid_in_either_order_test() {
   [
-    ["list", "--done", "--all"],
-    ["list", "--all", "--done"],
     ["list", "--due", "today", "--due-since", "2026-07-24"],
     ["list", "--due-since", "2026-07-24", "--due", "today"],
     ["list", "--due", "today", "--due-until", "2026-07-24"],
@@ -486,7 +506,7 @@ pub fn reversed_due_range_is_invalid_input_test() {
 }
 
 pub fn list_input_errors_use_the_cli_grammar_error_contract_test() {
-  run(["list", "--done", "--all"], store_with([]))
+  run(["list", "--status", "unknown"], store_with([]))
   |> should.equal(cli.Outcome(2, [], ["Error: invalid input"]))
 }
 
@@ -520,9 +540,9 @@ pub fn an_empty_list_uses_the_status_specific_message_test() {
 
   run(["list"], empty)
   |> should.equal(cli.Outcome(0, ["No pending tasks."], []))
-  run(["list", "--done"], empty)
+  run(["list", "--status", "done"], empty)
   |> should.equal(cli.Outcome(0, ["No done tasks."], []))
-  run(["list", "--all"], empty)
+  run(["list", "--status", "all"], empty)
   |> should.equal(cli.Outcome(0, ["No tasks."], []))
 }
 

@@ -5,11 +5,11 @@ A local Erlang/BEAM Todo CLI written in Gleam. It stores tasks and availability 
 ```sh
 gleam run -- add "Write report" --estimate 3h --priority 4 --due 2026-07-15 \
   --scheduling-policy asap --minimum-split 30m
-gleam run -- availability add --day mon,tue,wed,thu,fri --from 09:00 --to 17:00
+gleam run -- availability weekly add --day mon,tue,wed,thu,fri --from 09:00 --to 17:00
 gleam run -- schedule
-gleam run -- list --scheduled today
+gleam run -- list scheduled --on today
 gleam run -- done 1
-gleam run -- list --scheduled --done
+gleam run -- list scheduled --status done
 ```
 
 ## Commands
@@ -18,18 +18,19 @@ gleam run -- list --scheduled --done
 todo add TITLE [--estimate DURATION] [--priority 1|2|3|4|5] [--due DUE]
                [--scheduling-policy asap|spread|near_deadline]
                [--minimum-split DURATION]
-todo list [--done | --all] [--due today|overdue|YYYY-MM-DD]
+todo list [--status pending|done|all] [--due today|overdue|YYYY-MM-DD]
           [--due-since YYYY-MM-DD] [--due-until YYYY-MM-DD]
-todo list --scheduled [today|YYYY-MM-DD] [--done | --all]
-todo list [--scheduled-since YYYY-MM-DD] [--scheduled-until YYYY-MM-DD]
-          [--done | --all]
+todo list scheduled [--status pending|done|all]
+                    [--on today|YYYY-MM-DD]
+                    [--since YYYY-MM-DD] [--until YYYY-MM-DD]
 todo done ID
 todo schedule
 
-todo availability add|delete (--day DAY[,DAY...] | --date YYYY-MM-DD)
-                            --from HH:MM --to HH:MM
-todo availability set --date YYYY-MM-DD --from HH:MM --to HH:MM
-todo availability close|reset --date YYYY-MM-DD
+todo availability weekly add|delete --day DAY[,DAY...]
+                                    --from HH:MM --to HH:MM
+todo availability date add|delete|set --date YYYY-MM-DD
+                                      --from HH:MM --to HH:MM
+todo availability date close|reset --date YYYY-MM-DD
 todo availability list
 ```
 
@@ -37,7 +38,7 @@ Durations are strict ASCII integers followed by `m` or `h`. Estimate defaults to
 
 Due input is local `YYYY-MM-DD` (23:59) or `YYYY-MM-DDTHH:MM`, converted to an absolute Unix timestamp with the machine's current UTC offset. UTC suffixes, seconds, fractional seconds, and non-canonical forms are rejected.
 
-Normal `list` defaults to pending tasks; `--done` selects completed tasks and `--all` selects both. Due ranges include both local endpoint dates. Exact/range due filters conflict with scheduled filters, and duplicate, invalid, conflicting, or reversed filters are input errors.
+Both list commands default to pending tasks; `--status done` selects completed tasks and `--status all` selects both. Due and scheduled ranges include both local endpoint dates. Exact and range filters are mutually exclusive, and duplicate, invalid, conflicting, or reversed filters are input errors.
 
 ## Availability
 
@@ -61,7 +62,7 @@ near_deadline: x^2
 
 A constructive greedy pass orders tasks by priority, deadline, and ID, then places each task at a small set of policy-aware anchors. Deterministic best-improvement hill climbing rebuilds one task, an ordered pair, or an ordered triple, which covers adding, relocating, splitting, merging, and swapping work without separate block-edit operations. The search evaluates at most 20,000 rebuilds per step and accepts at most 1,000 improvements. It is reproducible and constraint-preserving but remains a finite heuristic, not a mathematical global-optimum guarantee.
 
-A successful generation replaces the single saved schedule snapshot. Adding/completing tasks or changing availability does **not** alter that snapshot; only the next `schedule` regenerates it. Scheduled listing reads saved blocks without searching or saving, joins them to current task titles/statuses, and supports all dates, `today`, an explicit date, or inclusive `--scheduled-since`/`--scheduled-until` ranges. Date overlap and display use the offset saved with the schedule. There is no timezone-database or DST transition handling: one fixed offset applies to the whole generated horizon.
+A successful generation replaces the single saved schedule snapshot. Adding/completing tasks or changing availability does **not** alter that snapshot; only the next `schedule` regenerates it. `list scheduled` reads saved blocks without searching or saving, joins them to current task titles/statuses, and supports all dates, `--on today`, an explicit date, or inclusive `--since`/`--until` ranges. Date overlap and display use the offset saved with the schedule. There is no timezone-database or DST transition handling: one fixed offset applies to the whole generated horizon.
 
 ## Storage
 

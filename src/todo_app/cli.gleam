@@ -10,10 +10,9 @@ import gleam/time/timestamp
 import tasks/domain/availability.{type Availability, type Mutation}
 import tasks/domain/due.{type Due}
 import tasks/domain/filter.{
-  type DueFilter, type ListQuery, type ScheduledFilter, type StatusFilter,
-  AllScheduled, AllStatuses, DoneOnly, Exact, ListFilter, Overdue, PendingOnly,
-  Range, ScheduledDate, ScheduledExact, ScheduledList, ScheduledRange,
-  ScheduledToday, TaskList, Today,
+  type DueFilter, type ListQuery, type StatusFilter, AllScheduled, AllStatuses,
+  DoneOnly, Exact, ListFilter, Overdue, PendingOnly, Range, ScheduledDate,
+  ScheduledExact, ScheduledList, ScheduledRange, ScheduledToday, TaskList, Today,
 }
 import tasks/domain/local_time
 import tasks/domain/model.{
@@ -39,308 +38,240 @@ pub type Outcome {
   Outcome(code: Int, stdout_lines: List(String), stderr_lines: List(String))
 }
 
-type AddOptions {
-  AddOptions(
-    estimate: Option(String),
-    priority: Option(String),
-    due: Option(String),
-    scheduling_policy: Option(String),
-    minimum_split: Option(String),
-  )
-}
-
-type AvailabilityOptions {
-  AvailabilityOptions(
-    days: Option(List(local_time.Weekday)),
-    date: Option(calendar.Date),
-    from: Option(String),
-    to: Option(String),
-  )
-}
-
-type ListOptions {
-  ListOptions(status: Option(StatusFilter), temporal: TemporalOptions)
-}
-
-type TemporalOptions {
-  NoTemporalOptions
-  DueMatch(DueFilter)
-  ScheduledMatch(ScheduledFilter)
-  DueRange(DateRange)
-  ScheduledRangeOptions(DateRange)
-}
-
-type DateRange {
-  DateRange(since: Option(calendar.Date), until: Option(calendar.Date))
-}
-
-type RangeKind {
-  DueRangeKind
-  ScheduledRangeKind
-}
-
-type Bound {
-  Since
-  Until
-}
-
 pub fn parse(
   args: List(String),
   due_parser: fn(String) -> Result(Due, Nil),
 ) -> Result(Command, String) {
   case args {
-    [] | ["--help"] -> Ok(Help)
-    ["add", "--help"]
+    []
+    | ["--help"]
+    | ["add", "--help"]
     | ["list", "--help"]
+    | ["list", "scheduled", "--help"]
     | ["done", "--help"]
     | ["availability", "--help"]
+    | ["availability", "list", "--help"]
+    | ["availability", "weekly", "add", "--help"]
+    | ["availability", "weekly", "delete", "--help"]
+    | ["availability", "date", "add", "--help"]
+    | ["availability", "date", "delete", "--help"]
+    | ["availability", "date", "set", "--help"]
+    | ["availability", "date", "close", "--help"]
+    | ["availability", "date", "reset", "--help"]
     | ["schedule", "--help"] -> Ok(Help)
     ["schedule"] -> Ok(GenerateSchedule)
-    ["availability", "list"] -> Ok(AvailabilityList)
-    ["availability", action, ..flags] ->
-      flags
-      |> availability_flags(AvailabilityOptions(None, None, None, None))
-      |> result.try(fn(options) { availability_command(action, options) })
-      |> result.map(MutateAvailability)
-      |> result.map_error(fn(_) { "invalid input" })
-    ["list", ..flags] ->
-      flags
-      |> list_flags(ListOptions(None, NoTemporalOptions))
-      |> result.try(list_filter)
-      |> result.map(List)
-      |> result.map_error(fn(_) { "invalid input" })
     ["done", id] ->
       validation.done(id)
       |> result.map(RunDone)
       |> result.map_error(fn(_) { "invalid input" })
-    ["add", title, ..flags] ->
-      flags
-      |> add_flags(AddOptions(None, None, None, None, None))
-      |> result.try(fn(options) {
-        let AddOptions(estimate, priority, due, policy, minimum_split) = options
-        validation.add(
-          title,
-          option.unwrap(estimate, or: "0m"),
-          option.unwrap(priority, or: "3"),
-          due,
-          option.unwrap(policy, or: "spread"),
-          option.unwrap(minimum_split, or: "30m"),
-          due_parser,
-        )
-        |> result.map_error(fn(_) { "invalid input" })
-      })
-      |> result.map(Add)
+    ["add", title, ..options] -> add_command(title, due_parser, options)
+    ["list", "scheduled", ..options] -> scheduled_list_command(options)
+    ["list", ..options] -> task_list_command(options)
+    ["availability", "list"] -> Ok(AvailabilityList)
+    ["availability", "weekly", "add", ..options] ->
+      weekly_command(options, availability.AddWeekly)
+    ["availability", "weekly", "delete", ..options] ->
+      weekly_command(options, availability.DeleteWeekly)
+    ["availability", "date", "add", ..options] ->
+      date_interval_command(options, availability.AddDate)
+    ["availability", "date", "delete", ..options] ->
+      date_interval_command(options, availability.DeleteDate)
+    ["availability", "date", "set", ..options] ->
+      date_interval_command(options, availability.SetDate)
+    ["availability", "date", "close", ..options] ->
+      date_command(options, availability.CloseDate)
+    ["availability", "date", "reset", ..options] ->
+      date_command(options, availability.ResetDate)
     _ -> Error("invalid command or arguments")
   }
 }
 
-fn availability_flags(flags, options: AvailabilityOptions) {
-  case flags, options {
-    [], _ -> Ok(options)
-    ["--day", value, ..rest], AvailabilityOptions(days: None, ..) -> {
-      use days <- result.try(availability.parse_days(value))
-      availability_flags(rest, AvailabilityOptions(..options, days: Some(days)))
-    }
-    ["--date", value, ..rest], AvailabilityOptions(date: None, ..) -> {
-      use date <- result.try(due.parse_date(value))
-      availability_flags(rest, AvailabilityOptions(..options, date: Some(date)))
-    }
-    ["--from", value, ..rest], AvailabilityOptions(from: None, ..) ->
-      availability_flags(
-        rest,
-        AvailabilityOptions(..options, from: Some(value)),
-      )
-    ["--to", value, ..rest], AvailabilityOptions(to: None, ..) ->
-      availability_flags(rest, AvailabilityOptions(..options, to: Some(value)))
-    _, _ -> Error(Nil)
+type Options =
+  List(#(String, String))
+
+fn add_command(title, due_parser, args) {
+  use options <- result.try(
+    parse_options(args, [
+      "estimate",
+      "priority",
+      "due",
+      "scheduling-policy",
+      "minimum-split",
+    ]),
+  )
+  validation.add(
+    title,
+    value_or(options, "estimate", "0m"),
+    value_or(options, "priority", "3"),
+    optional_value(options, "due"),
+    value_or(options, "scheduling-policy", "spread"),
+    value_or(options, "minimum-split", "30m"),
+    due_parser,
+  )
+  |> result.map(Add)
+  |> invalid_input
+}
+
+fn task_list_command(args) {
+  use options <- result.try(
+    parse_options(args, [
+      "status",
+      "due",
+      "due-since",
+      "due-until",
+    ]),
+  )
+  use status <- result.try(status_filter(options) |> invalid_input)
+  use exact <- result.try(
+    optional_parsed(options, "due", parse_due_filter) |> invalid_input,
+  )
+  use since <- result.try(
+    optional_parsed(options, "due-since", due.parse_date) |> invalid_input,
+  )
+  use until <- result.try(
+    optional_parsed(options, "due-until", due.parse_date) |> invalid_input,
+  )
+  task_temporal_filter(exact, since, until)
+  |> result.map(fn(temporal) { List(TaskList(ListFilter(status, temporal))) })
+  |> invalid_input
+}
+
+fn scheduled_list_command(args) {
+  use options <- result.try(
+    parse_options(args, [
+      "status",
+      "on",
+      "since",
+      "until",
+    ]),
+  )
+  use status <- result.try(status_filter(options) |> invalid_input)
+  use exact <- result.try(
+    optional_parsed(options, "on", parse_scheduled_exact) |> invalid_input,
+  )
+  use since <- result.try(
+    optional_parsed(options, "since", due.parse_date) |> invalid_input,
+  )
+  use until <- result.try(
+    optional_parsed(options, "until", due.parse_date) |> invalid_input,
+  )
+  scheduled_filter(exact, since, until)
+  |> result.map(fn(temporal) { List(ScheduledList(status, temporal)) })
+  |> invalid_input
+}
+
+fn weekly_command(args, mutation) {
+  use options <- result.try(parse_options(args, ["day", "from", "to"]))
+  use days <- result.try(
+    required_parsed(options, "day", availability.parse_days) |> invalid_input,
+  )
+  use from <- result.try(required_value(options, "from") |> invalid_input)
+  use to <- result.try(required_value(options, "to") |> invalid_input)
+  use interval <- result.try(
+    availability.parse_interval(from, to) |> invalid_input,
+  )
+  Ok(MutateAvailability(mutation(days, interval)))
+}
+
+fn date_interval_command(args, mutation) {
+  use options <- result.try(parse_options(args, ["date", "from", "to"]))
+  use date <- result.try(
+    required_parsed(options, "date", due.parse_date) |> invalid_input,
+  )
+  use from <- result.try(required_value(options, "from") |> invalid_input)
+  use to <- result.try(required_value(options, "to") |> invalid_input)
+  use interval <- result.try(
+    availability.parse_interval(from, to) |> invalid_input,
+  )
+  Ok(MutateAvailability(mutation(date, interval)))
+}
+
+fn date_command(args, mutation) {
+  use options <- result.try(parse_options(args, ["date"]))
+  use date <- result.try(
+    required_parsed(options, "date", due.parse_date) |> invalid_input,
+  )
+  Ok(MutateAvailability(mutation(date)))
+}
+
+// Every option has one value, so a local immutable pair parser is sufficient.
+// Keeping it strict makes unknown, duplicate, and incomplete options invalid.
+fn parse_options(
+  args: List(String),
+  allowed: List(String),
+) -> Result(Options, String) {
+  use options <- result.try(option_pairs(args, []) |> invalid_input)
+  case list.all(options, fn(option) { list.contains(allowed, option.0) }) {
+    True -> Ok(options)
+    False -> Error("invalid input")
   }
 }
 
-fn availability_command(action, options) -> Result(Mutation, Nil) {
-  let AvailabilityOptions(days, date, from, to) = options
-  case action, days, date, from, to {
-    "add", Some(days), None, Some(from), Some(to) -> {
-      use interval <- result.try(availability.parse_interval(from, to))
-      Ok(availability.AddWeekly(days, interval))
-    }
-    "delete", Some(days), None, Some(from), Some(to) -> {
-      use interval <- result.try(availability.parse_interval(from, to))
-      Ok(availability.DeleteWeekly(days, interval))
-    }
-    "add", None, Some(date), Some(from), Some(to) -> {
-      use interval <- result.try(availability.parse_interval(from, to))
-      Ok(availability.AddDate(date, interval))
-    }
-    "delete", None, Some(date), Some(from), Some(to) -> {
-      use interval <- result.try(availability.parse_interval(from, to))
-      Ok(availability.DeleteDate(date, interval))
-    }
-    "set", None, Some(date), Some(from), Some(to) -> {
-      use interval <- result.try(availability.parse_interval(from, to))
-      Ok(availability.SetDate(date, interval))
-    }
-    "close", None, Some(date), None, None -> Ok(availability.CloseDate(date))
-    "reset", None, Some(date), None, None -> Ok(availability.ResetDate(date))
-    _, _, _, _, _ -> Error(Nil)
-  }
-}
-
-fn add_flags(flags, options: AddOptions) -> Result(AddOptions, String) {
-  case flags, options {
-    [], _ -> Ok(options)
-    ["--estimate", value, ..rest], AddOptions(estimate: None, ..) ->
-      add_flags(rest, AddOptions(..options, estimate: Some(value)))
-    ["--priority", value, ..rest], AddOptions(priority: None, ..) ->
-      add_flags(rest, AddOptions(..options, priority: Some(value)))
-    ["--due", value, ..rest], AddOptions(due: None, ..) ->
-      add_flags(rest, AddOptions(..options, due: Some(value)))
-    ["--scheduling-policy", value, ..rest],
-      AddOptions(scheduling_policy: None, ..)
-    -> add_flags(rest, AddOptions(..options, scheduling_policy: Some(value)))
-    ["--minimum-split", value, ..rest], AddOptions(minimum_split: None, ..) ->
-      add_flags(rest, AddOptions(..options, minimum_split: Some(value)))
-    _, _ -> Error("invalid, duplicate, or missing option")
-  }
-}
-
-fn list_flags(flags, options: ListOptions) -> Result(ListOptions, Nil) {
-  case flags {
-    [] -> Ok(options)
-    ["--done", ..rest] -> {
-      use updated <- result.try(select_status(options, DoneOnly))
-      list_flags(rest, updated)
-    }
-    ["--all", ..rest] -> {
-      use updated <- result.try(select_status(options, AllStatuses))
-      list_flags(rest, updated)
-    }
-    ["--scheduled"] -> select_scheduled(options, AllScheduled)
-    ["--scheduled", value, ..rest] ->
-      case string.starts_with(value, "--") {
-        True -> {
-          use updated <- result.try(select_scheduled(options, AllScheduled))
-          list_flags([value, ..rest], updated)
-        }
-        False -> {
-          use parsed <- result.try(parse_scheduled_exact(value))
-          use updated <- result.try(select_scheduled(options, parsed))
-          list_flags(rest, updated)
-        }
+fn option_pairs(args: List(String), reversed: Options) -> Result(Options, Nil) {
+  case args {
+    [] -> Ok(list.reverse(reversed))
+    [name, value, ..rest] -> {
+      let key = string.drop_start(name, 2)
+      case
+        string.starts_with(name, "--")
+        && key != ""
+        && !list.any(reversed, fn(option) { option.0 == key })
+      {
+        True -> option_pairs(rest, [#(key, value), ..reversed])
+        False -> Error(Nil)
       }
-    ["--scheduled-since", value, ..rest] -> {
-      use parsed <- result.try(due.parse_date(value))
-      use updated <- result.try(set_range(
-        options,
-        ScheduledRangeKind,
-        Since,
-        parsed,
-      ))
-      list_flags(rest, updated)
-    }
-    ["--scheduled-until", value, ..rest] -> {
-      use parsed <- result.try(due.parse_date(value))
-      use updated <- result.try(set_range(
-        options,
-        ScheduledRangeKind,
-        Until,
-        parsed,
-      ))
-      list_flags(rest, updated)
-    }
-    ["--due", value, ..rest] -> {
-      use parsed <- result.try(parse_due_filter(value))
-      use updated <- result.try(select_due(options, parsed))
-      list_flags(rest, updated)
-    }
-    ["--due-since", value, ..rest] -> {
-      use parsed <- result.try(due.parse_date(value))
-      use updated <- result.try(set_range(options, DueRangeKind, Since, parsed))
-      list_flags(rest, updated)
-    }
-    ["--due-until", value, ..rest] -> {
-      use parsed <- result.try(due.parse_date(value))
-      use updated <- result.try(set_range(options, DueRangeKind, Until, parsed))
-      list_flags(rest, updated)
     }
     _ -> Error(Nil)
   }
 }
 
-fn select_status(
-  options: ListOptions,
-  status: StatusFilter,
-) -> Result(ListOptions, Nil) {
-  case options {
-    ListOptions(status: None, ..) ->
-      Ok(ListOptions(..options, status: Some(status)))
-    _ -> Error(Nil)
+fn required_value(options: Options, name: String) -> Result(String, Nil) {
+  list.key_find(options, name)
+}
+
+fn optional_value(options: Options, name: String) -> Option(String) {
+  case required_value(options, name) {
+    Ok(value) -> Some(value)
+    Error(_) -> None
   }
 }
 
-fn select_due(
-  options: ListOptions,
-  filter: DueFilter,
-) -> Result(ListOptions, Nil) {
-  case options {
-    ListOptions(temporal: NoTemporalOptions, ..) ->
-      Ok(ListOptions(..options, temporal: DueMatch(filter)))
-    _ -> Error(Nil)
+fn value_or(options: Options, name: String, default: String) -> String {
+  case optional_value(options, name) {
+    Some(value) -> value
+    None -> default
   }
 }
 
-fn select_scheduled(
-  options: ListOptions,
-  filter: ScheduledFilter,
-) -> Result(ListOptions, Nil) {
-  case options {
-    ListOptions(temporal: NoTemporalOptions, ..) ->
-      Ok(ListOptions(..options, temporal: ScheduledMatch(filter)))
-    _ -> Error(Nil)
+fn required_parsed(options, name, parser) {
+  use value <- result.try(required_value(options, name))
+  parser(value)
+}
+
+fn optional_parsed(options, name, parser) {
+  case optional_value(options, name) {
+    None -> Ok(None)
+    Some(value) -> parser(value) |> result.map(Some)
   }
 }
 
-fn set_range(
-  options: ListOptions,
-  kind: RangeKind,
-  bound: Bound,
-  date: calendar.Date,
-) -> Result(ListOptions, Nil) {
-  let current = case options.temporal, kind {
-    NoTemporalOptions, _ -> Ok(DateRange(None, None))
-    DueRange(range), DueRangeKind -> Ok(range)
-    ScheduledRangeOptions(range), ScheduledRangeKind -> Ok(range)
-    _, _ -> Error(Nil)
-  }
-  use range <- result.try(current)
-  use updated <- result.try(set_bound(range, bound, date))
-  let temporal = case kind {
-    DueRangeKind -> DueRange(updated)
-    ScheduledRangeKind -> ScheduledRangeOptions(updated)
-  }
-  Ok(ListOptions(..options, temporal: temporal))
-}
-
-fn set_bound(
-  range: DateRange,
-  bound: Bound,
-  date: calendar.Date,
-) -> Result(DateRange, Nil) {
-  case range, bound {
-    DateRange(since: None, until: until), Since ->
-      Ok(DateRange(Some(date), until))
-    DateRange(since: since, until: None), Until ->
-      Ok(DateRange(since, Some(date)))
-    _, _ -> Error(Nil)
+fn status_filter(options) {
+  case optional_value(options, "status") {
+    None -> Ok(PendingOnly)
+    Some(value) -> parse_status_filter(value)
   }
 }
 
-fn parse_scheduled_exact(value: String) -> Result(ScheduledFilter, Nil) {
+fn invalid_input(value) {
+  result.map_error(value, fn(_) { "invalid input" })
+}
+
+fn parse_status_filter(value) {
   case value {
-    "today" -> Ok(ScheduledExact(ScheduledToday))
-    value ->
-      due.parse_date(value)
-      |> result.map(ScheduledDate)
-      |> result.map(ScheduledExact)
+    "pending" -> Ok(PendingOnly)
+    "done" -> Ok(DoneOnly)
+    "all" -> Ok(AllStatuses)
+    _ -> Error(Nil)
   }
 }
 
@@ -352,35 +283,43 @@ fn parse_due_filter(value: String) -> Result(DueFilter, Nil) {
   }
 }
 
-fn list_filter(options: ListOptions) -> Result(ListQuery, Nil) {
-  let ListOptions(status, temporal) = options
-  let status = option.unwrap(status, or: PendingOnly)
-  case temporal {
-    NoTemporalOptions -> Ok(TaskList(ListFilter(status, None)))
-    DueMatch(filter) -> Ok(TaskList(ListFilter(status, Some(filter))))
-    ScheduledMatch(filter) -> Ok(ScheduledList(status, filter))
-    DueRange(range) -> {
-      use #(since, until) <- result.try(validated_range(range))
-      Ok(TaskList(ListFilter(status, Some(Range(since, until)))))
-    }
-    ScheduledRangeOptions(range) -> {
-      use #(since, until) <- result.try(validated_range(range))
-      Ok(ScheduledList(status, ScheduledRange(since, until)))
-    }
+fn parse_scheduled_exact(value: String) {
+  case value {
+    "today" -> Ok(ScheduledToday)
+    value -> due.parse_date(value) |> result.map(ScheduledDate)
   }
 }
 
-fn validated_range(
-  range: DateRange,
-) -> Result(#(Option(calendar.Date), Option(calendar.Date)), Nil) {
-  let DateRange(since, until) = range
+fn task_temporal_filter(exact, since, until) {
+  case exact, since, until {
+    None, None, None -> Ok(None)
+    Some(filter), None, None -> Ok(Some(filter))
+    None, _, _ ->
+      validate_range(since, until)
+      |> result.map(fn(_) { Some(Range(since, until)) })
+    _, _, _ -> Error(Nil)
+  }
+}
+
+fn scheduled_filter(exact, since, until) {
+  case exact, since, until {
+    None, None, None -> Ok(AllScheduled)
+    Some(filter), None, None -> Ok(ScheduledExact(filter))
+    None, _, _ ->
+      validate_range(since, until)
+      |> result.map(fn(_) { ScheduledRange(since, until) })
+    _, _, _ -> Error(Nil)
+  }
+}
+
+fn validate_range(since, until) -> Result(Nil, Nil) {
   case since, until {
     Some(start), Some(end) ->
       case calendar.naive_date_compare(start, end) {
         Gt -> Error(Nil)
-        _ -> Ok(#(since, until))
+        _ -> Ok(Nil)
       }
-    _, _ -> Ok(#(since, until))
+    _, _ -> Ok(Nil)
   }
 }
 
@@ -391,17 +330,18 @@ pub fn help() -> Outcome {
       "todo add TITLE [--estimate DURATION] [--priority PRIORITY] [--due DUE]",
       "               [--scheduling-policy asap|spread|near_deadline]",
       "               [--minimum-split DURATION]",
-      "todo list [--done | --all] [--due today|overdue|YYYY-MM-DD]",
+      "todo list [--status pending|done|all] [--due today|overdue|YYYY-MM-DD]",
       "          [--due-since YYYY-MM-DD] [--due-until YYYY-MM-DD]",
-      "todo list --scheduled [today|YYYY-MM-DD] [--done | --all]",
-      "todo list [--scheduled-since YYYY-MM-DD] [--scheduled-until YYYY-MM-DD]",
-      "  default: pending; --done: done; --all: both",
+      "todo list scheduled [--status pending|done|all]",
+      "                    [--on today|YYYY-MM-DD]",
+      "                    [--since YYYY-MM-DD] [--until YYYY-MM-DD]",
+      "  default status: pending; exact dates and ranges are mutually exclusive",
       "  due dates use local time; overdue is before now; ranges are inclusive",
       "  --due excludes undated tasks and cannot be combined with due ranges",
       "todo done ID",
-      "todo availability add|delete (--day DAY[,DAY...] | --date YYYY-MM-DD) --from HH:MM --to HH:MM",
-      "todo availability set --date YYYY-MM-DD --from HH:MM --to HH:MM",
-      "todo availability close|reset --date YYYY-MM-DD",
+      "todo availability weekly add|delete --day DAY[,DAY...] --from HH:MM --to HH:MM",
+      "todo availability date add|delete|set --date YYYY-MM-DD --from HH:MM --to HH:MM",
+      "todo availability date close|reset --date YYYY-MM-DD",
       "todo availability list",
       "todo schedule",
       "  DURATION is an ASCII integer plus m or h; DAY is mon..sun",
