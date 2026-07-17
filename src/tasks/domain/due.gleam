@@ -1,10 +1,10 @@
-import gleam/int
-import gleam/list
 import gleam/result
 import gleam/string
 import gleam/time/calendar
 import gleam/time/duration.{type Duration}
 import gleam/time/timestamp.{type Timestamp}
+import tasks/domain/ascii
+import tasks/domain/local_time
 
 /// A task deadline as an absolute instant, distinct from other scheduled times.
 pub opaque type Due {
@@ -49,19 +49,7 @@ pub fn parse_date(value: String) -> Result(calendar.Date, Nil) {
 
 /// Present a stored instant as the local minute at the supplied offset.
 pub fn format(value: Due, offset: Duration) -> String {
-  let #(date, time) = timestamp.to_calendar(instant(value), offset)
-  [
-    pad(date.year, 4),
-    "-",
-    pad(calendar.month_to_int(date.month), 2),
-    "-",
-    pad(date.day, 2),
-    "T",
-    pad(time.hours, 2),
-    ":",
-    pad(time.minutes, 2),
-  ]
-  |> string.concat
+  local_time.format_timestamp(instant(value), offset)
 }
 
 /// Deliberately unwrap a deadline when an absolute-time API is required.
@@ -97,7 +85,7 @@ fn parse_datetime(value: String, offset: Duration) -> Result(Due, Nil) {
 
 fn date_shape(value: String) -> Bool {
   case string.to_graphemes(value) {
-    [a, b, c, d, "-", e, f, "-", g, h] -> digits([a, b, c, d, e, f, g, h])
+    [a, b, c, d, "-", e, f, "-", g, h] -> ascii.digits([a, b, c, d, e, f, g, h])
     _ -> False
   }
 }
@@ -105,21 +93,13 @@ fn date_shape(value: String) -> Bool {
 fn datetime_shape(value: String) -> Bool {
   case string.to_graphemes(value) {
     [a, b, c, d, "-", e, f, "-", g, h, "T", i, j, ":", k, l] ->
-      digits([a, b, c, d, e, f, g, h, i, j, k, l])
+      ascii.digits([a, b, c, d, e, f, g, h, i, j, k, l])
     _ -> False
   }
 }
 
-fn digits(values: List(String)) -> Bool {
-  list.all(values, fn(value) {
-    list.contains(["0", "1", "2", "3", "4", "5", "6", "7", "8", "9"], value)
-  })
-}
-
 fn slice_int(s: String, start: Int, length: Int) -> Result(Int, Nil) {
-  string.slice(s, start, length) |> int.parse
-}
-
-fn pad(value: Int, width: Int) -> String {
-  value |> int.to_string |> string.pad_start(width, "0")
+  string.slice(s, start, length)
+  |> string.to_graphemes
+  |> ascii.parse_digits
 }

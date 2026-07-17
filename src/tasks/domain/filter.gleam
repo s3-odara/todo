@@ -23,8 +23,34 @@ pub type ListFilter {
   ListFilter(status: StatusFilter, due: Option(DueFilter))
 }
 
+pub type ScheduledExact {
+  ScheduledToday
+  ScheduledDate(calendar.Date)
+}
+
+pub type ScheduledFilter {
+  AllScheduled
+  ScheduledExact(ScheduledExact)
+  ScheduledRange(since: Option(calendar.Date), until: Option(calendar.Date))
+}
+
+/// A scheduled filter after runtime-relative inputs have been frozen.
+pub type ResolvedScheduledFilter {
+  ResolvedAllScheduled
+  ResolvedScheduledDate(calendar.Date)
+  ResolvedScheduledToday(Timestamp)
+  ResolvedScheduledRange(
+    since: Option(calendar.Date),
+    until: Option(calendar.Date),
+  )
+}
+
+pub type ListQuery {
+  TaskList(ListFilter)
+  ScheduledList(status: StatusFilter, filter: ScheduledFilter)
+}
+
 pub type ResolvedDueFilter {
-  // Half-open absolute windows make every due comparison use one representation.
   DueWindow(since: Option(Timestamp), until: Option(Timestamp))
 }
 
@@ -32,7 +58,7 @@ pub type ResolvedListFilter {
   ResolvedListFilter(status: StatusFilter, due: Option(ResolvedDueFilter))
 }
 
-/// Freeze relative calendar criteria into absolute timestamp windows once.
+/// Freeze relative task-list calendar criteria into absolute timestamp windows once.
 pub fn resolve(
   filter: ListFilter,
   now: Timestamp,
@@ -63,12 +89,58 @@ pub fn matches(
   status_matches(wanted_status, status) && due_matches(due_filter, stored)
 }
 
-fn status_matches(filter: StatusFilter, status: Status) -> Bool {
+pub fn status_matches(filter: StatusFilter, status: Status) -> Bool {
   case filter {
     PendingOnly -> status == Pending
     DoneOnly -> status == Done
     AllStatuses -> True
   }
+}
+
+pub fn scheduled_window(
+  filter: ResolvedScheduledFilter,
+  offset: Duration,
+) -> Option(ResolvedDueFilter) {
+  case filter {
+    ResolvedAllScheduled -> None
+    ResolvedScheduledDate(date) -> Some(day_window(date, offset))
+    ResolvedScheduledToday(current) -> {
+      let #(date, _) = timestamp.to_calendar(current, offset)
+      Some(day_window(date, offset))
+    }
+    ResolvedScheduledRange(since, until) ->
+      Some(DueWindow(
+        option.map(since, fn(date) { start_of_day(date, offset) }),
+        option.map(until, fn(date) { end_of_day_exclusive(date, offset) }),
+      ))
+  }
+}
+
+/// Scheduled blocks overlap a local-day window rather than merely starting in it.
+pub fn block_overlaps(
+  start_seconds: Int,
+  end_seconds: Int,
+  window: Option(ResolvedDueFilter),
+) -> Bool {
+  case window {
+    None -> True
+    Some(DueWindow(since, until)) -> {
+      let after_start = case since {
+        None -> True
+        Some(value) -> end_seconds > unix_seconds(value)
+      }
+      let before_end = case until {
+        None -> True
+        Some(value) -> start_seconds < unix_seconds(value)
+      }
+      after_start && before_end
+    }
+  }
+}
+
+fn unix_seconds(value: Timestamp) -> Int {
+  let #(seconds, _) = timestamp.to_unix_seconds_and_nanoseconds(value)
+  seconds
 }
 
 fn due_matches(filter: Option(ResolvedDueFilter), stored: Option(Due)) -> Bool {
@@ -108,7 +180,6 @@ fn start_of_day(date: calendar.Date, offset: Duration) -> Timestamp {
 }
 
 fn end_of_day_exclusive(date: calendar.Date, offset: Duration) -> Timestamp {
-  // The app has a fixed offset rather than a timezone database, so a local day is 24h.
   start_of_day(date, offset)
   |> timestamp.add(duration.hours(24))
 }

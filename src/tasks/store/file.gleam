@@ -1,16 +1,16 @@
 import filepath
 import gleam/result
 import simplifile
-import tasks/domain/model.{type Todo}
+import tasks/domain/app_state.{type AppState, empty as empty_state}
 import tasks/store/json
 
-pub fn load(path: String) -> Result(List(Todo), String) {
+pub fn load(path: String) -> Result(AppState, String) {
   read_file(path)
   |> result.map_error(fn(error) { "read failed: " <> error })
   |> result.try(json.decode)
 }
 
-pub fn save(path: String, tasks: List(Todo)) -> Result(Nil, String) {
+pub fn save(path: String, state: AppState) -> Result(Nil, String) {
   // A failed save may leave this behind; the next save simply overwrites it.
   let temporary = path <> ".tmp"
 
@@ -19,7 +19,7 @@ pub fn save(path: String, tasks: List(Todo)) -> Result(Nil, String) {
     "create directory failed: " <> simplifile.describe_error(error)
   })
   |> result.try(fn(_) {
-    simplifile.write(to: temporary, contents: json.encode(tasks))
+    simplifile.write(to: temporary, contents: json.encode(state))
     |> result.map_error(fn(error) {
       "temporary write failed: " <> simplifile.describe_error(error)
     })
@@ -35,7 +35,7 @@ pub fn save(path: String, tasks: List(Todo)) -> Result(Nil, String) {
 fn read_file(path: String) -> Result(String, String) {
   case simplifile.read(path) {
     Ok(text) -> Ok(text)
-    Error(simplifile.Enoent) -> Ok("[]")
+    Error(simplifile.Enoent) -> Ok(json.encode(empty_state()))
     Error(error) -> Error(simplifile.describe_error(error))
   }
 }
