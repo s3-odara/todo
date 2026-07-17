@@ -8,6 +8,7 @@ import tasks/domain/scheduling/model.{
   type ScheduleBlock, type SchedulingTask, ScheduleBlock,
   effective_minimum_split,
 }
+import tasks/domain/scheduling/score
 import tasks/domain/scheduling/timeline.{
   type AbsoluteInterval, type SearchSpace, SearchSpace,
 }
@@ -137,10 +138,7 @@ fn task_constraints(
 ) -> Bool {
   list.all(tasks, fn(task) {
     let own = list.filter(blocks, fn(block) { block.task_id == task.id })
-    let total =
-      list.fold(own, 0, fn(sum, block) {
-        sum + { block.end_seconds - block.start_seconds } / 60
-      })
+    let total = score.placed_minutes(own)
     let minimum = effective_minimum_split(task)
     total <= task.estimate_minutes
     && list.all(own, fn(block) {
