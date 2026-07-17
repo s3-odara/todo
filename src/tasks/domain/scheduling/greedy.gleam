@@ -3,8 +3,6 @@ import gleam/int
 import gleam/list
 import gleam/option
 import gleam/order
-import tasks/domain/due
-import tasks/domain/model as task_model
 import tasks/domain/policy
 import tasks/domain/scheduling/invariant
 import tasks/domain/scheduling/model as scheduling_model
@@ -22,7 +20,7 @@ type Candidate {
 }
 
 pub fn build(
-  tasks: List(task_model.Todo),
+  tasks: List(scheduling_model.SchedulingTask),
   space: SearchSpace,
 ) -> List(scheduling_model.ScheduleBlock) {
   tasks
@@ -32,7 +30,7 @@ pub fn build(
 
 pub fn rebuild(
   blocks: List(scheduling_model.ScheduleBlock),
-  selected: List(task_model.Todo),
+  selected: List(scheduling_model.SchedulingTask),
   space: SearchSpace,
 ) -> List(scheduling_model.ScheduleBlock) {
   let selected_ids = list.map(selected, fn(task) { task.id })
@@ -45,13 +43,15 @@ pub fn rebuild(
   })
 }
 
-pub fn initial_order(tasks: List(task_model.Todo)) -> List(task_model.Todo) {
+pub fn initial_order(
+  tasks: List(scheduling_model.SchedulingTask),
+) -> List(scheduling_model.SchedulingTask) {
   list.sort(tasks, by: task_compare)
 }
 
 fn place_task(
   blocks: List(scheduling_model.ScheduleBlock),
-  task: task_model.Todo,
+  task: scheduling_model.SchedulingTask,
   space: SearchSpace,
 ) -> List(scheduling_model.ScheduleBlock) {
   let SearchSpace(_, planning_start, _) = space
@@ -79,28 +79,29 @@ fn place_task(
 
 fn placement_candidates(
   blocks: List(scheduling_model.ScheduleBlock),
-  task: task_model.Todo,
+  task: scheduling_model.SchedulingTask,
   space: SearchSpace,
 ) -> List(scheduling_model.ScheduleBlock) {
   let SearchSpace(projected, planning_start, offset) = space
   let placed = score.placed_minutes(task.id, blocks)
   let remaining = task.estimate_minutes - placed
-  case task.due, remaining <= 0 {
-    _, True -> []
-    option.None, _ -> []
-    option.Some(deadline), False -> {
-      let due_seconds = due.to_unix_seconds(deadline)
+  case remaining <= 0 {
+    True -> []
+    False -> {
       let intervals =
         timeline.free_intervals(projected, blocks)
         |> list.map(fn(interval) {
-          AbsoluteInterval(interval.start, int.min(interval.end, due_seconds))
+          AbsoluteInterval(
+            interval.start,
+            int.min(interval.end, task.deadline_seconds),
+          )
         })
       let maximum_capacity =
         list.fold(intervals, 0, fn(maximum, interval) {
           int.max(maximum, { interval.end - interval.start } / 60)
         })
       let block_length = int.min(remaining, maximum_capacity)
-      case block_length < task_model.effective_minimum_split(task) {
+      case block_length < scheduling_model.effective_minimum_split(task) {
         True -> []
         False ->
           // More scheduled minutes always win the primary objective. Choose the
@@ -134,7 +135,7 @@ fn placement_candidates(
 }
 
 fn anchors(
-  task: task_model.Todo,
+  task: scheduling_model.SchedulingTask,
   placed: Int,
   interval: AbsoluteInterval,
   block_length: Int,
@@ -144,11 +145,7 @@ fn anchors(
   let estimate = int.to_float(task.estimate_minutes)
   let y0 = int.to_float(placed) /. estimate
   let y1 = int.to_float(placed + block_length) /. estimate
-  let due_seconds = case task.due {
-    option.Some(value) -> due.to_unix_seconds(value)
-    option.None -> interval.end
-  }
-  let span = int.to_float(due_seconds - planning_start)
+  let span = int.to_float(task.deadline_seconds - planning_start)
   let ideal_start =
     int.to_float(planning_start)
     +. policy.inverse(task.scheduling_policy, y0)
@@ -187,21 +184,17 @@ fn best(candidates: List(Candidate)) -> option.Option(Candidate) {
   })
 }
 
-fn task_compare(a: task_model.Todo, b: task_model.Todo) -> order.Order {
+fn task_compare(
+  a: scheduling_model.SchedulingTask,
+  b: scheduling_model.SchedulingTask,
+) -> order.Order {
   case int.compare(b.priority, a.priority) {
     order.Eq ->
-      case int.compare(due_seconds(a), due_seconds(b)) {
+      case int.compare(a.deadline_seconds, b.deadline_seconds) {
         order.Eq -> int.compare(a.id, b.id)
         other -> other
       }
     other -> other
-  }
-}
-
-fn due_seconds(task: task_model.Todo) -> Int {
-  case task.due {
-    option.Some(value) -> due.to_unix_seconds(value)
-    option.None -> 0
   }
 }
 

@@ -1,12 +1,11 @@
 import gleam/float
 import gleam/int
 import gleam/list
-import gleam/option
 import gleam/order
-import tasks/domain/due
-import tasks/domain/model as task_model
 import tasks/domain/policy
-import tasks/domain/scheduling/model.{type ScheduleBlock, type Score, Score}
+import tasks/domain/scheduling/model.{
+  type ScheduleBlock, type SchedulingTask, type Score, Score,
+}
 
 pub const epsilon = 0.000000000001
 
@@ -31,7 +30,7 @@ type IntegrationState {
 }
 
 pub fn evaluate(
-  tasks: List(task_model.Todo),
+  tasks: List(SchedulingTask),
   blocks: List(ScheduleBlock),
   planning_start: Int,
 ) -> Score {
@@ -40,7 +39,7 @@ pub fn evaluate(
 }
 
 pub fn contributions(
-  tasks: List(task_model.Todo),
+  tasks: List(SchedulingTask),
   blocks: List(ScheduleBlock),
   planning_start: Int,
 ) -> List(Contribution) {
@@ -50,7 +49,7 @@ pub fn contributions(
 }
 
 pub fn evaluate_task(
-  task: task_model.Todo,
+  task: SchedulingTask,
   blocks: List(ScheduleBlock),
   planning_start: Int,
 ) -> Score {
@@ -96,7 +95,7 @@ fn replacement(current: Contribution, replacements: List(Contribution)) {
 /// Blocks must be canonical, non-overlapping, and within the planning window.
 /// Scheduling boundaries enforce this once; score evaluation stays O(B).
 pub fn policy_error(
-  task: task_model.Todo,
+  task: SchedulingTask,
   blocks: List(ScheduleBlock),
   planning_start: Int,
 ) -> Float {
@@ -105,29 +104,23 @@ pub fn policy_error(
 }
 
 fn policy_error_for_blocks(
-  task: task_model.Todo,
+  task: SchedulingTask,
   blocks: List(ScheduleBlock),
   planning_start: Int,
 ) -> Float {
-  case task.due, task.estimate_minutes > 0 {
-    option.Some(deadline), True -> {
-      let due_seconds = due.to_unix_seconds(deadline)
-      case due_seconds > planning_start {
-        False -> 0.0
-        True -> {
-          let span = int.to_float(due_seconds - planning_start)
-          let estimate = int.to_float(task.estimate_minutes * 60)
-          integrate_blocks(
-            task.scheduling_policy,
-            blocks,
-            planning_start,
-            span,
-            estimate,
-          )
-        }
-      }
+  case task.estimate_minutes > 0 && task.deadline_seconds > planning_start {
+    False -> 0.0
+    True -> {
+      let span = int.to_float(task.deadline_seconds - planning_start)
+      let estimate = int.to_float(task.estimate_minutes * 60)
+      integrate_blocks(
+        task.scheduling_policy,
+        blocks,
+        planning_start,
+        span,
+        estimate,
+      )
     }
-    _, _ -> 0.0
   }
 }
 

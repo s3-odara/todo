@@ -1,15 +1,12 @@
 import gleam/float
 import gleam/list
-import gleam/option.{Some}
 import gleeunit/should
-import tasks/domain/due
-import tasks/domain/model.{Pending, Todo}
 import tasks/domain/policy.{Asap, NearDeadline, Spread}
 import tasks/domain/scheduling/model as scheduling_model
 import tasks/domain/scheduling/score
 
 fn task(policy) {
-  Todo(1, "task", 60, 3, Some(due.from_unix_seconds(3600)), Pending, policy, 30)
+  scheduling_model.SchedulingTask(1, 60, 3, 3600, policy, 30)
 }
 
 fn block(start: Int, end: Int) {
@@ -89,17 +86,7 @@ pub fn representative_pre_refactor_float_fixtures_are_preserved_test() {
 }
 
 pub fn invalid_planning_windows_return_zero_test() {
-  let no_span =
-    Todo(
-      1,
-      "no span",
-      60,
-      3,
-      Some(due.from_unix_seconds(0)),
-      Pending,
-      Spread,
-      30,
-    )
+  let no_span = scheduling_model.SchedulingTask(1, 60, 3, 0, Spread, 30)
   score.policy_error(no_span, [], 0) |> should.equal(0.0)
   score.policy_error(task(Spread), [block(0, 3600)], 3600)
   |> should.equal(0.0)
@@ -127,17 +114,7 @@ pub fn block_progress_and_priority_weight_test() {
 
 pub fn task_contributions_preserve_total_and_ordered_replacement_test() {
   let first = task(Spread)
-  let second =
-    Todo(
-      2,
-      "second",
-      30,
-      5,
-      Some(due.from_unix_seconds(3600)),
-      Pending,
-      Asap,
-      30,
-    )
+  let second = scheduling_model.SchedulingTask(2, 30, 5, 3600, Asap, 30)
   let blocks = [block(0, 1800)]
   let contributions = score.contributions([first, second], blocks, 0)
   score.total(contributions)

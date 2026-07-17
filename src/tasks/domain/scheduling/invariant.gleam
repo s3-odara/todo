@@ -3,9 +3,11 @@ import gleam/list
 import gleam/option
 import gleam/order
 import gleam/time/timestamp
-import tasks/domain/due
 import tasks/domain/model as task_model
-import tasks/domain/scheduling/model.{type ScheduleBlock, ScheduleBlock}
+import tasks/domain/scheduling/model.{
+  type ScheduleBlock, type SchedulingTask, ScheduleBlock,
+  effective_minimum_split,
+}
 import tasks/domain/scheduling/search.{type SearchSpace, SearchSpace}
 import tasks/domain/scheduling/timeline.{type AbsoluteInterval}
 
@@ -23,14 +25,17 @@ pub fn canonicalize(blocks: List(ScheduleBlock)) -> List(ScheduleBlock) {
 /// Validate a newly generated state against all live scheduling constraints.
 pub fn validate_generation(
   blocks: List(ScheduleBlock),
-  tasks: List(task_model.Todo),
+  tasks: List(SchedulingTask),
   space: SearchSpace,
 ) -> Result(List(ScheduleBlock), InvariantError) {
   let SearchSpace(projected, planning_start, utc_offset_seconds) = space
   let canonical = canonicalize(blocks)
   case
     blocks == canonical
-    && structural(canonical, tasks, utc_offset_seconds)
+    && structural(canonical, utc_offset_seconds)
+    && references_tasks(canonical, fn(id) {
+      list.any(tasks, fn(task) { task.id == id })
+    })
     && all_after(canonical, planning_start)
     && contained(canonical, projected)
     && task_constraints(tasks, canonical)
@@ -48,18 +53,17 @@ pub fn validate_persisted(
 ) -> Result(List(ScheduleBlock), InvariantError) {
   case
     blocks == canonicalize(blocks)
-    && structural(blocks, tasks, utc_offset_seconds)
+    && structural(blocks, utc_offset_seconds)
+    && references_tasks(blocks, fn(id) {
+      list.any(tasks, fn(task) { task.id == id })
+    })
   {
     True -> Ok(blocks)
     False -> Error(InvalidSchedule)
   }
 }
 
-fn structural(
-  blocks: List(ScheduleBlock),
-  tasks: List(task_model.Todo),
-  offset: Int,
-) -> Bool {
+fn structural(blocks: List(ScheduleBlock), offset: Int) -> Bool {
   no_overlap(blocks, option.None)
   && list.all(blocks, fn(block) {
     let start = block.start_seconds
@@ -67,8 +71,14 @@ fn structural(
     start < end
     && floor_mod(start + offset, 60) == 0
     && floor_mod(end + offset, 60) == 0
-    && has_task(tasks, block.task_id)
   })
+}
+
+fn references_tasks(
+  blocks: List(ScheduleBlock),
+  has_task: fn(Int) -> Bool,
+) -> Bool {
+  list.all(blocks, fn(block) { has_task(block.task_id) })
 }
 
 fn all_after(blocks: List(ScheduleBlock), planning_start: Int) -> Bool {
@@ -89,7 +99,7 @@ fn contained(
 }
 
 fn task_constraints(
-  tasks: List(task_model.Todo),
+  tasks: List(SchedulingTask),
   blocks: List(ScheduleBlock),
 ) -> Bool {
   list.all(tasks, fn(task) {
@@ -98,21 +108,13 @@ fn task_constraints(
       list.fold(own, 0, fn(sum, block) {
         sum + { block.end_seconds - block.start_seconds } / 60
       })
-    let minimum = task_model.effective_minimum_split(task)
-    let due_seconds = case task.due {
-      option.Some(value) -> due.to_unix_seconds(value)
-      option.None -> 0
-    }
+    let minimum = effective_minimum_split(task)
     total <= task.estimate_minutes
     && list.all(own, fn(block) {
       { block.end_seconds - block.start_seconds } / 60 >= minimum
-      && block.end_seconds <= due_seconds
+      && block.end_seconds <= task.deadline_seconds
     })
   })
-}
-
-fn has_task(tasks: List(task_model.Todo), id: Int) -> Bool {
-  list.any(tasks, fn(task) { task.id == id })
 }
 
 fn no_overlap(

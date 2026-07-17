@@ -1,6 +1,5 @@
 import gleam/list
 import gleam/option
-import tasks/domain/model as task_model
 import tasks/domain/scheduling/greedy
 import tasks/domain/scheduling/invariant
 import tasks/domain/scheduling/model as scheduling_model
@@ -49,7 +48,7 @@ pub fn improve(initial, tasks, space) {
 
 pub fn climb(
   initial: List(scheduling_model.ScheduleBlock),
-  tasks: List(task_model.Todo),
+  tasks: List(scheduling_model.SchedulingTask),
   space: SearchSpace,
 ) -> HillResult {
   let SearchSpace(_, planning_start, _) = space

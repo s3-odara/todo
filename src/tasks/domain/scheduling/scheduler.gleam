@@ -1,11 +1,9 @@
 import gleam/int
 import gleam/list
-import gleam/option
 import gleam/result
 import gleam/time/duration.{type Duration}
 import gleam/time/timestamp.{type Timestamp}
 import tasks/domain/app_state.{type AppState, AppState}
-import tasks/domain/due
 import tasks/domain/scheduling/eligibility
 import tasks/domain/scheduling/greedy
 import tasks/domain/scheduling/hill_climb
@@ -56,10 +54,7 @@ pub fn generate(
     eligibility.classify(all_tasks, planning_start)
   let horizon =
     list.fold(eligible, planning_start, fn(value, task) {
-      case task.due {
-        option.Some(deadline) -> int.max(value, due.to_unix_seconds(deadline))
-        option.None -> value
-      }
+      int.max(value, task.deadline_seconds)
     })
   use projected <- result.try(
     timeline.project(availability, planning_start, horizon, offset)

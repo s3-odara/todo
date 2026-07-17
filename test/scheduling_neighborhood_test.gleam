@@ -1,13 +1,11 @@
 import gleam/list
-import gleam/option.{Some}
 import gleeunit/should
-import tasks/domain/due
-import tasks/domain/model.{Pending, Todo}
 import tasks/domain/policy.{Spread}
+import tasks/domain/scheduling/model.{SchedulingTask}
 import tasks/domain/scheduling/neighborhood
 
 fn task(id) {
-  Todo(id, "task", 1, 1, Some(due.from_unix_seconds(60)), Pending, Spread, 1)
+  SchedulingTask(id, 1, 1, 60, Spread, 1)
 }
 
 fn ids(values) {

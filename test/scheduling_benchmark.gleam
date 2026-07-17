@@ -4,8 +4,6 @@ import gleam/int
 import gleam/io
 import gleam/list
 import gleam/option.{type Option, None, Some}
-import tasks/domain/due
-import tasks/domain/model.{type Todo, Pending, Todo}
 import tasks/domain/policy.{Asap, NearDeadline, Spread}
 import tasks/domain/scheduling/greedy
 import tasks/domain/scheduling/hill_climb
@@ -30,7 +28,7 @@ type Profile {
 type Scenario {
   Scenario(
     name: String,
-    tasks: List(Todo),
+    tasks: List(scheduling_model.SchedulingTask),
     projected: List(AbsoluteInterval),
     oracle_horizon: Option(Int),
   )
@@ -204,8 +202,8 @@ fn focused_scenarios() -> List(Scenario) {
 fn legacy_generated_tasks(
   count: Int,
   salt: Int,
-  acc: List(Todo),
-) -> List(Todo) {
+  acc: List(scheduling_model.SchedulingTask),
+) -> List(scheduling_model.SchedulingTask) {
   case count {
     0 -> list.reverse(acc)
     id -> {
@@ -330,7 +328,12 @@ fn repeated_intervals(count, start, length, gap, acc) {
   }
 }
 
-fn generated_tasks(profile, count, seed, horizon) -> List(Todo) {
+fn generated_tasks(
+  profile,
+  count,
+  seed,
+  horizon,
+) -> List(scheduling_model.SchedulingTask) {
   generated_tasks_loop(profile, count, seed, horizon, [])
 }
 
@@ -438,7 +441,7 @@ fn exact_scenario(seed: Int) -> Scenario {
 }
 
 fn exact_optimum(
-  tasks: List(Todo),
+  tasks: List(scheduling_model.SchedulingTask),
   projected: List(AbsoluteInterval),
   horizon: Int,
 ) -> Option(scheduling_model.Score) {
@@ -452,7 +455,7 @@ fn exact_assignments(
   choices: List(Int),
   remaining: Int,
   assignment: List(Int),
-  tasks: List(Todo),
+  tasks: List(scheduling_model.SchedulingTask),
   projected: List(AbsoluteInterval),
   best: Option(scheduling_model.Score),
 ) -> Option(scheduling_model.Score) {
@@ -523,13 +526,11 @@ fn choose_score(
 }
 
 fn task(id, estimate, priority, deadline, minimum, policy) {
-  Todo(
+  scheduling_model.SchedulingTask(
     id,
-    "task " <> int.to_string(id),
     estimate,
     priority,
-    Some(due.from_unix_seconds(deadline * 60)),
-    Pending,
+    deadline * 60,
     policy,
     minimum,
   )

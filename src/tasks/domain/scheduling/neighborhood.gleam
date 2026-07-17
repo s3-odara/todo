@@ -1,21 +1,21 @@
 import gleam/int
 import gleam/list
-import tasks/domain/model.{type Todo}
+import tasks/domain/scheduling/model.{type SchedulingTask}
 
 pub opaque type Rebuild {
-  Rebuild(tasks: List(Todo))
+  Rebuild(tasks: List(SchedulingTask))
 }
 
 type Generated {
   Generated(reversed: List(Rebuild), remaining: Int)
 }
 
-pub fn tasks(rebuild: Rebuild) -> List(Todo) {
+pub fn tasks(rebuild: Rebuild) -> List(SchedulingTask) {
   rebuild.tasks
 }
 
 /// Generate ID-ordered single, pair, and triple rebuilds within one budget.
-pub fn generate(tasks: List(Todo), limit: Int) -> List(Rebuild) {
+pub fn generate(tasks: List(SchedulingTask), limit: Int) -> List(Rebuild) {
   let ordered = list.sort(tasks, by: fn(a, b) { int.compare(a.id, b.id) })
   let initial = Generated([], int.max(0, limit))
   let singles = combinations(ordered, 1, [], initial)

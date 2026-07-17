@@ -8,7 +8,7 @@ import tasks/domain/availability.{
   Availability, Interval, Thu, WeeklyAvailability,
 }
 import tasks/domain/due
-import tasks/domain/model.{Pending, Todo}
+import tasks/domain/model.{type Todo, Pending, Todo}
 import tasks/domain/policy.{Asap, NearDeadline, Spread}
 import tasks/domain/scheduling/greedy
 import tasks/domain/scheduling/hill_climb
@@ -58,6 +58,24 @@ fn task(id, estimate, priority) {
   )
 }
 
+fn scheduling_task(task: Todo) -> scheduling_model.SchedulingTask {
+  let assert Some(deadline) = task.due
+  scheduling_model.SchedulingTask(
+    task.id,
+    task.estimate_minutes,
+    task.priority,
+    due.to_unix_seconds(deadline),
+    task.scheduling_policy,
+    task.minimum_split_minutes,
+  )
+}
+
+fn scheduling_tasks(
+  tasks: List(Todo),
+) -> List(scheduling_model.SchedulingTask) {
+  list.map(tasks, scheduling_task)
+}
+
 pub fn context_rounds_exact_negative_nanosecond_and_second_offset_test() {
   let exact =
     scheduler.context(timestamp.from_unix_seconds(-60), duration.seconds(0))
@@ -92,7 +110,7 @@ pub fn deterministic_generation_respects_availability_test() {
   nonempty |> should.be_true
   invariant.validate_generation(
     blocks,
-    [task(1, 60, 3)],
+    [scheduling_task(task(1, 60, 3))],
     SearchSpace([AbsoluteInterval(0, 7200)], 0, 0),
   )
   |> should.be_ok
@@ -170,13 +188,14 @@ pub fn pair_rebuild_can_replace_low_priority_work_atomically_test() {
       Spread,
       30,
     )
+  let tasks = scheduling_tasks([low, high])
   let initial = [
     scheduling_model.ScheduleBlock(1, 0, 3600),
   ]
-  let before = score.evaluate([low, high], initial, 0)
+  let before = score.evaluate(tasks, initial, 0)
   let space = SearchSpace(projected, 0, 0)
-  let result = hill_climb.climb(initial, [low, high], space)
-  let after = score.evaluate([low, high], result.blocks, 0)
+  let result = hill_climb.climb(initial, tasks, space)
+  let after = score.evaluate(tasks, result.blocks, 0)
 
   score.strictly_better(after, than: before) |> should.be_true
   result.accepted_moves |> should.equal(1)
@@ -185,7 +204,7 @@ pub fn pair_rebuild_can_replace_low_priority_work_atomically_test() {
   |> should.equal([
     scheduling_model.ScheduleBlock(2, 0, 3600),
   ])
-  invariant.validate_generation(result.blocks, [low, high], space)
+  invariant.validate_generation(result.blocks, tasks, space)
   |> should.be_ok
 }
 
@@ -196,6 +215,7 @@ pub fn exact_s7_schedule_and_score_are_characterized_test() {
     Todo(2, "two", 3, 1, Some(due.from_unix_seconds(360)), Pending, Spread, 2),
     Todo(3, "three", 5, 4, Some(due.from_unix_seconds(240)), Pending, Spread, 2),
   ]
+  let tasks = scheduling_tasks(tasks)
   let space = SearchSpace(projected, 0, 0)
   let initial = greedy.build(tasks, space)
   let result = hill_climb.climb(initial, tasks, space)

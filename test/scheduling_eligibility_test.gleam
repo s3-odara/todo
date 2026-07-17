@@ -26,18 +26,7 @@ pub fn exclusion_precedence_and_stable_order_test() {
   eligibility.classify(tasks, 0)
   |> should.equal(
     eligibility.Classification(
-      [
-        Todo(
-          1,
-          "eligible",
-          30,
-          3,
-          Some(due.from_unix_seconds(3600)),
-          Pending,
-          Spread,
-          30,
-        ),
-      ],
+      [scheduling_model.SchedulingTask(1, 30, 3, 3600, Spread, 30)],
       [
         scheduling_model.ExcludedTask(2, scheduling_model.Completed),
         scheduling_model.ExcludedTask(3, scheduling_model.MissingEstimate),

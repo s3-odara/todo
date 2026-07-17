@@ -22,6 +22,10 @@ fn task(estimate, minimum) {
   )
 }
 
+fn scheduling_task(estimate, minimum) {
+  scheduling_model.SchedulingTask(1, estimate, 3, 7200, Spread, minimum)
+}
+
 fn block(start, end) {
   scheduling_model.ScheduleBlock(1, start, end)
 }
@@ -35,7 +39,7 @@ pub fn effective_minimum_split_boundaries_test() {
 pub fn generation_validator_accepts_short_estimate_exception_test() {
   invariant.validate_generation(
     [block(0, 1200)],
-    [task(20, 30)],
+    [scheduling_task(20, 30)],
     SearchSpace([AbsoluteInterval(0, 3600)], 0, 0),
   )
   |> should.be_ok
@@ -52,7 +56,7 @@ pub fn generation_validator_rejects_hard_constraint_violations_test() {
   |> list.each(fn(blocks) {
     invariant.validate_generation(
       blocks,
-      [task(30, 30)],
+      [scheduling_task(30, 30)],
       SearchSpace([AbsoluteInterval(0, 3600)], 0, 0),
     )
     |> should.be_error

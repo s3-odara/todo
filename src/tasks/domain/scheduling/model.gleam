@@ -1,4 +1,5 @@
 import gleam/time/timestamp.{type Timestamp}
+import tasks/domain/policy.{type SchedulingPolicy}
 
 pub type ExcludedReason {
   Completed
@@ -21,6 +22,26 @@ pub type PlanningContext {
     planning_start: Timestamp,
     utc_offset_seconds: Int,
   )
+}
+
+/// The immutable task projection accepted by the scheduling search.
+/// Eligibility resolves the optional deadline before constructing this value.
+pub type SchedulingTask {
+  SchedulingTask(
+    id: Int,
+    estimate_minutes: Int,
+    priority: Int,
+    deadline_seconds: Int,
+    scheduling_policy: SchedulingPolicy,
+    minimum_split_minutes: Int,
+  )
+}
+
+pub fn effective_minimum_split(task: SchedulingTask) -> Int {
+  case task.estimate_minutes < task.minimum_split_minutes {
+    True -> task.estimate_minutes
+    False -> task.minimum_split_minutes
+  }
 }
 
 pub type ScheduleBlock {
