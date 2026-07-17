@@ -505,62 +505,63 @@ pub fn listed(
   status: StatusFilter,
   offset: Duration,
 ) -> Outcome {
-  case items {
-    [] ->
-      Outcome(
-        0,
-        [
-          case status {
-            PendingOnly -> "No pending tasks."
-            DoneOnly -> "No done tasks."
-            AllStatuses -> "No tasks."
-          },
-        ],
-        [],
-      )
-    _ ->
-      Outcome(
-        0,
-        [
-          "ID\tSTATUS\tPRIORITY\tESTIMATE\tDUE\tTITLE",
-          ..list.map(items, fn(task) { task_line(task, offset) })
-        ],
-        [],
-      )
+  let empty_line = case status {
+    PendingOnly -> "No pending tasks."
+    DoneOnly -> "No done tasks."
+    AllStatuses -> "No tasks."
   }
+  Outcome(
+    0,
+    table_lines(
+      items,
+      empty_line,
+      "ID\tSTATUS\tPRIORITY\tESTIMATE\tDUE\tTITLE",
+      fn(task) { task_line(task, offset) },
+    ),
+    [],
+  )
 }
 
 pub fn scheduled_listed(listing: ScheduledListing) -> Outcome {
   let ScheduledListing(offset_seconds, items) = listing
-  case items {
-    [] -> Outcome(0, ["No scheduled tasks."], [])
-    _ -> {
-      let offset = duration.seconds(offset_seconds)
-      Outcome(
-        0,
+  let offset = duration.seconds(offset_seconds)
+  Outcome(
+    0,
+    table_lines(
+      items,
+      "No scheduled tasks.",
+      "START\tEND\tID\tSTATUS\tTITLE",
+      fn(item) {
+        let ScheduledItem(block, task) = item
         [
-          "START\tEND\tID\tSTATUS\tTITLE",
-          ..list.map(items, fn(item) {
-            let ScheduledItem(block, task) = item
-            [
-              local_time.format_timestamp(
-                timestamp.from_unix_seconds(block.start_seconds),
-                offset,
-              ),
-              local_time.format_timestamp(
-                timestamp.from_unix_seconds(block.end_seconds),
-                offset,
-              ),
-              int.to_string(task.id),
-              status_to_string(task.status),
-              task.title,
-            ]
-            |> string.join("\t")
-          })
-        ],
-        [],
-      )
-    }
+          local_time.format_timestamp(
+            timestamp.from_unix_seconds(block.start_seconds),
+            offset,
+          ),
+          local_time.format_timestamp(
+            timestamp.from_unix_seconds(block.end_seconds),
+            offset,
+          ),
+          int.to_string(task.id),
+          status_to_string(task.status),
+          task.title,
+        ]
+        |> string.join("\t")
+      },
+    ),
+    [],
+  )
+}
+
+fn table_lines(
+  items: List(item),
+  empty_line: String,
+  header: String,
+  render: fn(item) -> String,
+) -> List(String) {
+  case items {
+    [] -> [empty_line]
+    _ -> [header, ..list.map(items, render)]
   }
 }
 
@@ -576,44 +577,29 @@ pub fn schedule_generated(
   ) = saved
   let scheduling_model.GenerationReport(unscheduled, excluded) = report
   let offset = duration.seconds(offset_seconds)
-  let block_lines = case blocks {
-    [] -> ["none"]
-    _ -> [
-      "START\tEND\tTASK_ID",
-      ..list.map(blocks, fn(block) {
-        [
-          local_time.format_timestamp(
-            timestamp.from_unix_seconds(block.start_seconds),
-            offset,
-          ),
-          local_time.format_timestamp(
-            timestamp.from_unix_seconds(block.end_seconds),
-            offset,
-          ),
-          int.to_string(block.task_id),
-        ]
-        |> string.join("\t")
-      })
-    ]
-  }
-  let unscheduled_lines = case unscheduled {
-    [] -> ["none"]
-    _ -> [
-      "TASK_ID\tMINUTES",
-      ..list.map(unscheduled, fn(entry) {
-        int.to_string(entry.task_id) <> "\t" <> int.to_string(entry.minutes)
-      })
-    ]
-  }
-  let excluded_lines = case excluded {
-    [] -> ["none"]
-    _ -> [
-      "TASK_ID\tREASON",
-      ..list.map(excluded, fn(entry) {
-        int.to_string(entry.task_id) <> "\t" <> excluded_reason(entry.reason)
-      })
-    ]
-  }
+  let block_lines =
+    table_lines(blocks, "none", "START\tEND\tTASK_ID", fn(block) {
+      [
+        local_time.format_timestamp(
+          timestamp.from_unix_seconds(block.start_seconds),
+          offset,
+        ),
+        local_time.format_timestamp(
+          timestamp.from_unix_seconds(block.end_seconds),
+          offset,
+        ),
+        int.to_string(block.task_id),
+      ]
+      |> string.join("\t")
+    })
+  let unscheduled_lines =
+    table_lines(unscheduled, "none", "TASK_ID\tMINUTES", fn(entry) {
+      int.to_string(entry.task_id) <> "\t" <> int.to_string(entry.minutes)
+    })
+  let excluded_lines =
+    table_lines(excluded, "none", "TASK_ID\tREASON", fn(entry) {
+      int.to_string(entry.task_id) <> "\t" <> excluded_reason(entry.reason)
+    })
   Outcome(
     0,
     list.flatten([
