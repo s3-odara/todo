@@ -5,6 +5,7 @@ import gleam/string
 import gleam/time/calendar
 import gleam/time/duration.{type Duration}
 import gleam/time/timestamp.{type Timestamp}
+import tasks/domain/local_time
 
 /// A task deadline as an absolute instant, distinct from other scheduled times.
 pub opaque type Due {
@@ -49,19 +50,7 @@ pub fn parse_date(value: String) -> Result(calendar.Date, Nil) {
 
 /// Present a stored instant as the local minute at the supplied offset.
 pub fn format(value: Due, offset: Duration) -> String {
-  let #(date, time) = timestamp.to_calendar(instant(value), offset)
-  [
-    pad(date.year, 4),
-    "-",
-    pad(calendar.month_to_int(date.month), 2),
-    "-",
-    pad(date.day, 2),
-    "T",
-    pad(time.hours, 2),
-    ":",
-    pad(time.minutes, 2),
-  ]
-  |> string.concat
+  local_time.format_timestamp(instant(value), offset)
 }
 
 /// Deliberately unwrap a deadline when an absolute-time API is required.
@@ -118,8 +107,4 @@ fn digits(values: List(String)) -> Bool {
 
 fn slice_int(s: String, start: Int, length: Int) -> Result(Int, Nil) {
   string.slice(s, start, length) |> int.parse
-}
-
-fn pad(value: Int, width: Int) -> String {
-  value |> int.to_string |> string.pad_start(width, "0")
 }

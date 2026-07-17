@@ -6,7 +6,7 @@ import gleam/result
 import gleam/string
 import gleam/time/calendar
 import gleam/time/duration.{type Duration}
-import gleam/time/timestamp.{type Timestamp}
+import gleam/time/timestamp
 import tasks/domain/availability.{type Availability, type Mutation}
 import tasks/domain/due.{type Due}
 import tasks/domain/filter.{
@@ -468,8 +468,8 @@ pub fn availability_listed(value: Availability) -> Outcome {
             [
               "weekly",
               availability.weekday_string(entry.day),
-              minute_text(interval.from),
-              minute_text(interval.to),
+              local_time.format_minute_of_day(interval.from),
+              local_time.format_minute_of_day(interval.to),
             ]
             |> string.join("\t")
           })
@@ -484,8 +484,8 @@ pub fn availability_listed(value: Availability) -> Outcome {
                 [
                   "override",
                   date,
-                  minute_text(interval.from),
-                  minute_text(interval.to),
+                  local_time.format_minute_of_day(interval.from),
+                  local_time.format_minute_of_day(interval.to),
                 ]
                 |> string.join("\t")
               })
@@ -498,12 +498,6 @@ pub fn availability_listed(value: Availability) -> Outcome {
 
 pub fn availability_updated() -> Outcome {
   Outcome(0, ["Availability updated."], [])
-}
-
-fn minute_text(value: Int) -> String {
-  let hour = value / 60 |> int.to_string |> string.pad_start(2, "0")
-  let minute = value % 60 |> int.to_string |> string.pad_start(2, "0")
-  hour <> ":" <> minute
 }
 
 pub fn listed(
@@ -549,11 +543,11 @@ pub fn scheduled_listed(listing: ScheduledListing) -> Outcome {
           ..list.map(items, fn(item) {
             let ScheduledItem(block, task) = item
             [
-              timestamp_text(
+              local_time.format_timestamp(
                 timestamp.from_unix_seconds(block.start_seconds),
                 offset,
               ),
-              timestamp_text(
+              local_time.format_timestamp(
                 timestamp.from_unix_seconds(block.end_seconds),
                 offset,
               ),
@@ -588,11 +582,14 @@ pub fn schedule_generated(
       "START\tEND\tTASK_ID",
       ..list.map(blocks, fn(block) {
         [
-          timestamp_text(
+          local_time.format_timestamp(
             timestamp.from_unix_seconds(block.start_seconds),
             offset,
           ),
-          timestamp_text(timestamp.from_unix_seconds(block.end_seconds), offset),
+          local_time.format_timestamp(
+            timestamp.from_unix_seconds(block.end_seconds),
+            offset,
+          ),
           int.to_string(block.task_id),
         ]
         |> string.join("\t")
@@ -622,9 +619,9 @@ pub fn schedule_generated(
     list.flatten([
       [
         "SCHEDULE\tGENERATED_AT\t"
-          <> timestamp_text(generated_at, offset)
+          <> local_time.format_timestamp(generated_at, offset)
           <> "\tPLANNING_START\t"
-          <> timestamp_text(planning_start, offset),
+          <> local_time.format_timestamp(planning_start, offset),
         "BLOCKS",
       ],
       block_lines,
@@ -644,18 +641,6 @@ fn excluded_reason(reason: scheduling_model.ExcludedReason) -> String {
     scheduling_model.MissingDue -> "missing_due"
     scheduling_model.DeadlineNotAfterStart -> "deadline_not_after_start"
   }
-}
-
-fn timestamp_text(value: Timestamp, offset: Duration) -> String {
-  let #(date, time) = timestamp.to_calendar(value, offset)
-  [
-    local_time.format_date(date),
-    "T",
-    time.hours |> int.to_string |> string.pad_start(2, "0"),
-    ":",
-    time.minutes |> int.to_string |> string.pad_start(2, "0"),
-  ]
-  |> string.concat
 }
 
 fn task_line(task: Todo, offset: Duration) -> String {
