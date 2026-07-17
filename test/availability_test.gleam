@@ -51,18 +51,36 @@ pub fn date_add_and_delete_copy_weekly_before_overriding_test() {
   |> should.equal([Interval(540, 600), Interval(660, 720)])
 }
 
-pub fn close_and_reset_are_distinct_test() {
+pub fn close_overrides_weekly_availability_with_no_hours_test() {
+  let monday = Date(2026, July, 20)
+  let weekly =
+    availability.empty()
+    |> availability.weekly_add([Mon], Interval(540, 720))
+
+  let closed = availability.date_close(weekly, monday)
+
+  availability.effective(closed, monday) |> should.equal([])
+}
+
+pub fn reset_restores_weekly_availability_after_close_test() {
   let monday = Date(2026, July, 20)
   let weekly =
     availability.empty()
     |> availability.weekly_add([Mon], Interval(540, 720))
   let closed = availability.date_close(weekly, monday)
-  availability.effective(closed, monday) |> should.equal([])
-  let #(reset, changed) = availability.date_reset(closed, monday)
-  changed |> should.be_true
+
+  let reset = availability.date_reset(closed, monday)
+
   availability.effective(reset, monday) |> should.equal([Interval(540, 720)])
-  let #(_, changed_again) = availability.date_reset(reset, monday)
-  changed_again |> should.be_false
+}
+
+pub fn reset_without_an_override_leaves_availability_unchanged_test() {
+  let monday = Date(2026, July, 20)
+  let weekly =
+    availability.empty()
+    |> availability.weekly_add([Mon], Interval(540, 720))
+
+  availability.date_reset(weekly, monday) |> should.equal(weekly)
 }
 
 pub fn local_minute_parser_enforces_strict_boundaries_test() {

@@ -152,19 +152,9 @@ pub fn weekly_add(
   days: List(Weekday),
   interval: Interval,
 ) -> Availability {
-  let Availability(weekly, overrides) = value
-  Availability(
-    days
-      |> list.fold(weekly, fn(entries, day) {
-        put_weekly(
-          entries,
-          day,
-          add_intervals(weekly_for(entries, day), interval),
-        )
-      })
-      |> sort_weekly,
-    overrides,
-  )
+  update_weekly(value, days, fn(intervals) {
+    add_intervals(intervals, interval)
+  })
 }
 
 pub fn weekly_delete(
@@ -172,15 +162,17 @@ pub fn weekly_delete(
   days: List(Weekday),
   interval: Interval,
 ) -> Availability {
+  update_weekly(value, days, fn(intervals) {
+    delete_intervals(intervals, interval)
+  })
+}
+
+fn update_weekly(value, days, update) {
   let Availability(weekly, overrides) = value
   Availability(
     days
       |> list.fold(weekly, fn(entries, day) {
-        put_weekly(
-          entries,
-          day,
-          delete_intervals(weekly_for(entries, day), interval),
-        )
+        put_weekly(entries, day, update(weekly_for(entries, day)))
       })
       |> sort_weekly,
     overrides,
@@ -215,10 +207,9 @@ pub fn date_close(value: Availability, date: Date) -> Availability {
   put_override(value, date, [])
 }
 
-pub fn date_reset(value: Availability, date: Date) -> #(Availability, Bool) {
+pub fn date_reset(value: Availability, date: Date) -> Availability {
   let Availability(weekly, overrides) = value
-  let updated = list.filter(overrides, fn(entry) { entry.date != date })
-  #(Availability(weekly, updated), updated != overrides)
+  Availability(weekly, list.filter(overrides, fn(entry) { entry.date != date }))
 }
 
 pub fn effective(value: Availability, date: Date) -> List(Interval) {
@@ -239,17 +230,14 @@ pub fn effective(value: Availability, date: Date) -> List(Interval) {
   }
 }
 
-pub fn apply(value: Availability, mutation: Mutation) -> #(Availability, Bool) {
+pub fn apply(value: Availability, mutation: Mutation) -> Availability {
   case mutation {
-    AddWeekly(days, interval) -> #(weekly_add(value, days, interval), True)
-    DeleteWeekly(days, interval) -> #(
-      weekly_delete(value, days, interval),
-      True,
-    )
-    SetDate(date, interval) -> #(date_set(value, date, interval), True)
-    AddDate(date, interval) -> #(date_add(value, date, interval), True)
-    DeleteDate(date, interval) -> #(date_delete(value, date, interval), True)
-    CloseDate(date) -> #(date_close(value, date), True)
+    AddWeekly(days, interval) -> weekly_add(value, days, interval)
+    DeleteWeekly(days, interval) -> weekly_delete(value, days, interval)
+    SetDate(date, interval) -> date_set(value, date, interval)
+    AddDate(date, interval) -> date_add(value, date, interval)
+    DeleteDate(date, interval) -> date_delete(value, date, interval)
+    CloseDate(date) -> date_close(value, date)
     ResetDate(date) -> date_reset(value, date)
   }
 }

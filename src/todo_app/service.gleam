@@ -128,10 +128,12 @@ pub fn mutate_availability(
   mutation: Mutation,
 ) -> Result(Nil, ServiceError) {
   persist_state(store, fn(state) {
-    let #(updated, changed) = availability.apply(state.availability, mutation)
-    case changed {
-      True -> Ok(Persist(AppState(..state, availability: updated), Nil))
-      False -> Ok(Keep(Nil))
+    let updated = availability.apply(state.availability, mutation)
+    // Structural equality keeps explicit overrides meaningful while avoiding
+    // persistence for mutations that leave the stored availability unchanged.
+    case updated == state.availability {
+      True -> Ok(Keep(Nil))
+      False -> Ok(Persist(AppState(..state, availability: updated), Nil))
     }
   })
 }

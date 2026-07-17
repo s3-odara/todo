@@ -219,11 +219,55 @@ pub fn availability_save_failure_is_reported_test() {
   |> should.equal(Error(service.Persisted("disk")))
 }
 
-pub fn reset_without_an_override_is_a_noop_and_does_not_save_test() {
+pub fn reset_without_override_succeeds_when_saving_is_unavailable_test() {
   let store =
-    Store(fn() { Ok(state_with([])) }, fn(_) { panic as "save must not run" })
+    Store(fn() { Ok(state_with([])) }, fn(_) { Error("unexpected save") })
   let assert Ok(date) = due.parse_date("2026-07-20")
+
   service.mutate_availability(store, availability.ResetDate(date))
+  |> should.equal(Ok(Nil))
+}
+
+pub fn readding_existing_weekly_availability_succeeds_when_saving_is_unavailable_test() {
+  let interval = availability.Interval(540, 720)
+  let existing =
+    availability.Availability(
+      [availability.WeeklyAvailability(availability.Mon, [interval])],
+      [],
+    )
+  let store =
+    Store(fn() { Ok(AppState([], existing, None)) }, fn(_) {
+      Error("unexpected save")
+    })
+
+  service.mutate_availability(
+    store,
+    availability.AddWeekly([availability.Mon], interval),
+  )
+  |> should.equal(Ok(Nil))
+}
+
+pub fn explicit_date_override_is_saved_when_effective_hours_are_unchanged_test() {
+  let interval = availability.Interval(540, 720)
+  let weekly =
+    availability.Availability(
+      [availability.WeeklyAvailability(availability.Mon, [interval])],
+      [],
+    )
+  let assert Ok(date) = due.parse_date("2026-07-20")
+  let store =
+    Store(fn() { Ok(AppState([], weekly, None)) }, fn(state) {
+      state.availability
+      |> should.equal(
+        availability.Availability(
+          [availability.WeeklyAvailability(availability.Mon, [interval])],
+          [availability.DateOverride(date, [interval])],
+        ),
+      )
+      Ok(Nil)
+    })
+
+  service.mutate_availability(store, availability.AddDate(date, interval))
   |> should.equal(Ok(Nil))
 }
 
