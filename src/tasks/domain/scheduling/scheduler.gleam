@@ -4,6 +4,7 @@ import gleam/result
 import gleam/time/duration.{type Duration}
 import gleam/time/timestamp.{type Timestamp}
 import tasks/domain/app_state.{type AppState, AppState}
+import tasks/domain/local_time
 import tasks/domain/scheduling/eligibility
 import tasks/domain/scheduling/greedy
 import tasks/domain/scheduling/hill_climb
@@ -28,7 +29,7 @@ pub fn context(now: Timestamp, utc_offset: Duration) -> PlanningContext {
   let local_nanoseconds =
     { seconds + offset_seconds } * 1_000_000_000 + nanoseconds
   let minute_nanoseconds = 60_000_000_000
-  let remainder = invariant.floor_mod(local_nanoseconds, minute_nanoseconds)
+  let remainder = local_time.floor_mod(local_nanoseconds, minute_nanoseconds)
   let rounded = case remainder == 0 {
     True -> local_nanoseconds
     False -> local_nanoseconds + minute_nanoseconds - remainder
@@ -48,7 +49,7 @@ pub fn generate(
 ) -> Result(GenerationResult, SchedulingError) {
   let AppState(tasks: all_tasks, availability: availability, ..) = state
   let PlanningContext(generated_at, planning_timestamp, offset) = context
-  let planning_start = invariant.seconds(planning_timestamp)
+  let planning_start = timestamp_seconds(planning_timestamp)
   let eligibility.Classification(eligible, excluded) =
     eligibility.classify(all_tasks, planning_start)
   let horizon =
@@ -67,14 +68,14 @@ pub fn generate(
   let space = SearchSpace(projected, planning_start, offset)
   let initial = greedy.build(eligible, space)
   let blocks = hill_climb.improve(initial, eligible, space).blocks
-  use canonical <- result.try(
+  use _ <- result.try(
     invariant.validate_generation(blocks, eligible, space)
     |> result.map_error(fn(_) { InvalidGeneratedSchedule }),
   )
   let unscheduled =
     eligible
     |> list.map(fn(task) {
-      let own = list.filter(canonical, fn(block) { block.task_id == task.id })
+      let own = list.filter(blocks, fn(block) { block.task_id == task.id })
       UnscheduledTask(
         task.id,
         task.estimate_minutes - score.placed_minutes(own),
@@ -82,7 +83,12 @@ pub fn generate(
     })
     |> list.filter(fn(entry) { entry.minutes > 0 })
   Ok(GenerationResult(
-    SavedSchedule(generated_at, planning_timestamp, offset, canonical),
+    SavedSchedule(generated_at, planning_timestamp, offset, blocks),
     GenerationReport(unscheduled, excluded),
   ))
+}
+
+fn timestamp_seconds(value: Timestamp) -> Int {
+  let #(seconds, _) = timestamp.to_unix_seconds_and_nanoseconds(value)
+  seconds
 }

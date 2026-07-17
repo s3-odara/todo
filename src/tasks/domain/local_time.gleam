@@ -51,3 +51,12 @@ pub fn next_date(value: Date) -> Result(Date, Nil) {
     True -> Ok(date.next(value))
   }
 }
+
+/// Mathematical modulo for time alignment before the Unix epoch.
+pub fn floor_mod(value: Int, modulus: Int) -> Int {
+  let raw = value % modulus
+  case raw < 0 {
+    True -> raw + modulus
+    False -> raw
+  }
+}

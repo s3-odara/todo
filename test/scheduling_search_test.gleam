@@ -78,18 +78,18 @@ fn scheduling_tasks(
 pub fn context_rounds_exact_negative_nanosecond_and_second_offset_test() {
   let exact =
     scheduler.context(timestamp.from_unix_seconds(-60), duration.seconds(0))
-  invariant.seconds(exact.planning_start) |> should.equal(-60)
+  exact.planning_start |> should.equal(timestamp.from_unix_seconds(-60))
 
   let partial =
     scheduler.context(
       timestamp.from_unix_seconds_and_nanoseconds(seconds: 0, nanoseconds: 1),
       duration.seconds(0),
     )
-  invariant.seconds(partial.planning_start) |> should.equal(60)
+  partial.planning_start |> should.equal(timestamp.from_unix_seconds(60))
 
   let odd_offset =
     scheduler.context(timestamp.from_unix_seconds(0), duration.seconds(30))
-  invariant.seconds(odd_offset.planning_start) |> should.equal(30)
+  odd_offset.planning_start |> should.equal(timestamp.from_unix_seconds(30))
 }
 
 pub fn deterministic_generation_respects_availability_test() {

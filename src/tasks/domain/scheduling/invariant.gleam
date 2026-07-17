@@ -2,7 +2,7 @@ import gleam/int
 import gleam/list
 import gleam/option
 import gleam/order
-import gleam/time/timestamp
+import tasks/domain/local_time
 import tasks/domain/model as task_model
 import tasks/domain/scheduling/model.{
   type ScheduleBlock, type SchedulingTask, ScheduleBlock,
@@ -60,7 +60,7 @@ pub fn validate_generation(
   blocks: List(ScheduleBlock),
   tasks: List(SchedulingTask),
   space: SearchSpace,
-) -> Result(List(ScheduleBlock), InvariantError) {
+) -> Result(Nil, InvariantError) {
   let SearchSpace(projected, planning_start, utc_offset_seconds) = space
   let canonical = canonicalize(blocks)
   case
@@ -73,7 +73,7 @@ pub fn validate_generation(
     && contained(canonical, projected)
     && task_constraints(tasks, canonical)
   {
-    True -> Ok(canonical)
+    True -> Ok(Nil)
     False -> Error(InvalidSchedule)
   }
 }
@@ -83,7 +83,7 @@ pub fn validate_persisted(
   blocks: List(ScheduleBlock),
   tasks: List(task_model.Todo),
   utc_offset_seconds: Int,
-) -> Result(List(ScheduleBlock), InvariantError) {
+) -> Result(Nil, InvariantError) {
   case
     blocks == canonicalize(blocks)
     && structural(blocks, utc_offset_seconds)
@@ -91,7 +91,7 @@ pub fn validate_persisted(
       list.any(tasks, fn(task) { task.id == id })
     })
   {
-    True -> Ok(blocks)
+    True -> Ok(Nil)
     False -> Error(InvalidSchedule)
   }
 }
@@ -102,8 +102,8 @@ fn structural(blocks: List(ScheduleBlock), offset: Int) -> Bool {
     let start = block.start_seconds
     let end = block.end_seconds
     start < end
-    && floor_mod(start + offset, 60) == 0
-    && floor_mod(end + offset, 60) == 0
+    && local_time.floor_mod(start + offset, 60) == 0
+    && local_time.floor_mod(end + offset, 60) == 0
   })
 }
 
@@ -213,18 +213,5 @@ pub fn block_key_compare(a: ScheduleBlock, b: ScheduleBlock) -> order.Order {
         other -> other
       }
     other -> other
-  }
-}
-
-pub fn seconds(value) -> Int {
-  let #(seconds, _) = timestamp.to_unix_seconds_and_nanoseconds(value)
-  seconds
-}
-
-pub fn floor_mod(value: Int, modulus: Int) -> Int {
-  let raw = value % modulus
-  case raw < 0 {
-    True -> raw + modulus
-    False -> raw
   }
 }

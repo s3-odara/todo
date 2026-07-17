@@ -476,7 +476,7 @@ fn exact_assignments(
         )
       {
         Error(_) -> best
-        Ok(valid) -> choose_score(best, score.evaluate(tasks, valid, 0))
+        Ok(_) -> choose_score(best, score.evaluate(tasks, blocks, 0))
       }
     }
     _ ->
