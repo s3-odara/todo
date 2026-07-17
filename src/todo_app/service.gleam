@@ -43,14 +43,11 @@ pub fn list(
   store: Store,
   filter: ResolvedListFilter,
 ) -> Result(List(Todo), ServiceError) {
-  let Store(load, _) = store
-  load()
-  |> result.map(fn(state) {
+  read_state(store, fn(state) {
     state.tasks
     |> tasks.visible(filter)
     |> tasks.sorted_by_id
   })
-  |> result.map_error(Persisted)
 }
 
 pub fn generate_schedule(
@@ -75,12 +72,9 @@ pub fn scheduled_list(
   scheduled_filter: ScheduledFilter,
   now: Option(Timestamp),
 ) -> Result(ScheduledListing, ServiceError) {
-  let Store(load, _) = store
-  load()
-  |> result.map(fn(state) {
+  read_state(store, fn(state) {
     build_scheduled_listing(state, status, scheduled_filter, now)
   })
-  |> result.map_error(Persisted)
 }
 
 fn build_scheduled_listing(
@@ -128,10 +122,7 @@ pub fn done(store: Store, id: Int) -> Result(Todo, ServiceError) {
 }
 
 pub fn availability_list(store: Store) -> Result(Availability, ServiceError) {
-  let Store(load, _) = store
-  load()
-  |> result.map(fn(state) { state.availability })
-  |> result.map_error(Persisted)
+  read_state(store, fn(state) { state.availability })
 }
 
 pub fn mutate_availability(
@@ -147,6 +138,16 @@ pub fn mutate_availability(
       False -> Ok(Persist(AppState(..state, availability: updated), Nil))
     }
   })
+}
+
+fn read_state(
+  store: Store,
+  query: fn(AppState) -> value,
+) -> Result(value, ServiceError) {
+  let Store(load, _) = store
+  load()
+  |> result.map(query)
+  |> result.map_error(Persisted)
 }
 
 fn persist_state(
