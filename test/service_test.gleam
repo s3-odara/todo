@@ -7,8 +7,8 @@ import tasks/domain/app_state.{AppState}
 import tasks/domain/availability
 import tasks/domain/due
 import tasks/domain/filter.{
-  AllScheduled, AllStatuses, DueWindow, ListFilter, PendingOnly, ScheduledDate,
-  ScheduledExact, Today,
+  AllStatuses, DueWindow, ListFilter, PendingOnly, ResolvedAllScheduled,
+  ResolvedScheduledDate, ResolvedScheduledToday, Today,
 }
 import tasks/domain/local_time
 import tasks/domain/model.{
@@ -305,13 +305,14 @@ pub fn scheduled_list_joins_current_task_status_without_saving_test() {
       ),
     ])
 
-  service.scheduled_list(store, AllStatuses, AllScheduled, None)
+  service.scheduled_list(store, AllStatuses, ResolvedAllScheduled)
+  |> should.equal(Ok(expected))
+  service.scheduled_list(store, AllStatuses, ResolvedScheduledToday(start))
   |> should.equal(Ok(expected))
   service.scheduled_list(
     store,
     PendingOnly,
-    ScheduledExact(ScheduledDate(calendar.Date(2026, calendar.July, 24))),
-    None,
+    ResolvedScheduledDate(calendar.Date(2026, calendar.July, 24)),
   )
   |> should.equal(Ok(service.ScheduledListing(32_400, [])))
 }

@@ -351,12 +351,19 @@ pub fn scheduled_list_conflicts_and_invalid_ranges_are_rejected_test() {
 }
 
 pub fn explicit_scheduled_list_does_not_read_clock_test() {
-  runtime.run(
-    cli.List(ScheduledList(PendingOnly, AllScheduled)),
-    store_with([]),
-    clock_must_not_run,
-  )
-  |> should.equal(cli.Outcome(0, ["No scheduled tasks."], []))
+  [
+    AllScheduled,
+    ScheduledExact(ScheduledDate(today())),
+    ScheduledRange(Some(today()), None),
+  ]
+  |> list.each(fn(scheduled_filter) {
+    runtime.run(
+      cli.List(ScheduledList(PendingOnly, scheduled_filter)),
+      store_with([]),
+      clock_must_not_run,
+    )
+    |> should.equal(cli.Outcome(0, ["No scheduled tasks."], []))
+  })
 }
 
 pub fn list_due_options_parse_to_typed_filters_test() {

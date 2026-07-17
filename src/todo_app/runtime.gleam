@@ -1,9 +1,6 @@
-import gleam/option.{None, Some}
 import gleam/time/duration.{type Duration}
 import gleam/time/timestamp.{type Timestamp}
-import tasks/domain/filter.{
-  ScheduledExact, ScheduledList, ScheduledToday, TaskList,
-}
+import tasks/domain/filter.{ScheduledList, TaskList}
 import tasks/domain/scheduling/scheduler
 import todo_app/cli.{
   type Command, type Outcome, Add, AvailabilityList, GenerateSchedule, Help,
@@ -29,14 +26,18 @@ pub fn run(
       |> service_outcome(fn(items) { cli.listed(items, status, offset) })
     }
     List(ScheduledList(status, scheduled_filter)) -> {
-      let now = case scheduled_filter {
-        ScheduledExact(ScheduledToday) -> {
+      let resolved = case scheduled_filter {
+        filter.AllScheduled -> filter.ResolvedAllScheduled
+        filter.ScheduledExact(filter.ScheduledDate(date)) ->
+          filter.ResolvedScheduledDate(date)
+        filter.ScheduledExact(filter.ScheduledToday) -> {
           let #(current, _) = clock()
-          Some(current)
+          filter.ResolvedScheduledToday(current)
         }
-        _ -> None
+        filter.ScheduledRange(since, until) ->
+          filter.ResolvedScheduledRange(since, until)
       }
-      service.scheduled_list(store, status, scheduled_filter, now)
+      service.scheduled_list(store, status, resolved)
       |> service_outcome(cli.scheduled_listed)
     }
     GenerateSchedule -> {

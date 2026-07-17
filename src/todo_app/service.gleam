@@ -1,11 +1,12 @@
 import gleam/list
-import gleam/option.{type Option, None, Some}
+import gleam/option.{None, Some}
 import gleam/result
 import gleam/time/duration
-import gleam/time/timestamp.{type Timestamp}
 import tasks/domain/app_state.{type AppState, AppState}
 import tasks/domain/availability.{type Availability, type Mutation}
-import tasks/domain/filter.{type ResolvedListFilter, type ScheduledFilter}
+import tasks/domain/filter.{
+  type ResolvedListFilter, type ResolvedScheduledFilter,
+}
 import tasks/domain/model.{type TaskError, type Todo, type ValidatedAdd}
 import tasks/domain/scheduling/invariant
 import tasks/domain/scheduling/model as scheduling_model
@@ -69,25 +70,23 @@ pub fn generate_schedule(
 pub fn scheduled_list(
   store: Store,
   status: filter.StatusFilter,
-  scheduled_filter: ScheduledFilter,
-  now: Option(Timestamp),
+  scheduled_filter: ResolvedScheduledFilter,
 ) -> Result(ScheduledListing, ServiceError) {
   read_state(store, fn(state) {
-    build_scheduled_listing(state, status, scheduled_filter, now)
+    build_scheduled_listing(state, status, scheduled_filter)
   })
 }
 
 fn build_scheduled_listing(
   state: AppState,
   status: filter.StatusFilter,
-  scheduled_filter: ScheduledFilter,
-  now: Option(Timestamp),
+  scheduled_filter: ResolvedScheduledFilter,
 ) -> ScheduledListing {
   case state.current_schedule {
     None -> ScheduledListing(0, [])
     Some(saved) -> {
       let offset = duration.seconds(saved.utc_offset_seconds)
-      let window = filter.scheduled_window(scheduled_filter, now, offset)
+      let window = filter.scheduled_window(scheduled_filter, offset)
       let items =
         saved.blocks
         |> list.filter_map(fn(block) {

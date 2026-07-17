@@ -34,6 +34,17 @@ pub type ScheduledFilter {
   ScheduledRange(since: Option(calendar.Date), until: Option(calendar.Date))
 }
 
+/// A scheduled filter after runtime-relative inputs have been frozen.
+pub type ResolvedScheduledFilter {
+  ResolvedAllScheduled
+  ResolvedScheduledDate(calendar.Date)
+  ResolvedScheduledToday(Timestamp)
+  ResolvedScheduledRange(
+    since: Option(calendar.Date),
+    until: Option(calendar.Date),
+  )
+}
+
 pub type ListQuery {
   TaskList(ListFilter)
   ScheduledList(status: StatusFilter, filter: ScheduledFilter)
@@ -87,19 +98,17 @@ pub fn status_matches(filter: StatusFilter, status: Status) -> Bool {
 }
 
 pub fn scheduled_window(
-  filter: ScheduledFilter,
-  now: Option(Timestamp),
+  filter: ResolvedScheduledFilter,
   offset: Duration,
 ) -> Option(ResolvedDueFilter) {
   case filter {
-    AllScheduled -> None
-    ScheduledExact(ScheduledDate(date)) -> Some(day_window(date, offset))
-    ScheduledExact(ScheduledToday) -> {
-      let assert Some(current) = now
+    ResolvedAllScheduled -> None
+    ResolvedScheduledDate(date) -> Some(day_window(date, offset))
+    ResolvedScheduledToday(current) -> {
       let #(date, _) = timestamp.to_calendar(current, offset)
       Some(day_window(date, offset))
     }
-    ScheduledRange(since, until) ->
+    ResolvedScheduledRange(since, until) ->
       Some(DueWindow(
         option.map(since, fn(date) { start_of_day(date, offset) }),
         option.map(until, fn(date) { end_of_day_exclusive(date, offset) }),
