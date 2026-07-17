@@ -2,7 +2,7 @@ import gleam/dynamic/decode
 import gleam/int
 import gleam/json
 import gleam/list
-import gleam/option.{type Option, None, Some}
+import gleam/option.{None}
 import gleam/order
 import gleam/result
 import gleam/time/calendar
@@ -19,14 +19,16 @@ import tasks/domain/model.{
   type Todo, Pending, Todo, parse_status, status_to_string,
 }
 import tasks/domain/policy.{Spread}
-import tasks/domain/scheduling/invariant as scheduling_invariant
 import tasks/domain/scheduling/model as scheduling_model
 import tasks/domain/validation
 
 pub fn decode(text: String) -> Result(AppState, String) {
   json.parse(from: text, using: state_decoder())
   |> result.map_error(fn(_) { "invalid JSON" })
-  |> result.try(validate_state)
+  |> result.try(fn(state) {
+    app_state.validate_aggregate(state)
+    |> result.map_error(fn(_) { "invalid JSON" })
+  })
 }
 
 fn state_decoder() {
@@ -140,7 +142,7 @@ fn date_override_decoder() {
 fn interval_decoder() {
   use from <- decode.field("from", decode.int)
   use to <- decode.field("to", decode.int)
-  // Aggregate domain validation below owns interval and ordering invariants.
+  // AppState aggregate validation owns interval and ordering invariants.
   decode.success(Interval(from, to))
 }
 
@@ -181,44 +183,6 @@ fn schedule_block_decoder() {
   use start <- decode.field("start", decode.int)
   use end <- decode.field("end", decode.int)
   decode.success(scheduling_model.ScheduleBlock(task_id, start, end))
-}
-
-fn validate_state(state: AppState) -> Result(AppState, String) {
-  let AppState(tasks: tasks, availability: value, current_schedule: schedule) =
-    state
-  case
-    all_unique_by(tasks, fn(task) { task.id })
-    && availability.is_canonical(value)
-    && valid_schedule(schedule, tasks)
-  {
-    True -> Ok(state)
-    False -> Error("invalid JSON")
-  }
-}
-
-fn valid_schedule(
-  schedule: Option(scheduling_model.SavedSchedule),
-  tasks: List(Todo),
-) -> Bool {
-  case schedule {
-    None -> True
-    Some(saved) ->
-      case
-        scheduling_invariant.validate_persisted(
-          saved.blocks,
-          tasks,
-          saved.utc_offset_seconds,
-        )
-      {
-        Ok(_) -> True
-        Error(_) -> False
-      }
-  }
-}
-
-fn all_unique_by(values: List(value), key: fn(value) -> key) -> Bool {
-  let keys = list.map(values, key)
-  keys == list.unique(keys)
 }
 
 pub fn encode(state: AppState) -> String {
