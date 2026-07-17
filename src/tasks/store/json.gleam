@@ -140,10 +140,8 @@ fn date_override_decoder() {
 fn interval_decoder() {
   use from <- decode.field("from", decode.int)
   use to <- decode.field("to", decode.int)
-  case from >= 0 && from < to && to <= 1440 {
-    True -> decode.success(Interval(from, to))
-    False -> decode.failure(Interval(0, 1), expected: "availability interval")
-  }
+  // Aggregate domain validation below owns interval and ordering invariants.
+  decode.success(Interval(from, to))
 }
 
 fn weekday_decoder() {
@@ -188,25 +186,9 @@ fn schedule_block_decoder() {
 fn validate_state(state: AppState) -> Result(AppState, String) {
   let AppState(tasks: tasks, availability: value, current_schedule: schedule) =
     state
-  let Availability(weekly, overrides) = value
   case
     all_unique_by(tasks, fn(task) { task.id })
-    && all_unique_by(weekly, fn(entry) { entry.day })
-    && all_unique_by(overrides, fn(entry) { entry.date })
-    && weekly
-    == list.sort(weekly, by: fn(a, b) {
-      int.compare(weekday_number(a.day), weekday_number(b.day))
-    })
-    && overrides
-    == list.sort(overrides, by: fn(a, b) {
-      calendar.naive_date_compare(a.date, b.date)
-    })
-    && list.all(weekly, fn(entry) {
-      entry.intervals != [] && availability.is_canonical(entry.intervals)
-    })
-    && list.all(overrides, fn(entry) {
-      availability.is_canonical(entry.intervals)
-    })
+    && availability.is_canonical(value)
     && valid_schedule(schedule, tasks)
   {
     True -> Ok(state)

@@ -85,6 +85,7 @@ pub fn duplicate_and_noncanonical_availability_is_rejected_test() {
   let values = [
     "{\"weekly\":[{\"day\":\"mon\",\"intervals\":[{\"from\":540,\"to\":600}]},{\"day\":\"mon\",\"intervals\":[{\"from\":660,\"to\":720}]}],\"overrides\":[]}",
     "{\"weekly\":[{\"day\":\"mon\",\"intervals\":[{\"from\":540,\"to\":600},{\"from\":600,\"to\":660}]}],\"overrides\":[]}",
+    "{\"weekly\":[{\"day\":\"mon\",\"intervals\":[{\"from\":-1,\"to\":60}]}],\"overrides\":[]}",
     "{\"weekly\":[{\"day\":\"mon\",\"intervals\":[]}],\"overrides\":[]}",
     "{\"weekly\":[{\"day\":\"fri\",\"intervals\":[{\"from\":540,\"to\":600}]},{\"day\":\"mon\",\"intervals\":[{\"from\":540,\"to\":600}]}],\"overrides\":[]}",
     "{\"weekly\":[],\"overrides\":[{\"date\":\"2026-07-21\",\"intervals\":[]},{\"date\":\"2026-07-21\",\"intervals\":[]}]}",

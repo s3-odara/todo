@@ -113,8 +113,22 @@ pub fn canonicalize(values: List(Interval)) -> List(Interval) {
   |> list.reverse
 }
 
-pub fn is_canonical(values: List(Interval)) -> Bool {
+pub fn intervals_are_canonical(values: List(Interval)) -> Bool {
   values == canonicalize(values) && list.all(values, valid_interval)
+}
+
+/// Validate the aggregate shape maintained by availability mutations.
+/// Persistence rejects noncanonical input rather than silently normalizing it.
+pub fn is_canonical(value: Availability) -> Bool {
+  let Availability(weekly, overrides) = value
+  all_unique_by(weekly, fn(entry) { entry.day })
+  && all_unique_by(overrides, fn(entry) { entry.date })
+  && weekly == sort_weekly(weekly)
+  && overrides == sort_overrides(overrides)
+  && list.all(weekly, fn(entry) {
+    entry.intervals != [] && intervals_are_canonical(entry.intervals)
+  })
+  && list.all(overrides, fn(entry) { intervals_are_canonical(entry.intervals) })
 }
 
 pub fn weekly_add(
@@ -317,6 +331,17 @@ fn sort_weekly(entries: List(WeeklyAvailability)) -> List(WeeklyAvailability) {
   })
 }
 
+fn sort_overrides(entries: List(DateOverride)) -> List(DateOverride) {
+  list.sort(entries, by: fn(a, b) {
+    calendar.naive_date_compare(a.date, b.date)
+  })
+}
+
+fn all_unique_by(values: List(value), key: fn(value) -> key) -> Bool {
+  let keys = list.map(values, key)
+  keys == list.unique(keys)
+}
+
 fn find_override(
   entries: List(DateOverride),
   date: Date,
@@ -337,6 +362,6 @@ fn put_override(value, date, intervals) {
   Availability(
     weekly,
     [DateOverride(date, canonicalize(intervals)), ..without]
-      |> list.sort(by: fn(a, b) { calendar.naive_date_compare(a.date, b.date) }),
+      |> sort_overrides,
   )
 }

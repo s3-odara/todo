@@ -1,3 +1,4 @@
+import gleam/list
 import gleam/time/calendar.{Date, December, February, January, July}
 import gleeunit/should
 import tasks/domain/availability.{
@@ -91,6 +92,27 @@ pub fn local_minute_parser_enforces_strict_boundaries_test() {
   let assert Error(_) = availability.parse_interval("10:00", "09:00")
   let assert Error(_) = availability.parse_interval("9:00", "10:00")
   let assert Error(_) = availability.parse_interval("０9:00", "10:00")
+}
+
+pub fn aggregate_canonicality_is_a_domain_rule_test() {
+  let canonical =
+    Availability(
+      [
+        WeeklyAvailability(Mon, [Interval(540, 720)]),
+        WeeklyAvailability(Fri, [Interval(780, 840)]),
+      ],
+      [DateOverride(Date(2026, July, 21), [])],
+    )
+  availability.is_canonical(canonical) |> should.be_true
+
+  let Availability(weekly, overrides) = canonical
+  availability.is_canonical(Availability(list.reverse(weekly), overrides))
+  |> should.be_false
+  availability.is_canonical(Availability(
+    [WeeklyAvailability(Mon, [])],
+    overrides,
+  ))
+  |> should.be_false
 }
 
 pub fn day_parser_rejects_duplicates_unknown_and_empty_parts_test() {
