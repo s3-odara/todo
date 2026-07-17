@@ -21,49 +21,28 @@ type Candidate {
   )
 }
 
-pub type RebuildResult {
-  RebuildResult(
-    blocks: List(scheduling_model.ScheduleBlock),
-    contributions: List(score.Contribution),
-  )
-}
-
-type PlacementResult {
-  PlacementResult(
-    blocks: List(scheduling_model.ScheduleBlock),
-    score: scheduling_model.Score,
-  )
-}
-
 pub fn build(
   tasks: List(task_model.Todo),
   space: SearchSpace,
 ) -> List(scheduling_model.ScheduleBlock) {
   tasks
   |> initial_order
-  |> list.fold([], fn(blocks, task) { place_task(blocks, task, space).blocks })
+  |> list.fold([], fn(blocks, task) { place_task(blocks, task, space) })
 }
 
 pub fn rebuild(
   blocks: List(scheduling_model.ScheduleBlock),
   selected: List(task_model.Todo),
   space: SearchSpace,
-) -> RebuildResult {
+) -> List(scheduling_model.ScheduleBlock) {
   let selected_ids = list.map(selected, fn(task) { task.id })
   let base =
     blocks
     |> list.filter(fn(block) { !list.contains(selected_ids, block.task_id) })
     |> invariant.canonicalize
-  let #(rebuilt, contributions) =
-    list.fold(selected, #(base, []), fn(state, task) {
-      let #(current, contributions) = state
-      let placed = place_task(current, task, space)
-      #(placed.blocks, [
-        score.Contribution(task.id, placed.score),
-        ..contributions
-      ])
-    })
-  RebuildResult(rebuilt, list.reverse(contributions))
+  list.fold(selected, base, fn(current, task) {
+    place_task(current, task, space)
+  })
 }
 
 pub fn initial_order(tasks: List(task_model.Todo)) -> List(task_model.Todo) {
@@ -74,7 +53,7 @@ fn place_task(
   blocks: List(scheduling_model.ScheduleBlock),
   task: task_model.Todo,
   space: SearchSpace,
-) -> PlacementResult {
+) -> List(scheduling_model.ScheduleBlock) {
   let SearchSpace(_, planning_start, _) = space
   let bounded_candidates =
     placement_candidates(blocks, task, space)
@@ -90,8 +69,7 @@ fn place_task(
       Candidate(block, score.evaluate_task(task, next_own, planning_start))
     })
   case best(candidates) {
-    option.None ->
-      PlacementResult(blocks, score.evaluate_task(task, blocks, planning_start))
+    option.None -> blocks
     option.Some(candidate) -> {
       let next = invariant.canonicalize([candidate.block, ..blocks])
       place_task(next, task, space)

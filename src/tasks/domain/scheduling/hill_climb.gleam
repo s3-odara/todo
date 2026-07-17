@@ -38,7 +38,6 @@ type SearchState {
   SearchState(
     blocks: List(scheduling_model.ScheduleBlock),
     contributions: List(score.Contribution),
-    total_score: scheduling_model.Score,
     accepted_moves: Int,
     accepted_scores_reversed: List(scheduling_model.Score),
   )
@@ -56,7 +55,7 @@ pub fn climb(
   let SearchSpace(_, planning_start, _) = space
   let contributions = score.contributions(tasks, initial, planning_start)
   climb_loop(
-    SearchState(initial, contributions, score.total(contributions), 0, []),
+    SearchState(initial, contributions, 0, []),
     tasks,
     neighborhood.generate(tasks, rebuild_candidate_limit)
       |> list.index_map(fn(rebuild, index) { IndexedRebuild(index, rebuild) }),
@@ -65,8 +64,8 @@ pub fn climb(
 }
 
 fn climb_loop(state, tasks, rebuild_candidates, space) {
-  let SearchState(blocks, contributions, current_score, accepted, scores) =
-    state
+  let SearchState(blocks, contributions, accepted, scores) = state
+  let current_score = score.total(contributions)
   case accepted >= accepted_move_limit {
     True -> HillResult(blocks, accepted, list.reverse(scores))
     False -> {
@@ -87,13 +86,10 @@ fn climb_loop(state, tasks, rebuild_candidates, space) {
             Error(_) -> HillResult(blocks, accepted, list.reverse(scores))
             Ok(valid) ->
               climb_loop(
-                SearchState(
-                  valid,
-                  next_contributions,
+                SearchState(valid, next_contributions, accepted + 1, [
                   next_score,
-                  accepted + 1,
-                  [next_score, ..scores],
-                ),
+                  ..scores
+                ]),
                 tasks,
                 rebuild_candidates,
                 space,
@@ -128,16 +124,17 @@ fn evaluate_chunk(
   current_score,
   space,
 ) {
+  let SearchSpace(_, planning_start, _) = space
   rebuild_candidates
   |> list.fold(option.None, fn(best, indexed) {
     let IndexedRebuild(index, rebuild) = indexed
     let selected = neighborhood.tasks(rebuild)
-    let greedy.RebuildResult(next, replacements) =
-      greedy.rebuild(blocks, selected, space)
+    let next = greedy.rebuild(blocks, selected, space)
     case next == blocks {
       True -> best
       False -> {
         // A rebuild changes only its selected tasks; reuse every other score.
+        let replacements = score.contributions(selected, next, planning_start)
         let next_contributions =
           score.replace_contributions(current_contributions, replacements)
         let next_score = score.total(next_contributions)
