@@ -10,13 +10,15 @@ import gleam/time/timestamp
 import tasks/domain/app_state.{type AppState, AppState}
 import tasks/domain/availability.{
   type Availability, type DateOverride, type Interval, type Weekday,
-  type WeeklyAvailability, Availability, DateOverride, Fri, Interval, Mon, Sat,
-  Sun, Thu, Tue, Wed, WeeklyAvailability, weekday_number, weekday_string,
+  type WeeklyAvailability, Availability, DateOverride, Interval, Mon,
+  WeeklyAvailability, weekday_number, weekday_string,
 }
 import tasks/domain/due
 import tasks/domain/local_time
-import tasks/domain/model.{type Status, type Todo, Done, Pending, Todo}
-import tasks/domain/policy.{type SchedulingPolicy, Asap, NearDeadline, Spread}
+import tasks/domain/model.{
+  type Todo, Pending, Todo, parse_status, status_to_string,
+}
+import tasks/domain/policy.{Spread}
 import tasks/domain/scheduling/invariant as scheduling_invariant
 import tasks/domain/scheduling/model as scheduling_model
 import tasks/domain/validation
@@ -81,10 +83,9 @@ fn task_decoder() {
 fn status_decoder() {
   decode.string
   |> decode.then(fn(value) {
-    case value {
-      "pending" -> decode.success(Pending)
-      "done" -> decode.success(Done)
-      _ -> decode.failure(Pending, expected: "task status")
+    case parse_status(value) {
+      Ok(status) -> decode.success(status)
+      Error(_) -> decode.failure(Pending, expected: "task status")
     }
   })
 }
@@ -92,11 +93,9 @@ fn status_decoder() {
 fn policy_decoder() {
   decode.string
   |> decode.then(fn(value) {
-    case value {
-      "asap" -> decode.success(Asap)
-      "spread" -> decode.success(Spread)
-      "near_deadline" -> decode.success(NearDeadline)
-      _ -> decode.failure(Spread, expected: "scheduling policy")
+    case policy.parse(value) {
+      Ok(policy) -> decode.success(policy)
+      Error(_) -> decode.failure(Spread, expected: "scheduling policy")
     }
   })
 }
@@ -150,15 +149,9 @@ fn interval_decoder() {
 fn weekday_decoder() {
   decode.string
   |> decode.then(fn(value) {
-    case value {
-      "mon" -> decode.success(Mon)
-      "tue" -> decode.success(Tue)
-      "wed" -> decode.success(Wed)
-      "thu" -> decode.success(Thu)
-      "fri" -> decode.success(Fri)
-      "sat" -> decode.success(Sat)
-      "sun" -> decode.success(Sun)
-      _ -> decode.failure(Mon, expected: "weekday")
+    case availability.parse_day(value) {
+      Ok(day) -> decode.success(day)
+      Error(_) -> decode.failure(Mon, expected: "weekday")
     }
   })
 }
@@ -305,8 +298,11 @@ fn task_json(task: Todo) -> json.Json {
     #("estimate_minutes", json.int(task.estimate_minutes)),
     #("priority", json.int(task.priority)),
     #("due", json.nullable(task.due, of: due_json)),
-    #("status", json.string(status_string(task.status))),
-    #("scheduling_policy", json.string(policy_string(task.scheduling_policy))),
+    #("status", json.string(status_to_string(task.status))),
+    #(
+      "scheduling_policy",
+      json.string(policy.to_string(task.scheduling_policy)),
+    ),
     #("minimum_split_minutes", json.int(task.minimum_split_minutes)),
   ])
 }
@@ -399,19 +395,4 @@ fn instant_json(value) -> json.Json {
 
 fn due_json(value) -> json.Json {
   json.int(due.to_unix_seconds(value))
-}
-
-fn status_string(status: Status) -> String {
-  case status {
-    Pending -> "pending"
-    Done -> "done"
-  }
-}
-
-fn policy_string(policy: SchedulingPolicy) -> String {
-  case policy {
-    Asap -> "asap"
-    Spread -> "spread"
-    NearDeadline -> "near_deadline"
-  }
 }

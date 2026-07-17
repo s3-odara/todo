@@ -17,8 +17,8 @@ import tasks/domain/filter.{
 }
 import tasks/domain/local_time
 import tasks/domain/model.{
-  type Status, type TaskError, type Todo, type ValidatedAdd, AlreadyDone, Done,
-  NotFound, Pending,
+  type TaskError, type Todo, type ValidatedAdd, AlreadyDone, NotFound,
+  status_to_string,
 }
 import tasks/domain/scheduling/model as scheduling_model
 import tasks/domain/scheduling/scheduler.{type SchedulingError}
@@ -558,7 +558,7 @@ pub fn scheduled_listed(listing: ScheduledListing) -> Outcome {
                 offset,
               ),
               int.to_string(task.id),
-              status_text(task.status),
+              status_to_string(task.status),
               task.title,
             ]
             |> string.join("\t")
@@ -665,20 +665,13 @@ fn timestamp_text(value: Timestamp, offset: Duration) -> String {
 fn task_line(task: Todo, offset: Duration) -> String {
   [
     int.to_string(task.id),
-    status_text(task.status),
+    status_to_string(task.status),
     int.to_string(task.priority),
     int.to_string(task.estimate_minutes) <> "m",
     due_text(task.due, offset),
     task.title,
   ]
   |> string.join("\t")
-}
-
-fn status_text(status: Status) -> String {
-  case status {
-    Pending -> "pending"
-    Done -> "done"
-  }
 }
 
 fn due_text(due_value: Option(Due), offset: Duration) -> String {

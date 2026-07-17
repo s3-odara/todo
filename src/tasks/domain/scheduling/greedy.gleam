@@ -7,8 +7,9 @@ import tasks/domain/policy
 import tasks/domain/scheduling/invariant
 import tasks/domain/scheduling/model as scheduling_model
 import tasks/domain/scheduling/score
-import tasks/domain/scheduling/search.{type SearchSpace, SearchSpace}
-import tasks/domain/scheduling/timeline.{type AbsoluteInterval, AbsoluteInterval}
+import tasks/domain/scheduling/timeline.{
+  type AbsoluteInterval, type SearchSpace, AbsoluteInterval, SearchSpace,
+}
 
 pub const placement_candidate_limit = 20_000
 

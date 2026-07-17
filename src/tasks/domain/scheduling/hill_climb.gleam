@@ -5,7 +5,7 @@ import tasks/domain/scheduling/invariant
 import tasks/domain/scheduling/model as scheduling_model
 import tasks/domain/scheduling/neighborhood
 import tasks/domain/scheduling/score
-import tasks/domain/scheduling/search.{type SearchSpace, SearchSpace}
+import tasks/domain/scheduling/timeline.{type SearchSpace, SearchSpace}
 import tasks/runtime/parallel
 
 pub const accepted_move_limit = 1000

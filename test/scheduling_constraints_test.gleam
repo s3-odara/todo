@@ -6,8 +6,7 @@ import tasks/domain/model.{Pending, Todo}
 import tasks/domain/policy.{Spread}
 import tasks/domain/scheduling/invariant
 import tasks/domain/scheduling/model as scheduling_model
-import tasks/domain/scheduling/search.{SearchSpace}
-import tasks/domain/scheduling/timeline.{AbsoluteInterval}
+import tasks/domain/scheduling/timeline.{AbsoluteInterval, SearchSpace}
 
 fn task(estimate, minimum) {
   Todo(

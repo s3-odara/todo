@@ -15,6 +15,15 @@ pub type AbsoluteInterval {
   AbsoluteInterval(start: Int, end: Int)
 }
 
+/// Immutable inputs shared by every stage of a scheduling search.
+pub type SearchSpace {
+  SearchSpace(
+    projected: List(AbsoluteInterval),
+    planning_start: Int,
+    utc_offset_seconds: Int,
+  )
+}
+
 pub type TimelineError {
   SearchSpaceTooLarge
   InvalidCalendarRange

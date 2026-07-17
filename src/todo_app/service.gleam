@@ -76,9 +76,21 @@ pub fn scheduled_list(
   now: Option(Timestamp),
 ) -> Result(ScheduledListing, ServiceError) {
   let Store(load, _) = store
-  use state <- result.try(load() |> result.map_error(Persisted))
+  load()
+  |> result.map(fn(state) {
+    build_scheduled_listing(state, status, scheduled_filter, now)
+  })
+  |> result.map_error(Persisted)
+}
+
+fn build_scheduled_listing(
+  state: AppState,
+  status: filter.StatusFilter,
+  scheduled_filter: ScheduledFilter,
+  now: Option(Timestamp),
+) -> ScheduledListing {
   case state.current_schedule {
-    None -> Ok(ScheduledListing(0, []))
+    None -> ScheduledListing(0, [])
     Some(saved) -> {
       let offset = duration.seconds(saved.utc_offset_seconds)
       let window = filter.scheduled_window(scheduled_filter, now, offset)
@@ -102,7 +114,7 @@ pub fn scheduled_list(
           }
         })
         |> list.sort(by: fn(a, b) { invariant.block_compare(a.block, b.block) })
-      Ok(ScheduledListing(saved.utc_offset_seconds, items))
+      ScheduledListing(saved.utc_offset_seconds, items)
     }
   }
 }

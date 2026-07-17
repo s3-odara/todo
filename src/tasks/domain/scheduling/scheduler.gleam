@@ -13,8 +13,7 @@ import tasks/domain/scheduling/model.{
   GenerationResult, PlanningContext, SavedSchedule, UnscheduledTask,
 }
 import tasks/domain/scheduling/score
-import tasks/domain/scheduling/search.{SearchSpace}
-import tasks/domain/scheduling/timeline
+import tasks/domain/scheduling/timeline.{SearchSpace}
 
 pub type SchedulingError {
   SearchSpaceTooLarge

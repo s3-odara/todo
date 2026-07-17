@@ -16,8 +16,7 @@ import tasks/domain/scheduling/invariant
 import tasks/domain/scheduling/model as scheduling_model
 import tasks/domain/scheduling/scheduler
 import tasks/domain/scheduling/score
-import tasks/domain/scheduling/search.{SearchSpace}
-import tasks/domain/scheduling/timeline.{AbsoluteInterval}
+import tasks/domain/scheduling/timeline.{AbsoluteInterval, SearchSpace}
 import tasks/runtime/parallel
 
 pub fn parallel_runtime_worker_count_and_reduction_test() {

@@ -10,8 +10,9 @@ import tasks/domain/scheduling/hill_climb
 import tasks/domain/scheduling/invariant
 import tasks/domain/scheduling/model as scheduling_model
 import tasks/domain/scheduling/score
-import tasks/domain/scheduling/search.{SearchSpace}
-import tasks/domain/scheduling/timeline.{type AbsoluteInterval, AbsoluteInterval}
+import tasks/domain/scheduling/timeline.{
+  type AbsoluteInterval, AbsoluteInterval, SearchSpace,
+}
 
 @external(erlang, "scheduling_benchmark_ffi", "monotonic_microseconds")
 fn monotonic_microseconds() -> Int

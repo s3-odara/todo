@@ -294,22 +294,18 @@ pub fn scheduled_list_joins_current_task_status_without_saving_test() {
     scheduling_model.SavedSchedule(start, start, 32_400, [
       scheduling_model.ScheduleBlock(1, start_seconds, end_seconds),
     ])
-  let store =
-    Store(fn() { Ok(state_with_schedule([task], schedule)) }, fn(_) {
-      panic as "save must not run"
-    })
+  let state = state_with_schedule([task], schedule)
+  let store = Store(fn() { Ok(state) }, fn(_) { panic as "save must not run" })
+  let expected =
+    service.ScheduledListing(32_400, [
+      service.ScheduledItem(
+        scheduling_model.ScheduleBlock(1, start_seconds, end_seconds),
+        task,
+      ),
+    ])
 
   service.scheduled_list(store, AllStatuses, AllScheduled, None)
-  |> should.equal(
-    Ok(
-      service.ScheduledListing(32_400, [
-        service.ScheduledItem(
-          scheduling_model.ScheduleBlock(1, start_seconds, end_seconds),
-          task,
-        ),
-      ]),
-    ),
-  )
+  |> should.equal(Ok(expected))
   service.scheduled_list(
     store,
     PendingOnly,

@@ -110,6 +110,7 @@ pub fn duplicate_or_invalid_tasks_are_rejected_test() {
     "{\"id\":0,\"title\":\"x\",\"estimate_minutes\":0,\"priority\":3,\"due\":null,\"status\":\"pending\",\"scheduling_policy\":\"spread\",\"minimum_split_minutes\":30}",
     "{\"id\":1,\"title\":\"x\",\"estimate_minutes\":525601,\"priority\":3,\"due\":null,\"status\":\"pending\",\"scheduling_policy\":\"spread\",\"minimum_split_minutes\":30}",
     "{\"id\":1,\"title\":\"x\",\"estimate_minutes\":0,\"priority\":6,\"due\":null,\"status\":\"pending\",\"scheduling_policy\":\"spread\",\"minimum_split_minutes\":30}",
+    "{\"id\":1,\"title\":\"x\",\"estimate_minutes\":0,\"priority\":3,\"due\":null,\"status\":\"unknown\",\"scheduling_policy\":\"spread\",\"minimum_split_minutes\":30}",
     "{\"id\":1,\"title\":\"x\",\"estimate_minutes\":0,\"priority\":3,\"due\":null,\"status\":\"pending\",\"scheduling_policy\":\"unknown\",\"minimum_split_minutes\":30}",
     "{\"id\":1,\"title\":\"x\",\"estimate_minutes\":0,\"priority\":3,\"due\":null,\"status\":\"pending\",\"scheduling_policy\":\"spread\",\"minimum_split_minutes\":0}",
   ]

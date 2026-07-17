@@ -8,8 +8,9 @@ import tasks/domain/scheduling/model.{
   type ScheduleBlock, type SchedulingTask, ScheduleBlock,
   effective_minimum_split,
 }
-import tasks/domain/scheduling/search.{type SearchSpace, SearchSpace}
-import tasks/domain/scheduling/timeline.{type AbsoluteInterval}
+import tasks/domain/scheduling/timeline.{
+  type AbsoluteInterval, type SearchSpace, SearchSpace,
+}
 
 pub type InvariantError {
   InvalidSchedule
