@@ -161,29 +161,24 @@ fn scheduled_list_command(args) {
 }
 
 fn weekly_command(args, mutation) {
-  use options <- result.try(parse_options(args, ["day", "from", "to"]))
-  use days <- result.try(
-    required_parsed(options, "day", availability.parse_days) |> invalid_input,
-  )
-  use from <- result.try(required_value(options, "from") |> invalid_input)
-  use to <- result.try(required_value(options, "to") |> invalid_input)
-  use interval <- result.try(
-    availability.parse_interval(from, to) |> invalid_input,
-  )
-  Ok(MutateAvailability(mutation(days, interval)))
+  interval_command(args, "day", availability.parse_days, mutation)
 }
 
 fn date_interval_command(args, mutation) {
-  use options <- result.try(parse_options(args, ["date", "from", "to"]))
-  use date <- result.try(
-    required_parsed(options, "date", due.parse_date) |> invalid_input,
+  interval_command(args, "date", due.parse_date, mutation)
+}
+
+fn interval_command(args, selector_name, parse_selector, mutation) {
+  use options <- result.try(parse_options(args, [selector_name, "from", "to"]))
+  use selector <- result.try(
+    required_parsed(options, selector_name, parse_selector) |> invalid_input,
   )
   use from <- result.try(required_value(options, "from") |> invalid_input)
   use to <- result.try(required_value(options, "to") |> invalid_input)
   use interval <- result.try(
     availability.parse_interval(from, to) |> invalid_input,
   )
-  Ok(MutateAvailability(mutation(date, interval)))
+  Ok(MutateAvailability(mutation(selector, interval)))
 }
 
 fn date_command(args, mutation) {
@@ -405,13 +400,12 @@ pub fn availability_listed(value: Availability) -> Outcome {
       let weekly_lines =
         list.flat_map(weekly, fn(entry) {
           list.map(entry.intervals, fn(interval) {
-            [
+            tab_row([
               "weekly",
               availability.weekday_string(entry.day),
               local_time.format_minute_of_day(interval.from),
               local_time.format_minute_of_day(interval.to),
-            ]
-            |> string.join("\t")
+            ])
           })
         })
       let override_lines =
@@ -421,13 +415,12 @@ pub fn availability_listed(value: Availability) -> Outcome {
             [] -> ["override\t" <> date <> "\tclosed"]
             intervals ->
               list.map(intervals, fn(interval) {
-                [
+                tab_row([
                   "override",
                   date,
                   local_time.format_minute_of_day(interval.from),
                   local_time.format_minute_of_day(interval.to),
-                ]
-                |> string.join("\t")
+                ])
               })
           }
         })
@@ -473,20 +466,13 @@ pub fn scheduled_listed(listing: ScheduledListing) -> Outcome {
       "START\tEND\tID\tSTATUS\tTITLE",
       fn(item) {
         let ScheduledItem(block, task) = item
-        [
-          local_time.format_timestamp(
-            timestamp.from_unix_seconds(block.start_seconds),
-            offset,
-          ),
-          local_time.format_timestamp(
-            timestamp.from_unix_seconds(block.end_seconds),
-            offset,
-          ),
+        tab_row([
+          format_unix_minute(block.start_seconds, offset),
+          format_unix_minute(block.end_seconds, offset),
           int.to_string(task.id),
           status_to_string(task.status),
           task.title,
-        ]
-        |> string.join("\t")
+        ])
       },
     ),
     [],
@@ -519,18 +505,11 @@ pub fn schedule_generated(
   let offset = duration.seconds(offset_seconds)
   let block_lines =
     table_lines(blocks, "none", "START\tEND\tTASK_ID", fn(block) {
-      [
-        local_time.format_timestamp(
-          timestamp.from_unix_seconds(block.start_seconds),
-          offset,
-        ),
-        local_time.format_timestamp(
-          timestamp.from_unix_seconds(block.end_seconds),
-          offset,
-        ),
+      tab_row([
+        format_unix_minute(block.start_seconds, offset),
+        format_unix_minute(block.end_seconds, offset),
         int.to_string(block.task_id),
-      ]
-      |> string.join("\t")
+      ])
     })
   let unscheduled_lines =
     table_lines(unscheduled, "none", "TASK_ID\tMINUTES", fn(entry) {
@@ -570,15 +549,22 @@ fn excluded_reason(reason: scheduling_model.ExcludedReason) -> String {
 }
 
 fn task_line(task: Todo, offset: Duration) -> String {
-  [
+  tab_row([
     int.to_string(task.id),
     status_to_string(task.status),
     int.to_string(task.priority),
     int.to_string(task.estimate_minutes) <> "m",
     due_text(task.due, offset),
     task.title,
-  ]
-  |> string.join("\t")
+  ])
+}
+
+fn tab_row(fields: List(String)) -> String {
+  string.join(fields, "\t")
+}
+
+fn format_unix_minute(seconds: Int, offset: Duration) -> String {
+  local_time.format_timestamp(timestamp.from_unix_seconds(seconds), offset)
 }
 
 fn due_text(due_value: Option(Due), offset: Duration) -> String {
