@@ -66,7 +66,7 @@ pub fn generate(
   )
   let space = SearchSpace(projected, planning_start, offset)
   let initial = greedy.build(eligible, space)
-  let blocks = hill_climb.improve(initial, eligible, space)
+  let blocks = hill_climb.improve(initial, eligible, space).blocks
   use canonical <- result.try(
     invariant.validate_generation(blocks, eligible, space)
     |> result.map_error(fn(_) { InvalidGeneratedSchedule }),

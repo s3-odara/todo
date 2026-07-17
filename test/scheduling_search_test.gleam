@@ -193,12 +193,11 @@ pub fn pair_rebuild_can_replace_low_priority_work_atomically_test() {
   ]
   let before = score.evaluate(tasks, initial, 0)
   let space = SearchSpace(projected, 0, 0)
-  let result = hill_climb.climb(initial, tasks, space)
+  let result = hill_climb.improve(initial, tasks, space)
   let after = score.evaluate(tasks, result.blocks, 0)
 
   score.strictly_better(after, than: before) |> should.be_true
   result.accepted_moves |> should.equal(1)
-  result.accepted_scores |> should.equal([after])
   result.blocks
   |> should.equal([
     scheduling_model.ScheduleBlock(2, 0, 3600),
@@ -217,7 +216,7 @@ pub fn exact_s7_schedule_and_score_are_characterized_test() {
   let tasks = scheduling_tasks(tasks)
   let space = SearchSpace(projected, 0, 0)
   let initial = greedy.build(tasks, space)
-  let result = hill_climb.climb(initial, tasks, space)
+  let result = hill_climb.improve(initial, tasks, space)
   let expected_blocks = [
     scheduling_model.ScheduleBlock(3, 0, 240),
     scheduling_model.ScheduleBlock(2, 240, 360),
@@ -226,7 +225,6 @@ pub fn exact_s7_schedule_and_score_are_characterized_test() {
   result.blocks |> should.equal(expected_blocks)
   score.evaluate(tasks, result.blocks, 0) |> should.equal(expected_score)
   result.accepted_moves |> should.equal(1)
-  result.accepted_scores |> should.equal([expected_score])
 }
 
 pub fn empty_availability_reports_all_unscheduled_test() {

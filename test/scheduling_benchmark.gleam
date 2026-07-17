@@ -89,7 +89,7 @@ fn run(scenario: Scenario) {
   let initial = greedy.build(tasks, space)
   let greedy_elapsed = monotonic_microseconds() - greedy_started
   let hill_started = monotonic_microseconds()
-  let result = hill_climb.climb(initial, tasks, space)
+  let result = hill_climb.improve(initial, tasks, space)
   let hill_elapsed = monotonic_microseconds() - hill_started
   let initial_value = score.evaluate(tasks, initial, 0)
   let value = score.evaluate(tasks, result.blocks, 0)

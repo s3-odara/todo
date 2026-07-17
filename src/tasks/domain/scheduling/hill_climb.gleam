@@ -13,11 +13,10 @@ pub const accepted_move_limit = 1000
 
 pub const rebuild_candidate_limit = 20_000
 
-pub type HillResult {
-  HillResult(
+pub type SearchResult {
+  SearchResult(
     blocks: List(scheduling_model.ScheduleBlock),
     accepted_moves: Int,
-    accepted_scores: List(scheduling_model.Score),
   )
 }
 
@@ -39,23 +38,18 @@ type SearchState {
     blocks: List(scheduling_model.ScheduleBlock),
     contributions: List(score.Contribution),
     accepted_moves: Int,
-    accepted_scores_reversed: List(scheduling_model.Score),
   )
 }
 
-pub fn improve(initial, tasks, space) {
-  climb(initial, tasks, space).blocks
-}
-
-pub fn climb(
+pub fn improve(
   initial: List(scheduling_model.ScheduleBlock),
   tasks: List(scheduling_model.SchedulingTask),
   space: SearchSpace,
-) -> HillResult {
+) -> SearchResult {
   let SearchSpace(_, planning_start, _) = space
   let contributions = score.contributions(tasks, initial, planning_start)
   climb_loop(
-    SearchState(initial, contributions, 0, []),
+    SearchState(initial, contributions, 0),
     tasks,
     neighborhood.generate(tasks, rebuild_candidate_limit)
       |> list.index_map(fn(rebuild, index) { IndexedRebuild(index, rebuild) }),
@@ -64,10 +58,10 @@ pub fn climb(
 }
 
 fn climb_loop(state, tasks, rebuild_candidates, space) {
-  let SearchState(blocks, contributions, accepted, scores) = state
+  let SearchState(blocks, contributions, accepted) = state
   let current_score = score.total(contributions)
   case accepted >= accepted_move_limit {
-    True -> HillResult(blocks, accepted, list.reverse(scores))
+    True -> SearchResult(blocks, accepted)
     False -> {
       let candidate =
         evaluate_candidates(
@@ -78,18 +72,15 @@ fn climb_loop(state, tasks, rebuild_candidates, space) {
           space,
         )
       case candidate {
-        option.None -> HillResult(blocks, accepted, list.reverse(scores))
-        option.Some(Candidate(_, next, next_contributions, next_score)) ->
+        option.None -> SearchResult(blocks, accepted)
+        option.Some(Candidate(_, next, next_contributions, _)) ->
           // Greedy construction should already be valid; validate accepted states
           // so a placement bug cannot propagate through the search.
           case invariant.validate_generation(next, tasks, space) {
-            Error(_) -> HillResult(blocks, accepted, list.reverse(scores))
-            Ok(valid) ->
+            Error(_) -> SearchResult(blocks, accepted)
+            Ok(_) ->
               climb_loop(
-                SearchState(valid, next_contributions, accepted + 1, [
-                  next_score,
-                  ..scores
-                ]),
+                SearchState(next, next_contributions, accepted + 1),
                 tasks,
                 rebuild_candidates,
                 space,
