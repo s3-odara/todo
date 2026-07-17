@@ -116,12 +116,7 @@ pub fn help_lists_the_available_commands_test() {
   )
 }
 
-pub fn add_uses_default_estimate_and_priority_test() {
-  parse(["add", "x"])
-  |> should.equal(Ok(cli.Add(ValidatedAdd("x", 0, 3, None, Spread, 30))))
-}
-
-pub fn add_scheduling_defaults_are_applied_test() {
+pub fn add_defaults_are_applied_test() {
   parse(["add", "x"])
   |> should.equal(Ok(cli.Add(ValidatedAdd("x", 0, 3, None, Spread, 30))))
 }
