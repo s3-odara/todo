@@ -1,9 +1,9 @@
 import gleam/time/calendar.{Date, December, February, January, July}
 import gleeunit/should
 import tasks/domain/availability.{
-  Availability, DateOverride, Fri, Interval, Mon, Sun, WeeklyAvailability,
+  Availability, DateOverride, Interval, WeeklyAvailability,
 }
-import tasks/domain/local_time
+import tasks/domain/local_time.{Fri, Mon, Sun}
 
 pub fn touching_and_overlapping_intervals_are_merged_test() {
   let value =

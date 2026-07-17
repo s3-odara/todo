@@ -10,6 +10,7 @@ import tasks/domain/filter.{
   AllScheduled, AllStatuses, DueWindow, ListFilter, PendingOnly, ScheduledDate,
   ScheduledExact, Today,
 }
+import tasks/domain/local_time
 import tasks/domain/model.{
   AlreadyDone, Done, NotFound, Pending, Todo, ValidatedAdd,
 }
@@ -193,7 +194,7 @@ pub fn availability_mutation_preserves_tasks_and_schedule_test() {
       |> should.equal(
         availability.Availability(
           [
-            availability.WeeklyAvailability(availability.Mon, [
+            availability.WeeklyAvailability(local_time.Mon, [
               availability.Interval(540, 720),
             ]),
           ],
@@ -205,7 +206,7 @@ pub fn availability_mutation_preserves_tasks_and_schedule_test() {
 
   service.mutate_availability(
     store,
-    availability.AddWeekly([availability.Mon], availability.Interval(540, 720)),
+    availability.AddWeekly([local_time.Mon], availability.Interval(540, 720)),
   )
   |> should.equal(Ok(Nil))
 }
@@ -214,7 +215,7 @@ pub fn availability_save_failure_is_reported_test() {
   let store = Store(fn() { Ok(state_with([])) }, fn(_) { Error("disk") })
   service.mutate_availability(
     store,
-    availability.AddWeekly([availability.Mon], availability.Interval(540, 720)),
+    availability.AddWeekly([local_time.Mon], availability.Interval(540, 720)),
   )
   |> should.equal(Error(service.Persisted("disk")))
 }
@@ -232,7 +233,7 @@ pub fn readding_existing_weekly_availability_succeeds_when_saving_is_unavailable
   let interval = availability.Interval(540, 720)
   let existing =
     availability.Availability(
-      [availability.WeeklyAvailability(availability.Mon, [interval])],
+      [availability.WeeklyAvailability(local_time.Mon, [interval])],
       [],
     )
   let store =
@@ -242,7 +243,7 @@ pub fn readding_existing_weekly_availability_succeeds_when_saving_is_unavailable
 
   service.mutate_availability(
     store,
-    availability.AddWeekly([availability.Mon], interval),
+    availability.AddWeekly([local_time.Mon], interval),
   )
   |> should.equal(Ok(Nil))
 }
@@ -251,7 +252,7 @@ pub fn explicit_date_override_is_saved_when_effective_hours_are_unchanged_test()
   let interval = availability.Interval(540, 720)
   let weekly =
     availability.Availability(
-      [availability.WeeklyAvailability(availability.Mon, [interval])],
+      [availability.WeeklyAvailability(local_time.Mon, [interval])],
       [],
     )
   let assert Ok(date) = due.parse_date("2026-07-20")
@@ -260,7 +261,7 @@ pub fn explicit_date_override_is_saved_when_effective_hours_are_unchanged_test()
       state.availability
       |> should.equal(
         availability.Availability(
-          [availability.WeeklyAvailability(availability.Mon, [interval])],
+          [availability.WeeklyAvailability(local_time.Mon, [interval])],
           [availability.DateOverride(date, [interval])],
         ),
       )

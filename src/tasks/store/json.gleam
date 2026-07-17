@@ -9,12 +9,12 @@ import gleam/time/calendar
 import gleam/time/timestamp
 import tasks/domain/app_state.{type AppState, AppState}
 import tasks/domain/availability.{
-  type Availability, type DateOverride, type Interval, type Weekday,
-  type WeeklyAvailability, Availability, DateOverride, Interval, Mon,
-  WeeklyAvailability, weekday_number, weekday_string,
+  type Availability, type DateOverride, type Interval, type WeeklyAvailability,
+  Availability, DateOverride, Interval, WeeklyAvailability, weekday_number,
+  weekday_string,
 }
 import tasks/domain/due
-import tasks/domain/local_time
+import tasks/domain/local_time.{type Weekday, Mon}
 import tasks/domain/model.{
   type Todo, Pending, Todo, parse_status, status_to_string,
 }

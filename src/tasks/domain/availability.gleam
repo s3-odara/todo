@@ -5,20 +5,10 @@ import gleam/result
 import gleam/string
 import gleam/time/calendar.{type Date}
 import tasks/domain/due
-import tasks/domain/local_time
+import tasks/domain/local_time.{type Weekday, Fri, Mon, Sat, Sun, Thu, Tue, Wed}
 
 pub type LocalMinute =
   Int
-
-pub type Weekday {
-  Mon
-  Tue
-  Wed
-  Thu
-  Fri
-  Sat
-  Sun
-}
 
 pub type Interval {
   Interval(from: LocalMinute, to: LocalMinute)
@@ -218,13 +208,7 @@ pub fn effective(value: Availability, date: Date) -> List(Interval) {
     Ok(intervals) -> intervals
     Error(_) ->
       case local_time.weekday_for_date(date) {
-        Ok(local_time.Mon) -> weekly_for(weekly, Mon)
-        Ok(local_time.Tue) -> weekly_for(weekly, Tue)
-        Ok(local_time.Wed) -> weekly_for(weekly, Wed)
-        Ok(local_time.Thu) -> weekly_for(weekly, Thu)
-        Ok(local_time.Fri) -> weekly_for(weekly, Fri)
-        Ok(local_time.Sat) -> weekly_for(weekly, Sat)
-        Ok(local_time.Sun) -> weekly_for(weekly, Sun)
+        Ok(day) -> weekly_for(weekly, day)
         Error(_) -> []
       }
   }

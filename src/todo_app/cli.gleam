@@ -51,7 +51,7 @@ type AddOptions {
 
 type AvailabilityOptions {
   AvailabilityOptions(
-    days: Option(List(availability.Weekday)),
+    days: Option(List(local_time.Weekday)),
     date: Option(calendar.Date),
     from: Option(String),
     to: Option(String),

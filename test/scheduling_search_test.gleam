@@ -4,10 +4,9 @@ import gleam/time/duration
 import gleam/time/timestamp
 import gleeunit/should
 import tasks/domain/app_state.{AppState}
-import tasks/domain/availability.{
-  Availability, Interval, Thu, WeeklyAvailability,
-}
+import tasks/domain/availability.{Availability, Interval, WeeklyAvailability}
 import tasks/domain/due
+import tasks/domain/local_time.{Thu}
 import tasks/domain/model.{type Todo, Pending, Todo}
 import tasks/domain/policy.{Asap, NearDeadline, Spread}
 import tasks/domain/scheduling/greedy

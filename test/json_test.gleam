@@ -6,6 +6,7 @@ import gleeunit/should
 import tasks/domain/app_state.{AppState}
 import tasks/domain/availability
 import tasks/domain/due
+import tasks/domain/local_time
 import tasks/domain/model.{Done, Todo}
 import tasks/domain/policy.{Asap}
 import tasks/domain/scheduling/model as scheduling_model
@@ -46,10 +47,10 @@ pub fn availability_round_trip_is_canonical_and_preserves_closed_dates_test() {
   let value =
     availability.Availability(
       [
-        availability.WeeklyAvailability(availability.Fri, [
+        availability.WeeklyAvailability(local_time.Fri, [
           availability.Interval(780, 840),
         ]),
-        availability.WeeklyAvailability(availability.Mon, [
+        availability.WeeklyAvailability(local_time.Mon, [
           availability.Interval(540, 720),
         ]),
       ],
@@ -66,10 +67,10 @@ pub fn availability_round_trip_is_canonical_and_preserves_closed_dates_test() {
       [],
       availability.Availability(
         [
-          availability.WeeklyAvailability(availability.Mon, [
+          availability.WeeklyAvailability(local_time.Mon, [
             availability.Interval(540, 720),
           ]),
-          availability.WeeklyAvailability(availability.Fri, [
+          availability.WeeklyAvailability(local_time.Fri, [
             availability.Interval(780, 840),
           ]),
         ],

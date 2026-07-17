@@ -12,6 +12,7 @@ import tasks/domain/filter.{
   Range, ScheduledDate, ScheduledExact, ScheduledList, ScheduledRange,
   ScheduledToday, TaskList, Today,
 }
+import tasks/domain/local_time
 import tasks/domain/model.{Done, Pending, Todo, ValidatedAdd}
 import tasks/domain/policy.{Asap, NearDeadline, Spread}
 import tasks/domain/scheduling/model as scheduling_model
@@ -231,7 +232,7 @@ pub fn availability_commands_parse_to_typed_mutations_test() {
   |> should.equal(
     Ok(
       cli.MutateAvailability(availability.AddWeekly(
-        [availability.Mon, availability.Fri],
+        [local_time.Mon, local_time.Fri],
         availability.Interval(540, 720),
       )),
     ),
@@ -486,7 +487,7 @@ pub fn availability_formatter_is_stable_and_marks_closed_overrides_test() {
   let value =
     availability.Availability(
       [
-        availability.WeeklyAvailability(availability.Mon, [
+        availability.WeeklyAvailability(local_time.Mon, [
           availability.Interval(540, 720),
         ]),
       ],
