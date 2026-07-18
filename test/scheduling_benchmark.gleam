@@ -36,6 +36,10 @@ type Scenario {
   )
 }
 
+type PriorityMinutes {
+  PriorityMinutes(p1: Int, p2: Int, p3: Int, p4: Int, p5: Int)
+}
+
 pub fn main() {
   let selected = case argv.load().arguments {
     [] | ["quick"] ->
@@ -67,7 +71,7 @@ pub fn main() {
     }
   }
   io.println(
-    "scenario|initial_unscheduled|initial_policy_error|final_unscheduled|final_policy_error|oracle_unscheduled|oracle_policy_error|primary_regret|policy_regret|blocks|accepted_moves|greedy_us|hill_climb_us|valid",
+    "scenario|weighted_estimate|estimate_p1|estimate_p2|estimate_p3|estimate_p4|estimate_p5|initial_unscheduled|initial_policy_error|final_unscheduled|final_policy_error|final_unscheduled_p1|final_unscheduled_p2|final_unscheduled_p3|final_unscheduled_p4|final_unscheduled_p5|oracle_unscheduled|oracle_policy_error|primary_regret|policy_regret|blocks|accepted_moves|greedy_us|hill_climb_us|valid",
   )
   selected
   |> list.each(run)
@@ -86,6 +90,8 @@ fn run(scenario: Scenario) {
   let hill_elapsed = monotonic_microseconds() - hill_started
   let initial_value = score.evaluate(tasks, initial, 0)
   let value = score.evaluate(tasks, result.blocks, 0)
+  let estimates = priority_estimates(tasks)
+  let final_unscheduled = priority_unscheduled(tasks, result.blocks)
   let oracle = case oracle_horizon {
     None -> None
     Some(horizon) -> exact_optimum(tasks, projected, horizon)
@@ -99,6 +105,10 @@ fn run(scenario: Scenario) {
   io.println(
     name
     <> "|"
+    <> int.to_string(weighted_estimate(estimates))
+    <> "|"
+    <> priority_columns(estimates)
+    <> "|"
     <> int.to_string(initial_value.weighted_unscheduled_minutes)
     <> "|"
     <> float.to_string(initial_value.weighted_policy_error)
@@ -106,6 +116,8 @@ fn run(scenario: Scenario) {
     <> int.to_string(value.weighted_unscheduled_minutes)
     <> "|"
     <> float.to_string(value.weighted_policy_error)
+    <> "|"
+    <> priority_columns(final_unscheduled)
     <> "|"
     <> oracle_unscheduled
     <> "|"
@@ -125,6 +137,53 @@ fn run(scenario: Scenario) {
     <> "|"
     <> valid,
   )
+}
+
+fn priority_estimates(tasks: List(scheduling_model.SchedulingTask)) {
+  list.fold(tasks, PriorityMinutes(0, 0, 0, 0, 0), fn(totals, task) {
+    add_priority_minutes(totals, task.priority, task.estimate_minutes)
+  })
+}
+
+fn priority_unscheduled(
+  tasks: List(scheduling_model.SchedulingTask),
+  blocks: List(scheduling_model.ScheduleBlock),
+) {
+  list.fold(tasks, PriorityMinutes(0, 0, 0, 0, 0), fn(totals, task) {
+    let own = list.filter(blocks, fn(block) { block.task_id == task.id })
+    let unscheduled =
+      int.max(0, task.estimate_minutes - score.placed_minutes(own))
+    add_priority_minutes(totals, task.priority, unscheduled)
+  })
+}
+
+fn add_priority_minutes(totals: PriorityMinutes, priority: Int, minutes: Int) {
+  case totals, priority {
+    PriorityMinutes(p1, p2, p3, p4, p5), 1 ->
+      PriorityMinutes(p1 + minutes, p2, p3, p4, p5)
+    PriorityMinutes(p1, p2, p3, p4, p5), 2 ->
+      PriorityMinutes(p1, p2 + minutes, p3, p4, p5)
+    PriorityMinutes(p1, p2, p3, p4, p5), 3 ->
+      PriorityMinutes(p1, p2, p3 + minutes, p4, p5)
+    PriorityMinutes(p1, p2, p3, p4, p5), 4 ->
+      PriorityMinutes(p1, p2, p3, p4 + minutes, p5)
+    PriorityMinutes(p1, p2, p3, p4, p5), 5 ->
+      PriorityMinutes(p1, p2, p3, p4, p5 + minutes)
+    _, _ -> totals
+  }
+}
+
+fn weighted_estimate(minutes: PriorityMinutes) {
+  let PriorityMinutes(p1, p2, p3, p4, p5) = minutes
+  p1 + p2 * 2 + p3 * 4 + p4 * 8 + p5 * 16
+}
+
+fn priority_columns(minutes: PriorityMinutes) {
+  let PriorityMinutes(p1, p2, p3, p4, p5) = minutes
+  [p1, p2, p3, p4, p5]
+  |> list.map(int.to_string)
+  |> list.intersperse("|")
+  |> list.fold("", fn(output, value) { output <> value })
 }
 
 fn oracle_columns(

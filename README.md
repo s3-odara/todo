@@ -98,7 +98,7 @@ Available suites are:
 - `stress`: additional large task sets around the current candidate-composition boundaries; this may take substantially longer.
 - `all`: focused, full, holdout, and oracle suites; it deliberately excludes stress.
 
-Each row reports initial and final scores, oracle regret where available, validity, and one timing each for greedy construction and hill climbing. There is no warm-up or repetition. Compilation and availability projection are excluded, and timings are diagnostic rather than part of the quality ranking.
+Each row reports total priority-weighted estimate, estimates and final unscheduled minutes by priority, initial and final scores, oracle regret where available, validity, and one timing each for greedy construction and hill climbing. There is no warm-up or repetition. Compilation and availability projection are excluded, and timings are diagnostic rather than part of the quality ranking.
 
 Compare a quick or full result with the checked-in `3ff76a8` full baseline:
 
@@ -107,7 +107,7 @@ scripts/compare_scheduling_quality.sh \
   benchmark/baselines/3ff76a8-full.psv candidate.psv
 ```
 
-The report's wins and losses are from the candidate's perspective. A full baseline may contain scenarios absent from a quick candidate, but every candidate scenario must have a baseline entry. Policy-error values are comparable only between artifacts using the same objective; artifacts from the former 256-sample objective remain useful for primary-score comparisons only. Comparing holdout or stress results across revisions requires a corresponding result captured from the baseline revision.
+The report's wins and losses are from the candidate's perspective. It also reports aggregate and per-scenario primary quality loss as a percentage of total priority-weighted estimate, using nearest-rank p50/p95/worst for the latter, plus aggregate and percentile losses for each priority. Positive percentages are regressions. Cases without tasks at a given priority are excluded from that priority's percentiles. A full baseline may contain scenarios absent from a quick candidate, but every candidate scenario must have a baseline entry. Both artifacts must use the current schema because relative and per-priority comparisons require workload metadata. Policy-error values are comparable only between artifacts using the same objective. Comparing holdout or stress results across revisions requires a corresponding result captured from the baseline revision.
 
 Summarize an oracle run without a baseline:
 
