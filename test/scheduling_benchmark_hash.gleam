@@ -2,17 +2,23 @@ import gleam/int
 
 const uint32_mask = 4_294_967_295
 
-/// A deterministic lowbias32-based key for benchmark sampling and permutations.
+const seed_salt = 2_654_435_769
+
+// Not H(index + seed): adjacent seeds become shifted copies.
+// Hashing the salted seed first gives each seed a different index permutation.
 pub fn value(seed: Int, index: Int) -> Int {
-  let x = uint32(seed * 2_654_435_761 + index * 2_246_822_507)
+  lowbias32(int.bitwise_exclusive_or(index, lowbias32(seed + seed_salt)))
+}
+
+pub fn sample(seed: Int, index: Int, bound: Int) -> Int {
+  value(seed, index) % bound
+}
+
+fn lowbias32(value: Int) -> Int {
+  let x = uint32(value)
   let x = uint32(xor_shift_right(x, 16) * 2_146_121_005)
   let x = uint32(xor_shift_right(x, 15) * 2_221_713_035)
   uint32(xor_shift_right(x, 16))
-}
-
-/// Sample a bounded value after avalanche so small bounds avoid arithmetic cycles.
-pub fn sample(seed: Int, index: Int, bound: Int) -> Int {
-  value(seed, index) % bound
 }
 
 fn uint32(value: Int) {

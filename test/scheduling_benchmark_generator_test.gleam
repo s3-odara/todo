@@ -3,6 +3,11 @@ import gleam/list
 import gleeunit/should
 import scheduling_benchmark_hash
 
+pub fn seeded_lowbias32_is_stable_test() {
+  scheduling_benchmark_hash.value(101, 307)
+  |> should.equal(1_192_176_205)
+}
+
 pub fn generated_profiles_cover_every_categorical_value_test() {
   let seeds = [101, 211, 307, 401, 503, 9001, 9011, 9029, 9041, 9059]
 

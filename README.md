@@ -102,18 +102,13 @@ Available suites are:
 
 Each row reports total priority-weighted estimate, estimates and final unscheduled minutes by priority, initial and final scores, oracle regret where available, validity, task and projected-interval counts, initial and final block counts, accepted moves, and one timing each for greedy construction and hill climbing. There is no warm-up or repetition. Compilation and availability projection are excluded, and timings are diagnostic rather than part of the quality ranking.
 
-Compare a quick result with the checked-in `3ff76a8` full baseline. Full results now also contain the representative base scenarios and require a newer full baseline captured after these fixture changes are committed:
+The checked-in `3ff76a8` baselines predate the current seeded-hash composition and are retained as historical artifacts; their generated workload metadata is not compatible with current results. After committing an intentional sampler or fixture change, capture new full and holdout baselines under that commit name. Compare quick or full results with the new full baseline, and holdout results with its separate baseline:
 
 ```sh
 scripts/compare_scheduling_quality.sh \
-  benchmark/baselines/3ff76a8-full.psv candidate.psv
-```
-
-Compare a holdout result with its separate baseline:
-
-```sh
+  benchmark/baselines/<commit>-full.psv candidate.psv
 scripts/compare_scheduling_quality.sh \
-  benchmark/baselines/3ff76a8-holdout.psv holdout-candidate.psv
+  benchmark/baselines/<commit>-holdout.psv holdout-candidate.psv
 ```
 
 The report's wins and losses are from the candidate's perspective. It also reports aggregate and per-scenario primary quality loss as a percentage of total priority-weighted estimate, using nearest-rank p50/p95/worst for the latter, plus aggregate and percentile losses for each priority. Positive percentages are regressions. Cases without tasks at a given priority are excluded from that priority's percentiles. A full baseline may contain scenarios absent from a quick candidate, but every candidate scenario must have a baseline entry. Both artifacts must use the current schema because relative and per-priority comparisons require workload metadata. Policy-error values are comparable only between artifacts using the same objective. Comparing additional holdout, stress, or permutation results across revisions requires a corresponding result captured from the baseline revision.
