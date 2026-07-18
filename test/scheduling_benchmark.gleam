@@ -18,6 +18,8 @@ import tasks/domain/scheduling/timeline.{
 @external(erlang, "scheduling_benchmark_ffi", "monotonic_microseconds")
 fn monotonic_microseconds() -> Int
 
+const uint32_mask = 4_294_967_295
+
 type Profile {
   Underloaded
   Balanced
@@ -483,10 +485,22 @@ fn first_or(values: List(Int), fallback: Int) -> Int {
   }
 }
 
-// A fixed integer hash gives reproducible, independently varied fixtures without
-// coupling the benchmark to a random-library implementation.
-fn sample(seed: Int, index: Int, bound: Int) -> Int {
-  { seed * 1_103_515_245 + index * 12_345 + index * index * 97 } % bound
+// Keep fixtures reproducible and independent of random-library version changes.
+// Avalanche before modulo so small bounds do not inherit arithmetic cycles.
+@internal
+pub fn sample(seed: Int, index: Int, bound: Int) -> Int {
+  let x = uint32(seed * 2_654_435_761 + index * 2_246_822_507)
+  let x = uint32(xor_shift_right(x, 16) * 2_146_121_005)
+  let x = uint32(xor_shift_right(x, 15) * 2_221_713_035)
+  uint32(xor_shift_right(x, 16)) % bound
+}
+
+fn uint32(value: Int) {
+  int.bitwise_and(value, uint32_mask)
+}
+
+fn xor_shift_right(value: Int, bits: Int) {
+  int.bitwise_exclusive_or(value, int.bitwise_shift_right(value, bits))
 }
 
 fn exact_scenarios() -> List(Scenario) {
