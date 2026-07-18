@@ -16,9 +16,9 @@ pub fn sample(seed: Int, index: Int, bound: Int) -> Int {
 
 fn lowbias32(value: Int) -> Int {
   let x = uint32(value)
-  let x = uint32(xor_shift_right(x, 16) * 2_146_121_005)
-  let x = uint32(xor_shift_right(x, 15) * 2_221_713_035)
-  uint32(xor_shift_right(x, 16))
+  let x = uint32(xor_shift_right(x, 16) * 569_420_461)
+  let x = uint32(xor_shift_right(x, 15) * 1_935_289_751)
+  uint32(xor_shift_right(x, 15))
 }
 
 fn uint32(value: Int) {
