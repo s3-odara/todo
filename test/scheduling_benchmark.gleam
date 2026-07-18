@@ -48,20 +48,12 @@ pub fn main() {
         profile_scenarios_for_sizes([101], [4, 8]),
       )
     ["full"] -> full_scenarios()
-    ["holdout"] ->
-      profile_scenarios_for_sizes([9001, 9011, 9029, 9041, 9059], [4, 8, 12, 16])
+    ["holdout"] -> holdout_scenarios()
     ["oracle"] -> exact_scenarios()
     ["stress"] -> stress_scenarios()
     ["all"] ->
       full_scenarios()
-      |> list.append(
-        profile_scenarios_for_sizes([9001, 9011, 9029, 9041, 9059], [
-          4,
-          8,
-          12,
-          16,
-        ]),
-      )
+      |> list.append(holdout_scenarios())
       |> list.append(exact_scenarios())
     _ -> {
       io.println(
@@ -293,6 +285,21 @@ fn full_scenarios() -> List(Scenario) {
   // 141/142 candidate-composition boundary that may move with the algorithm.
   |> list.append(
     profile_scenarios([Balanced, Fragmented, MinimumSplitTraps], [7001, 7013], [
+      128,
+    ]),
+  )
+}
+
+fn holdout_scenarios() -> List(Scenario) {
+  profile_scenarios_for_sizes([9001, 9011, 9029, 9041, 9059], [4, 8, 12, 16])
+  // One distinct seed per size detects boundary-specific regressions without
+  // multiplying the cost of this validation-only suite.
+  |> list.append(profile_scenarios_for_sizes([9001], [24]))
+  |> list.append(profile_scenarios_for_sizes([9011], [28]))
+  |> list.append(profile_scenarios_for_sizes([9029], [32]))
+  |> list.append(profile_scenarios_for_sizes([9041], [64]))
+  |> list.append(
+    profile_scenarios([Balanced, Fragmented, MinimumSplitTraps], [9041, 9059], [
       128,
     ]),
   )

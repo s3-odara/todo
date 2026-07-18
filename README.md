@@ -93,7 +93,7 @@ Available suites are:
 
 - `quick` (default): focused regressions and a small profile matrix for iteration.
 - `full`: focused regressions; all six profiles at 4, 8, 12, 16, 24, 27, 28, 32, and 64 tasks; and selected hard profiles at 128 tasks. It includes dense coverage around the current 20,000-candidate threshold and may take a few minutes.
-- `holdout`: the six profiles at 4–16 tasks with disjoint seeds; reserve this for validating a proposed algorithm change.
+- `holdout`: the six profiles at 4–16 tasks with five disjoint seeds; one disjoint seed per size at 24, 28, and 32 tasks; all profiles at 64 tasks; and selected hard profiles at 128 tasks. It contains 150 cases and is reserved for validating a proposed algorithm change.
 - `oracle`: tiny cases compared with an exhaustive minute-level optimum.
 - `stress`: additional large task sets around the current candidate-composition boundaries; this may take substantially longer.
 - `all`: focused, full, holdout, and oracle suites; it deliberately excludes stress.
@@ -107,7 +107,14 @@ scripts/compare_scheduling_quality.sh \
   benchmark/baselines/3ff76a8-full.psv candidate.psv
 ```
 
-The report's wins and losses are from the candidate's perspective. It also reports aggregate and per-scenario primary quality loss as a percentage of total priority-weighted estimate, using nearest-rank p50/p95/worst for the latter, plus aggregate and percentile losses for each priority. Positive percentages are regressions. Cases without tasks at a given priority are excluded from that priority's percentiles. A full baseline may contain scenarios absent from a quick candidate, but every candidate scenario must have a baseline entry. Both artifacts must use the current schema because relative and per-priority comparisons require workload metadata. Policy-error values are comparable only between artifacts using the same objective. Comparing holdout or stress results across revisions requires a corresponding result captured from the baseline revision.
+Compare a holdout result with its separate baseline:
+
+```sh
+scripts/compare_scheduling_quality.sh \
+  benchmark/baselines/3ff76a8-holdout.psv holdout-candidate.psv
+```
+
+The report's wins and losses are from the candidate's perspective. It also reports aggregate and per-scenario primary quality loss as a percentage of total priority-weighted estimate, using nearest-rank p50/p95/worst for the latter, plus aggregate and percentile losses for each priority. Positive percentages are regressions. Cases without tasks at a given priority are excluded from that priority's percentiles. A full baseline may contain scenarios absent from a quick candidate, but every candidate scenario must have a baseline entry. Both artifacts must use the current schema because relative and per-priority comparisons require workload metadata. Policy-error values are comparable only between artifacts using the same objective. Comparing additional holdout or stress results across revisions requires a corresponding result captured from the baseline revision.
 
 Summarize an oracle run without a baseline:
 
