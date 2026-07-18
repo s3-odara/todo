@@ -92,19 +92,19 @@ scripts/benchmark_scheduling.sh quick > candidate.psv
 Available suites are:
 
 - `quick` (default): focused regressions and a small profile matrix for iteration.
-- `full`: the tuning profiles with five fixed seeds.
-- `holdout`: the same profiles with disjoint seeds; reserve this for validating a proposed algorithm change.
+- `full`: focused regressions; all six profiles at 4, 8, 12, 16, 24, 27, 28, 32, and 64 tasks; and selected hard profiles at 128 tasks. It includes dense coverage around the current 20,000-candidate threshold and may take a few minutes.
+- `holdout`: the six profiles at 4–16 tasks with disjoint seeds; reserve this for validating a proposed algorithm change.
 - `oracle`: tiny cases compared with an exhaustive minute-level optimum.
-- `stress`: large task sets around the 20,000-candidate boundary; this may take substantially longer.
+- `stress`: additional large task sets around the current candidate-composition boundaries; this may take substantially longer.
 - `all`: focused, full, holdout, and oracle suites; it deliberately excludes stress.
 
 Each row reports initial and final scores, oracle regret where available, validity, and one timing each for greedy construction and hill climbing. There is no warm-up or repetition. Compilation and availability projection are excluded, and timings are diagnostic rather than part of the quality ranking.
 
-Compare a quick or full result with the checked-in `6af6520` full baseline:
+Compare a quick or full result with the checked-in `3ff76a8` full baseline:
 
 ```sh
 scripts/compare_scheduling_quality.sh \
-  benchmark/baselines/6af6520-full.psv candidate.psv
+  benchmark/baselines/3ff76a8-full.psv candidate.psv
 ```
 
 The report's wins and losses are from the candidate's perspective. A full baseline may contain scenarios absent from a quick candidate, but every candidate scenario must have a baseline entry. Policy-error values are comparable only between artifacts using the same objective; artifacts from the former 256-sample objective remain useful for primary-score comparisons only. Comparing holdout or stress results across revisions requires a corresponding result captured from the baseline revision.

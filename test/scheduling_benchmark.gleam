@@ -43,20 +43,13 @@ pub fn main() {
         focused_scenarios(),
         profile_scenarios_for_sizes([101], [4, 8]),
       )
-    ["full"] ->
-      list.append(
-        focused_scenarios(),
-        profile_scenarios_for_sizes([101, 211, 307, 401, 503], [4, 8, 12, 16]),
-      )
+    ["full"] -> full_scenarios()
     ["holdout"] ->
       profile_scenarios_for_sizes([9001, 9011, 9029, 9041, 9059], [4, 8, 12, 16])
     ["oracle"] -> exact_scenarios()
     ["stress"] -> stress_scenarios()
     ["all"] ->
-      focused_scenarios()
-      |> list.append(
-        profile_scenarios_for_sizes([101, 211, 307, 401, 503], [4, 8, 12, 16]),
-      )
+      full_scenarios()
       |> list.append(
         profile_scenarios_for_sizes([9001, 9011, 9029, 9041, 9059], [
           4,
@@ -230,11 +223,35 @@ fn legacy_generated_tasks(
   }
 }
 
+fn full_scenarios() -> List(Scenario) {
+  focused_scenarios()
+  |> list.append(
+    profile_scenarios_for_sizes([101, 211, 307, 401, 503], [4, 8, 12, 16]),
+  )
+  |> list.append(profile_scenarios_for_sizes([101, 211, 307], [24, 27, 28, 32]))
+  |> list.append(profile_scenarios_for_sizes([7001], [64]))
+  // Large coverage uses multiple seeds rather than an implementation-specific
+  // 141/142 candidate-composition boundary that may move with the algorithm.
+  |> list.append(
+    profile_scenarios([Balanced, Fragmented, MinimumSplitTraps], [7001, 7013], [
+      128,
+    ]),
+  )
+}
+
 fn profile_scenarios_for_sizes(
   seeds: List(Int),
   sizes: List(Int),
 ) -> List(Scenario) {
-  profiles()
+  profile_scenarios(profiles(), seeds, sizes)
+}
+
+fn profile_scenarios(
+  selected_profiles: List(Profile),
+  seeds: List(Int),
+  sizes: List(Int),
+) -> List(Scenario) {
+  selected_profiles
   |> list.flat_map(fn(profile) {
     sizes
     |> list.flat_map(fn(count) {
