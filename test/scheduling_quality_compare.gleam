@@ -11,7 +11,7 @@ import simplifile
 
 const epsilon = 0.000000000001
 
-const benchmark_header = "scenario|weighted_estimate|estimate_p1|estimate_p2|estimate_p3|estimate_p4|estimate_p5|initial_unscheduled|initial_policy_error|final_unscheduled|final_policy_error|final_unscheduled_p1|final_unscheduled_p2|final_unscheduled_p3|final_unscheduled_p4|final_unscheduled_p5|oracle_unscheduled|oracle_policy_error|primary_regret|policy_regret|blocks|accepted_moves|greedy_us|hill_climb_us|valid"
+const benchmark_header = "scenario|weighted_estimate|estimate_p1|estimate_p2|estimate_p3|estimate_p4|estimate_p5|initial_unscheduled|initial_policy_error|final_unscheduled|final_policy_error|final_unscheduled_p1|final_unscheduled_p2|final_unscheduled_p3|final_unscheduled_p4|final_unscheduled_p5|oracle_unscheduled|oracle_policy_error|primary_regret|policy_regret|tasks|projected_intervals|initial_blocks|final_blocks|accepted_moves|greedy_us|hill_climb_us|valid"
 
 const baseline_header = "scenario|weighted_estimate|estimate_p1|estimate_p2|estimate_p3|estimate_p4|estimate_p5|final_unscheduled|final_policy_error|final_unscheduled_p1|final_unscheduled_p2|final_unscheduled_p3|final_unscheduled_p4|final_unscheduled_p5|valid"
 
@@ -111,10 +111,13 @@ fn parse_benchmark_row(line: String) -> Row {
     _,
     primary_regret,
     policy_regret,
-    _,
-    _,
-    _,
-    _,
+    _tasks,
+    _projected_intervals,
+    _initial_blocks,
+    _final_blocks,
+    _accepted_moves,
+    _greedy_us,
+    _hill_climb_us,
     valid,
   ] = string.split(line, "|")
   Row(

@@ -5,6 +5,7 @@ import gleam/io
 import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/order
+import gleam/string
 import tasks/domain/policy.{Asap, NearDeadline, Spread}
 import tasks/domain/scheduling/greedy
 import tasks/domain/scheduling/hill_climb
@@ -65,7 +66,7 @@ pub fn main() {
     }
   }
   io.println(
-    "scenario|weighted_estimate|estimate_p1|estimate_p2|estimate_p3|estimate_p4|estimate_p5|initial_unscheduled|initial_policy_error|final_unscheduled|final_policy_error|final_unscheduled_p1|final_unscheduled_p2|final_unscheduled_p3|final_unscheduled_p4|final_unscheduled_p5|oracle_unscheduled|oracle_policy_error|primary_regret|policy_regret|blocks|accepted_moves|greedy_us|hill_climb_us|valid",
+    "scenario|weighted_estimate|estimate_p1|estimate_p2|estimate_p3|estimate_p4|estimate_p5|initial_unscheduled|initial_policy_error|final_unscheduled|final_policy_error|final_unscheduled_p1|final_unscheduled_p2|final_unscheduled_p3|final_unscheduled_p4|final_unscheduled_p5|oracle_unscheduled|oracle_policy_error|primary_regret|policy_regret|tasks|projected_intervals|initial_blocks|final_blocks|accepted_moves|greedy_us|hill_climb_us|valid",
   )
   selected
   |> list.each(run)
@@ -96,41 +97,34 @@ fn run(scenario: Scenario) {
   }
   let #(oracle_unscheduled, oracle_policy, primary_regret, policy_regret) =
     oracle_columns(value, oracle)
-  io.println(
-    name
-    <> "|"
-    <> int.to_string(weighted_estimate(estimates))
-    <> "|"
-    <> priority_columns(estimates)
-    <> "|"
-    <> int.to_string(initial_value.weighted_unscheduled_minutes)
-    <> "|"
-    <> float.to_string(initial_value.weighted_policy_error)
-    <> "|"
-    <> int.to_string(value.weighted_unscheduled_minutes)
-    <> "|"
-    <> float.to_string(value.weighted_policy_error)
-    <> "|"
-    <> priority_columns(final_unscheduled)
-    <> "|"
-    <> oracle_unscheduled
-    <> "|"
-    <> oracle_policy
-    <> "|"
-    <> primary_regret
-    <> "|"
-    <> policy_regret
-    <> "|"
-    <> int.to_string(list.length(result.blocks))
-    <> "|"
-    <> int.to_string(result.accepted_moves)
-    <> "|"
-    <> int.to_string(greedy_elapsed)
-    <> "|"
-    <> int.to_string(hill_elapsed)
-    <> "|"
-    <> valid,
-  )
+  [
+    [name, int.to_string(weighted_estimate(estimates))],
+    priority_values(estimates),
+    [
+      int.to_string(initial_value.weighted_unscheduled_minutes),
+      float.to_string(initial_value.weighted_policy_error),
+      int.to_string(value.weighted_unscheduled_minutes),
+      float.to_string(value.weighted_policy_error),
+    ],
+    priority_values(final_unscheduled),
+    [
+      oracle_unscheduled,
+      oracle_policy,
+      primary_regret,
+      policy_regret,
+      int.to_string(list.length(tasks)),
+      int.to_string(list.length(projected)),
+      int.to_string(list.length(initial)),
+      int.to_string(list.length(result.blocks)),
+      int.to_string(result.accepted_moves),
+      int.to_string(greedy_elapsed),
+      int.to_string(hill_elapsed),
+      valid,
+    ],
+  ]
+  |> list.flatten
+  |> string.join("|")
+  |> io.println
 }
 
 fn priority_estimates(tasks: List(scheduling_model.SchedulingTask)) {
@@ -172,12 +166,9 @@ fn weighted_estimate(minutes: PriorityMinutes) {
   p1 + p2 * 2 + p3 * 4 + p4 * 8 + p5 * 16
 }
 
-fn priority_columns(minutes: PriorityMinutes) {
+fn priority_values(minutes: PriorityMinutes) {
   let PriorityMinutes(p1, p2, p3, p4, p5) = minutes
-  [p1, p2, p3, p4, p5]
-  |> list.map(int.to_string)
-  |> list.intersperse("|")
-  |> list.fold("", fn(output, value) { output <> value })
+  [p1, p2, p3, p4, p5] |> list.map(int.to_string)
 }
 
 fn oracle_columns(

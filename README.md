@@ -98,7 +98,7 @@ Available suites are:
 - `stress`: additional large task sets around the current candidate-composition boundaries; this may take substantially longer.
 - `all`: focused, full, holdout, and oracle suites; it deliberately excludes stress.
 
-Each row reports total priority-weighted estimate, estimates and final unscheduled minutes by priority, initial and final scores, oracle regret where available, validity, and one timing each for greedy construction and hill climbing. There is no warm-up or repetition. Compilation and availability projection are excluded, and timings are diagnostic rather than part of the quality ranking.
+Each row reports total priority-weighted estimate, estimates and final unscheduled minutes by priority, initial and final scores, oracle regret where available, validity, task and projected-interval counts, initial and final block counts, accepted moves, and one timing each for greedy construction and hill climbing. There is no warm-up or repetition. Compilation and availability projection are excluded, and timings are diagnostic rather than part of the quality ranking.
 
 Compare a quick or full result with the checked-in `3ff76a8` full baseline:
 
