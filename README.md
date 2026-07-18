@@ -94,7 +94,7 @@ Available suites are:
 - `quick` (default): focused regressions and a small profile matrix for iteration.
 - `full`: focused regressions; all six generated profiles at 4, 8, 12, 16, 24, 27, 28, 32, and 64 tasks; selected hard profiles at 128 tasks; and the six base representative workloads. It includes dense coverage around the current 20,000-candidate threshold and may take a few minutes.
 - `holdout`: the six profiles at 4–16 tasks with five disjoint seeds; one disjoint seed per size at 24, 28, and 32 tasks; all profiles at 64 tasks; and selected hard profiles at 128 tasks. It contains 150 cases and is reserved for validating a proposed algorithm change.
-- `oracle`: tiny cases compared with an exhaustive minute-level optimum.
+- `oracle`: tiny cases compared with a live exhaustive minute-level optimum, plus eight fixed 8–10 task cases compared with cached CP-SAT optima.
 - `stress`: additional large task sets around the current candidate-composition boundaries; this may take substantially longer.
 - `representative`: the six fixed, LLM-curated base workloads covering normal office work, overload, clustered deadlines, fragmented calendars, deep work, and evening/weekend use.
 - `permutation`: the six representative base workloads plus three deterministic lowbias32 ID permutations and one adversarial ID assignment per workload, for 30 cases total.
@@ -128,5 +128,7 @@ Summarize an oracle run without a baseline:
 scripts/benchmark_scheduling.sh oracle > oracle.psv
 scripts/compare_scheduling_quality.sh oracle.psv
 ```
+
+The medium oracle inputs are the hand-authored `benchmark/oracles/medium-cases-v1.json`. Their cached optimal witness blocks are stored in `benchmark/oracles/medium-results-v1.json`; the benchmark evaluates those blocks with the current scoring function, and normal benchmark and test runs do not require Python or OR-Tools. After intentionally editing the input cases or the offline model, regenerate the results with `scripts/generate_scheduling_oracles.sh`. The generator uses `uv`, Python 3.12, and the OR-Tools version pinned in `tools/scheduling_oracle/requirements.txt`, requires both lexicographic solves to report `OPTIMAL`, and writes the results only after every case succeeds.
 
 Baseline files contain quality fields only; timings are intentionally excluded. Keep a baseline immutable and add a new commit-named file after intentionally accepting a quality change.

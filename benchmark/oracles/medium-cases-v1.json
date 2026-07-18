@@ -1,0 +1,151 @@
+{
+  "scenarios": [
+    {
+      "name": "medium_balanced_policy_mix",
+      "description": "Eight tasks exactly fill a continuous horizon while mixed deadlines, priorities, block lengths, and policies compete.",
+      "availability": [
+        { "start_minute": 0, "end_minute": 12 }
+      ],
+      "tasks": [
+        { "id": 101, "estimate_minutes": 2, "priority": 5, "deadline_minute": 6, "policy": "asap", "minimum_split_minutes": 1 },
+        { "id": 211, "estimate_minutes": 1, "priority": 4, "deadline_minute": 6, "policy": "near_deadline", "minimum_split_minutes": 1 },
+        { "id": 307, "estimate_minutes": 2, "priority": 4, "deadline_minute": 12, "policy": "spread", "minimum_split_minutes": 2 },
+        { "id": 401, "estimate_minutes": 1, "priority": 3, "deadline_minute": 12, "policy": "asap", "minimum_split_minutes": 1 },
+        { "id": 503, "estimate_minutes": 2, "priority": 3, "deadline_minute": 12, "policy": "near_deadline", "minimum_split_minutes": 1 },
+        { "id": 601, "estimate_minutes": 1, "priority": 2, "deadline_minute": 6, "policy": "spread", "minimum_split_minutes": 1 },
+        { "id": 701, "estimate_minutes": 2, "priority": 2, "deadline_minute": 12, "policy": "spread", "minimum_split_minutes": 2 },
+        { "id": 809, "estimate_minutes": 1, "priority": 1, "deadline_minute": 12, "policy": "near_deadline", "minimum_split_minutes": 1 }
+      ]
+    },
+    {
+      "name": "medium_overloaded_priority",
+      "description": "Nine tasks request substantially more than the available horizon, forcing exact priority-weighted coverage choices.",
+      "availability": [
+        { "start_minute": 0, "end_minute": 12 }
+      ],
+      "tasks": [
+        { "id": 1103, "estimate_minutes": 3, "priority": 5, "deadline_minute": 6, "policy": "asap", "minimum_split_minutes": 1 },
+        { "id": 1213, "estimate_minutes": 2, "priority": 5, "deadline_minute": 6, "policy": "near_deadline", "minimum_split_minutes": 2 },
+        { "id": 1301, "estimate_minutes": 3, "priority": 4, "deadline_minute": 12, "policy": "spread", "minimum_split_minutes": 1 },
+        { "id": 1427, "estimate_minutes": 2, "priority": 4, "deadline_minute": 6, "policy": "spread", "minimum_split_minutes": 2 },
+        { "id": 1511, "estimate_minutes": 2, "priority": 4, "deadline_minute": 12, "policy": "near_deadline", "minimum_split_minutes": 1 },
+        { "id": 1601, "estimate_minutes": 2, "priority": 3, "deadline_minute": 12, "policy": "asap", "minimum_split_minutes": 2 },
+        { "id": 1709, "estimate_minutes": 2, "priority": 3, "deadline_minute": 12, "policy": "spread", "minimum_split_minutes": 1 },
+        { "id": 1801, "estimate_minutes": 1, "priority": 2, "deadline_minute": 6, "policy": "asap", "minimum_split_minutes": 1 },
+        { "id": 1907, "estimate_minutes": 2, "priority": 1, "deadline_minute": 12, "policy": "near_deadline", "minimum_split_minutes": 1 }
+      ]
+    },
+    {
+      "name": "medium_fragmented_availability",
+      "description": "Eight tasks compete across three short availability islands, with several tasks requiring contiguous two-minute blocks.",
+      "availability": [
+        { "start_minute": 0, "end_minute": 3 },
+        { "start_minute": 4, "end_minute": 7 },
+        { "start_minute": 9, "end_minute": 12 }
+      ],
+      "tasks": [
+        { "id": 3011, "estimate_minutes": 3, "priority": 5, "deadline_minute": 6, "policy": "asap", "minimum_split_minutes": 1 },
+        { "id": 3119, "estimate_minutes": 2, "priority": 5, "deadline_minute": 12, "policy": "near_deadline", "minimum_split_minutes": 2 },
+        { "id": 3203, "estimate_minutes": 2, "priority": 4, "deadline_minute": 12, "policy": "spread", "minimum_split_minutes": 1 },
+        { "id": 3301, "estimate_minutes": 2, "priority": 4, "deadline_minute": 6, "policy": "near_deadline", "minimum_split_minutes": 2 },
+        { "id": 3407, "estimate_minutes": 2, "priority": 3, "deadline_minute": 12, "policy": "asap", "minimum_split_minutes": 2 },
+        { "id": 3511, "estimate_minutes": 2, "priority": 3, "deadline_minute": 12, "policy": "spread", "minimum_split_minutes": 1 },
+        { "id": 3607, "estimate_minutes": 1, "priority": 2, "deadline_minute": 6, "policy": "spread", "minimum_split_minutes": 1 },
+        { "id": 3701, "estimate_minutes": 2, "priority": 1, "deadline_minute": 12, "policy": "near_deadline", "minimum_split_minutes": 1 }
+      ]
+    },
+    {
+      "name": "medium_minimum_split_traps",
+      "description": "Aggregate capacity looks sufficient for several tasks, but short islands conflict with minimum block lengths.",
+      "availability": [
+        { "start_minute": 0, "end_minute": 2 },
+        { "start_minute": 3, "end_minute": 6 },
+        { "start_minute": 8, "end_minute": 12 }
+      ],
+      "tasks": [
+        { "id": 4001, "estimate_minutes": 3, "priority": 5, "deadline_minute": 6, "policy": "asap", "minimum_split_minutes": 3 },
+        { "id": 4111, "estimate_minutes": 4, "priority": 5, "deadline_minute": 12, "policy": "spread", "minimum_split_minutes": 4 },
+        { "id": 4201, "estimate_minutes": 2, "priority": 4, "deadline_minute": 6, "policy": "near_deadline", "minimum_split_minutes": 2 },
+        { "id": 4313, "estimate_minutes": 3, "priority": 4, "deadline_minute": 12, "policy": "near_deadline", "minimum_split_minutes": 3 },
+        { "id": 4409, "estimate_minutes": 2, "priority": 3, "deadline_minute": 12, "policy": "asap", "minimum_split_minutes": 2 },
+        { "id": 4513, "estimate_minutes": 2, "priority": 3, "deadline_minute": 12, "policy": "spread", "minimum_split_minutes": 1 },
+        { "id": 4603, "estimate_minutes": 1, "priority": 2, "deadline_minute": 6, "policy": "spread", "minimum_split_minutes": 1 },
+        { "id": 4703, "estimate_minutes": 1, "priority": 1, "deadline_minute": 12, "policy": "near_deadline", "minimum_split_minutes": 1 }
+      ]
+    },
+    {
+      "name": "medium_clustered_deadlines",
+      "description": "Ten tasks form deadline clusters at minutes four, six, and twelve around a one-minute availability gap.",
+      "availability": [
+        { "start_minute": 0, "end_minute": 7 },
+        { "start_minute": 8, "end_minute": 12 }
+      ],
+      "tasks": [
+        { "id": 5003, "estimate_minutes": 2, "priority": 5, "deadline_minute": 4, "policy": "near_deadline", "minimum_split_minutes": 1 },
+        { "id": 5101, "estimate_minutes": 1, "priority": 5, "deadline_minute": 4, "policy": "asap", "minimum_split_minutes": 1 },
+        { "id": 5209, "estimate_minutes": 2, "priority": 4, "deadline_minute": 6, "policy": "spread", "minimum_split_minutes": 2 },
+        { "id": 5303, "estimate_minutes": 2, "priority": 4, "deadline_minute": 6, "policy": "near_deadline", "minimum_split_minutes": 1 },
+        { "id": 5407, "estimate_minutes": 2, "priority": 4, "deadline_minute": 12, "policy": "spread", "minimum_split_minutes": 1 },
+        { "id": 5501, "estimate_minutes": 2, "priority": 3, "deadline_minute": 12, "policy": "asap", "minimum_split_minutes": 2 },
+        { "id": 5603, "estimate_minutes": 1, "priority": 3, "deadline_minute": 6, "policy": "asap", "minimum_split_minutes": 1 },
+        { "id": 5701, "estimate_minutes": 2, "priority": 3, "deadline_minute": 12, "policy": "near_deadline", "minimum_split_minutes": 1 },
+        { "id": 5801, "estimate_minutes": 2, "priority": 2, "deadline_minute": 12, "policy": "spread", "minimum_split_minutes": 2 },
+        { "id": 5903, "estimate_minutes": 1, "priority": 1, "deadline_minute": 4, "policy": "spread", "minimum_split_minutes": 1 }
+      ]
+    },
+    {
+      "name": "medium_policy_tie_break",
+      "description": "Eight equal-priority tasks exactly fill the horizon, leaving policy error as the only differentiator between many feasible schedules.",
+      "availability": [
+        { "start_minute": 0, "end_minute": 12 }
+      ],
+      "tasks": [
+        { "id": 6007, "estimate_minutes": 2, "priority": 3, "deadline_minute": 12, "policy": "asap", "minimum_split_minutes": 1 },
+        { "id": 6101, "estimate_minutes": 1, "priority": 3, "deadline_minute": 12, "policy": "near_deadline", "minimum_split_minutes": 1 },
+        { "id": 6203, "estimate_minutes": 2, "priority": 3, "deadline_minute": 12, "policy": "spread", "minimum_split_minutes": 1 },
+        { "id": 6301, "estimate_minutes": 1, "priority": 3, "deadline_minute": 12, "policy": "asap", "minimum_split_minutes": 1 },
+        { "id": 6401, "estimate_minutes": 2, "priority": 3, "deadline_minute": 12, "policy": "near_deadline", "minimum_split_minutes": 1 },
+        { "id": 6503, "estimate_minutes": 1, "priority": 3, "deadline_minute": 12, "policy": "spread", "minimum_split_minutes": 1 },
+        { "id": 6607, "estimate_minutes": 2, "priority": 3, "deadline_minute": 12, "policy": "asap", "minimum_split_minutes": 1 },
+        { "id": 6701, "estimate_minutes": 1, "priority": 3, "deadline_minute": 12, "policy": "near_deadline", "minimum_split_minutes": 1 }
+      ]
+    },
+    {
+      "name": "medium_displacement_chain",
+      "description": "Eight two-minute blocks exactly fill nested deadline windows and require coordinated ordering across more than three tasks.",
+      "availability": [
+        { "start_minute": 0, "end_minute": 12 }
+      ],
+      "tasks": [
+        { "id": 7001, "estimate_minutes": 2, "priority": 4, "deadline_minute": 4, "policy": "near_deadline", "minimum_split_minutes": 2 },
+        { "id": 7103, "estimate_minutes": 1, "priority": 4, "deadline_minute": 4, "policy": "asap", "minimum_split_minutes": 1 },
+        { "id": 7207, "estimate_minutes": 2, "priority": 4, "deadline_minute": 6, "policy": "near_deadline", "minimum_split_minutes": 2 },
+        { "id": 7307, "estimate_minutes": 1, "priority": 4, "deadline_minute": 6, "policy": "asap", "minimum_split_minutes": 1 },
+        { "id": 7411, "estimate_minutes": 2, "priority": 4, "deadline_minute": 8, "policy": "near_deadline", "minimum_split_minutes": 2 },
+        { "id": 7507, "estimate_minutes": 1, "priority": 4, "deadline_minute": 8, "policy": "asap", "minimum_split_minutes": 1 },
+        { "id": 7603, "estimate_minutes": 2, "priority": 4, "deadline_minute": 12, "policy": "near_deadline", "minimum_split_minutes": 2 },
+        { "id": 7703, "estimate_minutes": 1, "priority": 4, "deadline_minute": 12, "policy": "spread", "minimum_split_minutes": 1 }
+      ]
+    },
+    {
+      "name": "medium_sparse_policy_placement",
+      "description": "Ten short tasks fit into an underloaded horizon, testing policy placement around a gap without primary contention.",
+      "availability": [
+        { "start_minute": 0, "end_minute": 5 },
+        { "start_minute": 7, "end_minute": 12 }
+      ],
+      "tasks": [
+        { "id": 8009, "estimate_minutes": 1, "priority": 5, "deadline_minute": 6, "policy": "asap", "minimum_split_minutes": 1 },
+        { "id": 8101, "estimate_minutes": 1, "priority": 4, "deadline_minute": 6, "policy": "near_deadline", "minimum_split_minutes": 1 },
+        { "id": 8209, "estimate_minutes": 1, "priority": 4, "deadline_minute": 12, "policy": "spread", "minimum_split_minutes": 1 },
+        { "id": 8311, "estimate_minutes": 1, "priority": 3, "deadline_minute": 6, "policy": "spread", "minimum_split_minutes": 1 },
+        { "id": 8401, "estimate_minutes": 1, "priority": 3, "deadline_minute": 12, "policy": "asap", "minimum_split_minutes": 1 },
+        { "id": 8501, "estimate_minutes": 1, "priority": 3, "deadline_minute": 12, "policy": "near_deadline", "minimum_split_minutes": 1 },
+        { "id": 8609, "estimate_minutes": 1, "priority": 2, "deadline_minute": 6, "policy": "near_deadline", "minimum_split_minutes": 1 },
+        { "id": 8707, "estimate_minutes": 1, "priority": 2, "deadline_minute": 12, "policy": "spread", "minimum_split_minutes": 1 },
+        { "id": 8803, "estimate_minutes": 1, "priority": 1, "deadline_minute": 12, "policy": "asap", "minimum_split_minutes": 1 },
+        { "id": 8903, "estimate_minutes": 1, "priority": 1, "deadline_minute": 12, "policy": "near_deadline", "minimum_split_minutes": 1 }
+      ]
+    }
+  ]
+}

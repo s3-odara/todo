@@ -8,6 +8,7 @@ import gleam/order
 import gleam/string
 import scheduling_benchmark_hash.{sample}
 import scheduling_fixture
+import scheduling_oracle_fixture
 import tasks/domain/policy.{Asap, NearDeadline, Spread}
 import tasks/domain/scheduling/greedy
 import tasks/domain/scheduling/hill_climb
@@ -22,6 +23,10 @@ import tasks/domain/scheduling/timeline.{
 fn monotonic_microseconds() -> Int
 
 const representative_fixture_path = "benchmark/fixtures/representative-workloads-v1.json"
+
+const medium_oracle_cases_path = "benchmark/oracles/medium-cases-v1.json"
+
+const medium_oracle_results_path = "benchmark/oracles/medium-results-v1.json"
 
 type Profile {
   Underloaded
@@ -38,12 +43,18 @@ type FixtureSelection {
   AllRepresentativeIds
 }
 
+type Oracle {
+  NoOracle
+  ExhaustiveOracle(horizon: Int)
+  CachedOracle(score: scheduling_model.Score)
+}
+
 type Scenario {
   Scenario(
     name: String,
     tasks: List(scheduling_model.SchedulingTask),
     projected: List(AbsoluteInterval),
-    oracle_horizon: Option(Int),
+    oracle: Oracle,
   )
 }
 
@@ -60,14 +71,14 @@ pub fn main() {
       )
     ["full"] -> full_scenarios()
     ["holdout"] -> holdout_scenarios()
-    ["oracle"] -> exact_scenarios()
+    ["oracle"] -> oracle_scenarios()
     ["stress"] -> stress_scenarios()
     ["representative"] -> representative_scenarios(RepresentativeBase)
     ["permutation"] -> representative_scenarios(AllRepresentativeIds)
     ["all"] ->
       full_scenarios()
       |> list.append(holdout_scenarios())
-      |> list.append(exact_scenarios())
+      |> list.append(oracle_scenarios())
       |> list.append(representative_scenarios(IdPermutations))
     _ -> {
       io.println(
@@ -84,7 +95,7 @@ pub fn main() {
 }
 
 fn run(scenario: Scenario) {
-  let Scenario(name, tasks, projected, oracle_horizon) = scenario
+  let Scenario(name, tasks, projected, oracle) = scenario
   // One timing preserves a useful diagnostic without making deterministic quality
   // cases five times slower. Runtime is not used to rank solution quality.
   let space = SearchSpace(projected, 0, 0)
@@ -98,9 +109,10 @@ fn run(scenario: Scenario) {
   let value = score.evaluate(tasks, result.blocks, 0)
   let estimates = priority_estimates(tasks)
   let final_unscheduled = priority_unscheduled(tasks, result.blocks)
-  let oracle = case oracle_horizon {
-    None -> None
-    Some(horizon) -> exact_optimum(tasks, projected, horizon)
+  let oracle = case oracle {
+    NoOracle -> None
+    ExhaustiveOracle(horizon) -> exact_optimum(tasks, projected, horizon)
+    CachedOracle(score) -> Some(score)
   }
   let valid = case invariant.validate_generation(result.blocks, tasks, space) {
     Ok(_) -> "true"
@@ -214,7 +226,7 @@ fn focused_scenarios() -> List(Scenario) {
       "short_remainder",
       [task(1, 100, 3, 120, 30, Spread)],
       [interval(0, 80), interval(90, 120)],
-      None,
+      NoOracle,
     ),
     Scenario(
       "priority_contention",
@@ -225,7 +237,7 @@ fn focused_scenarios() -> List(Scenario) {
         task(4, 120, 3, 360, 30, Spread),
       ],
       [interval(0, 300)],
-      None,
+      NoOracle,
     ),
     Scenario(
       "fragmented",
@@ -238,13 +250,13 @@ fn focused_scenarios() -> List(Scenario) {
         interval(330, 390),
         interval(420, 480),
       ],
-      None,
+      NoOracle,
     ),
     Scenario(
       "mixed_medium",
       legacy_generated_tasks(12, 3, []),
       [interval(0, 240), interval(300, 540), interval(600, 840)],
-      None,
+      NoOracle,
     ),
   ]
 }
@@ -292,7 +304,7 @@ fn representative_scenarios(selection: FixtureSelection) -> List(Scenario) {
   }
   list.map(selected, fn(scenario) {
     let scheduling_fixture.FixtureScenario(name, tasks, projected) = scenario
-    Scenario(name, tasks, projected, None)
+    Scenario(name, tasks, projected, NoOracle)
   })
 }
 
@@ -381,7 +393,7 @@ fn profile_scenario(profile, count, seed) -> Scenario {
     name,
     generated_tasks(profile, count, seed, horizon),
     projected,
-    None,
+    NoOracle,
   )
 }
 
@@ -534,7 +546,42 @@ fn exact_scenario(seed: Int) -> Scenario {
       }
       task(id, estimate, priority, deadline, minimum, policy)
     })
-  Scenario("exact_s" <> int.to_string(seed), tasks, projected, Some(horizon))
+  Scenario(
+    "exact_s" <> int.to_string(seed),
+    tasks,
+    projected,
+    ExhaustiveOracle(horizon),
+  )
+}
+
+fn oracle_scenarios() {
+  list.append(exact_scenarios(), medium_oracle_scenarios())
+}
+
+fn medium_oracle_scenarios() -> List(Scenario) {
+  let scenarios = case
+    scheduling_oracle_fixture.load(
+      medium_oracle_cases_path,
+      medium_oracle_results_path,
+    )
+  {
+    Ok(scenarios) -> scenarios
+    Error(error) -> panic as error
+  }
+  list.map(scenarios, fn(scenario) {
+    let scheduling_oracle_fixture.OracleScenario(
+      name,
+      tasks,
+      projected,
+      witness,
+    ) = scenario
+    Scenario(
+      name,
+      tasks,
+      projected,
+      CachedOracle(score.evaluate(tasks, witness, 0)),
+    )
+  })
 }
 
 fn exact_optimum(
