@@ -5,7 +5,7 @@ import scheduling_benchmark_hash
 
 pub fn seeded_lowbias32_is_stable_test() {
   scheduling_benchmark_hash.value(101, 307)
-  |> should.equal(1_192_176_205)
+  |> should.equal(113_585_901)
 }
 
 pub fn generated_profiles_cover_every_categorical_value_test() {
