@@ -102,7 +102,7 @@ Available suites are:
 
 Each row reports total priority-weighted estimate, estimates and final unscheduled minutes by priority, initial and final scores, oracle regret where available, validity, task and projected-interval counts, initial and final block counts, accepted moves, and one timing each for greedy construction and hill climbing. There is no warm-up or repetition. Compilation and availability projection are excluded, and timings are diagnostic rather than part of the quality ranking.
 
-The checked-in `3ff76a8` baselines predate the current seeded-hash composition and are retained as historical artifacts; their generated workload metadata is not compatible with current results. After committing an intentional sampler or fixture change, capture new full and holdout baselines under that commit name. Compare quick or full results with the new full baseline, and holdout results with its separate baseline:
+The checked-in `17f87e7` full and holdout baselines capture the current seeded-hash composition. After committing an intentional sampler or fixture change, capture new full and holdout baselines under that commit name. Compare quick or full results with the matching full baseline, and holdout results with its separate baseline:
 
 ```sh
 scripts/compare_scheduling_quality.sh \
