@@ -92,15 +92,17 @@ scripts/benchmark_scheduling.sh quick > candidate.psv
 Available suites are:
 
 - `quick` (default): focused regressions and a small profile matrix for iteration.
-- `full`: focused regressions; all six profiles at 4, 8, 12, 16, 24, 27, 28, 32, and 64 tasks; and selected hard profiles at 128 tasks. It includes dense coverage around the current 20,000-candidate threshold and may take a few minutes.
+- `full`: focused regressions; all six generated profiles at 4, 8, 12, 16, 24, 27, 28, 32, and 64 tasks; selected hard profiles at 128 tasks; and the six base representative workloads. It includes dense coverage around the current 20,000-candidate threshold and may take a few minutes.
 - `holdout`: the six profiles at 4–16 tasks with five disjoint seeds; one disjoint seed per size at 24, 28, and 32 tasks; all profiles at 64 tasks; and selected hard profiles at 128 tasks. It contains 150 cases and is reserved for validating a proposed algorithm change.
 - `oracle`: tiny cases compared with an exhaustive minute-level optimum.
 - `stress`: additional large task sets around the current candidate-composition boundaries; this may take substantially longer.
-- `all`: focused, full, holdout, and oracle suites; it deliberately excludes stress.
+- `representative`: the six fixed, LLM-curated base workloads covering normal office work, overload, clustered deadlines, fragmented calendars, deep work, and evening/weekend use.
+- `permutation`: the six representative base workloads plus three deterministic lowbias32 ID permutations and one adversarial ID assignment per workload, for 30 cases total.
+- `all`: full, holdout, oracle, and the 24 non-base representative ID permutations; it deliberately excludes stress.
 
 Each row reports total priority-weighted estimate, estimates and final unscheduled minutes by priority, initial and final scores, oracle regret where available, validity, task and projected-interval counts, initial and final block counts, accepted moves, and one timing each for greedy construction and hill climbing. There is no warm-up or repetition. Compilation and availability projection are excluded, and timings are diagnostic rather than part of the quality ranking.
 
-Compare a quick or full result with the checked-in `3ff76a8` full baseline:
+Compare a quick result with the checked-in `3ff76a8` full baseline. Full results now also contain the representative base scenarios and require a newer full baseline captured after these fixture changes are committed:
 
 ```sh
 scripts/compare_scheduling_quality.sh \
@@ -114,7 +116,16 @@ scripts/compare_scheduling_quality.sh \
   benchmark/baselines/3ff76a8-holdout.psv holdout-candidate.psv
 ```
 
-The report's wins and losses are from the candidate's perspective. It also reports aggregate and per-scenario primary quality loss as a percentage of total priority-weighted estimate, using nearest-rank p50/p95/worst for the latter, plus aggregate and percentile losses for each priority. Positive percentages are regressions. Cases without tasks at a given priority are excluded from that priority's percentiles. A full baseline may contain scenarios absent from a quick candidate, but every candidate scenario must have a baseline entry. Both artifacts must use the current schema because relative and per-priority comparisons require workload metadata. Policy-error values are comparable only between artifacts using the same objective. Comparing additional holdout or stress results across revisions requires a corresponding result captured from the baseline revision.
+The report's wins and losses are from the candidate's perspective. It also reports aggregate and per-scenario primary quality loss as a percentage of total priority-weighted estimate, using nearest-rank p50/p95/worst for the latter, plus aggregate and percentile losses for each priority. Positive percentages are regressions. Cases without tasks at a given priority are excluded from that priority's percentiles. A full baseline may contain scenarios absent from a quick candidate, but every candidate scenario must have a baseline entry. Both artifacts must use the current schema because relative and per-priority comparisons require workload metadata. Policy-error values are comparable only between artifacts using the same objective. Comparing additional holdout, stress, or permutation results across revisions requires a corresponding result captured from the baseline revision.
+
+Run the fixed representative base workloads or the complete ID-permutation matrix independently with:
+
+```sh
+scripts/benchmark_scheduling.sh representative > representative.psv
+scripts/benchmark_scheduling.sh permutation > permutation.psv
+```
+
+They are loaded from `benchmark/fixtures/representative-workloads-v1.json`. Fixture deadlines and availability boundaries are relative minutes and are converted to scheduler seconds before execution. ID permutations preserve each workload and its ID set while changing only the task-to-ID assignment. Full includes only the six base workloads so repeated permutations do not distort its aggregate quality metrics; all adds the 24 non-base variants without duplicating those base rows.
 
 Summarize an oracle run without a baseline:
 

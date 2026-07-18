@@ -1,7 +1,7 @@
 import gleam/int
 import gleam/list
 import gleeunit/should
-import scheduling_benchmark
+import scheduling_benchmark_hash
 
 pub fn generated_profiles_cover_every_categorical_value_test() {
   let seeds = [101, 211, 307, 401, 503, 9001, 9011, 9029, 9041, 9059]
@@ -56,7 +56,7 @@ fn sampled_sequence(
 ) {
   indexes
   |> list.map(fn(index) {
-    scheduling_benchmark.sample(seed, index * multiplier + offset, bound)
+    scheduling_benchmark_hash.sample(seed, index * multiplier + offset, bound)
   })
 }
 

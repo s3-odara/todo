@@ -6,6 +6,8 @@ import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/order
 import gleam/string
+import scheduling_benchmark_hash.{sample}
+import scheduling_fixture
 import tasks/domain/policy.{Asap, NearDeadline, Spread}
 import tasks/domain/scheduling/greedy
 import tasks/domain/scheduling/hill_climb
@@ -19,7 +21,7 @@ import tasks/domain/scheduling/timeline.{
 @external(erlang, "scheduling_benchmark_ffi", "monotonic_microseconds")
 fn monotonic_microseconds() -> Int
 
-const uint32_mask = 4_294_967_295
+const representative_fixture_path = "benchmark/fixtures/representative-workloads-v1.json"
 
 type Profile {
   Underloaded
@@ -28,6 +30,12 @@ type Profile {
   Fragmented
   TightDeadlines
   MinimumSplitTraps
+}
+
+type FixtureSelection {
+  RepresentativeBase
+  IdPermutations
+  AllRepresentativeIds
 }
 
 type Scenario {
@@ -54,13 +62,16 @@ pub fn main() {
     ["holdout"] -> holdout_scenarios()
     ["oracle"] -> exact_scenarios()
     ["stress"] -> stress_scenarios()
+    ["representative"] -> representative_scenarios(RepresentativeBase)
+    ["permutation"] -> representative_scenarios(AllRepresentativeIds)
     ["all"] ->
       full_scenarios()
       |> list.append(holdout_scenarios())
       |> list.append(exact_scenarios())
+      |> list.append(representative_scenarios(IdPermutations))
     _ -> {
       io.println(
-        "usage: scheduling_benchmark [quick|full|holdout|oracle|stress|all]",
+        "usage: scheduling_benchmark [quick|full|holdout|oracle|stress|representative|permutation|all]",
       )
       []
     }
@@ -267,6 +278,24 @@ fn legacy_generated_tasks(
   }
 }
 
+fn representative_scenarios(selection: FixtureSelection) -> List(Scenario) {
+  let scheduling_fixture.FixtureCorpus(base, permutations) = case
+    scheduling_fixture.load(representative_fixture_path)
+  {
+    Ok(corpus) -> corpus
+    Error(error) -> panic as error
+  }
+  let selected = case selection {
+    RepresentativeBase -> base
+    IdPermutations -> permutations
+    AllRepresentativeIds -> list.append(base, permutations)
+  }
+  list.map(selected, fn(scenario) {
+    let scheduling_fixture.FixtureScenario(name, tasks, projected) = scenario
+    Scenario(name, tasks, projected, None)
+  })
+}
+
 fn full_scenarios() -> List(Scenario) {
   focused_scenarios()
   |> list.append(
@@ -281,6 +310,7 @@ fn full_scenarios() -> List(Scenario) {
       128,
     ]),
   )
+  |> list.append(representative_scenarios(RepresentativeBase))
 }
 
 fn holdout_scenarios() -> List(Scenario) {
@@ -474,24 +504,6 @@ fn first_or(values: List(Int), fallback: Int) -> Int {
     [first, ..] -> first
     [] -> fallback
   }
-}
-
-// Keep fixtures reproducible and independent of random-library version changes.
-// Avalanche before modulo so small bounds do not inherit arithmetic cycles.
-@internal
-pub fn sample(seed: Int, index: Int, bound: Int) -> Int {
-  let x = uint32(seed * 2_654_435_761 + index * 2_246_822_507)
-  let x = uint32(xor_shift_right(x, 16) * 2_146_121_005)
-  let x = uint32(xor_shift_right(x, 15) * 2_221_713_035)
-  uint32(xor_shift_right(x, 16)) % bound
-}
-
-fn uint32(value: Int) {
-  int.bitwise_and(value, uint32_mask)
-}
-
-fn xor_shift_right(value: Int, bits: Int) {
-  int.bitwise_exclusive_or(value, int.bitwise_shift_right(value, bits))
 }
 
 fn exact_scenarios() -> List(Scenario) {
