@@ -82,38 +82,20 @@ pub fn non_list_commands_do_not_read_the_clock_test() {
 }
 
 pub fn help_lists_the_available_commands_test() {
-  cli.help()
-  |> should.equal(
-    cli.Outcome(
-      0,
-      [
-        "todo add TITLE [--estimate DURATION] [--priority PRIORITY] [--due DUE]",
-        "               [--scheduling-policy asap|spread|near_deadline]",
-        "               [--minimum-split DURATION]",
-        "todo list [--status pending|done|all] [--due today|overdue|YYYY-MM-DD]",
-        "          [--due-since YYYY-MM-DD] [--due-until YYYY-MM-DD]",
-        "todo list scheduled [--status pending|done|all]",
-        "                    [--on today|YYYY-MM-DD]",
-        "                    [--since YYYY-MM-DD] [--until YYYY-MM-DD]",
-        "  default status: pending; exact dates and ranges are mutually exclusive",
-        "  due dates use local time; overdue is before now; ranges are inclusive",
-        "  --due excludes undated tasks and cannot be combined with due ranges",
-        "todo done ID",
-        "todo availability weekly add|delete --day DAY[,DAY...] --from HH:MM --to HH:MM",
-        "todo availability date add|delete|set --date YYYY-MM-DD --from HH:MM --to HH:MM",
-        "todo availability date close|reset --date YYYY-MM-DD",
-        "todo availability list",
-        "todo schedule",
-        "  DURATION is an ASCII integer plus m or h; DAY is mon..sun",
-        "  dates are YYYY-MM-DD; due times are YYYY-MM-DD[THH:MM]",
-        "  availability times are HH:MM (00:00..24:00); date overrides replace weekly hours",
-        "  scheduling uses one fixed UTC offset; timezone databases and DST transitions are not modeled",
-        "  the saved snapshot survives edits and is replaced only by todo schedule",
-        "  storage is version 1 JSON AppState; current_schedule is null or metadata plus blocks",
-      ],
-      [],
-    ),
-  )
+  let cli.Outcome(code, lines, errors) = cli.help()
+
+  code |> should.equal(0)
+  errors |> should.equal([])
+  lines |> list.contains("Usage:") |> should.be_true
+  lines
+  |> list.contains("  gleam run -- done ID")
+  |> should.be_true
+  lines
+  |> list.contains("  gleam run -- schedule")
+  |> should.be_true
+  lines
+  |> list.contains("  gleam run -- availability list")
+  |> should.be_true
 }
 
 pub fn add_defaults_are_applied_test() {

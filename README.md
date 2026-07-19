@@ -1,134 +1,77 @@
 # Todo CLI
 
-A local Erlang/BEAM Todo CLI written in Gleam. It stores tasks and availability and can generate a deterministic working schedule.
+A local Todo CLI written in Gleam. It stores tasks and working hours in a JSON file and can build a deterministic schedule from task estimates, priorities, and deadlines.
+
+## Quick start
+
+Install the project dependencies:
 
 ```sh
-gleam run -- add "Write report" --estimate 3h --priority 4 --due 2026-07-15 \
+gleam deps download
+```
+
+Configure working hours, add a task, and generate a schedule:
+
+```sh
+gleam run -- availability weekly add \
+  --day mon,tue,wed,thu,fri --from 09:00 --to 17:00
+
+gleam run -- add "Write report" \
+  --estimate 3h --priority 4 --due 2030-07-15 \
   --scheduling-policy asap --minimum-split 30m
-gleam run -- availability weekly add --day mon,tue,wed,thu,fri --from 09:00 --to 17:00
+
 gleam run -- schedule
 gleam run -- list scheduled --on today
-gleam run -- done 1
-gleam run -- list scheduled --status done
 ```
+
+Run `gleam run -- --help` for the complete command syntax.
 
 ## Commands
 
-```text
-todo add TITLE [--estimate DURATION] [--priority 1|2|3|4|5] [--due DUE]
-               [--scheduling-policy asap|spread|near_deadline]
-               [--minimum-split DURATION]
-todo list [--status pending|done|all] [--due today|overdue|YYYY-MM-DD]
-          [--due-since YYYY-MM-DD] [--due-until YYYY-MM-DD]
-todo list scheduled [--status pending|done|all]
-                    [--on today|YYYY-MM-DD]
-                    [--since YYYY-MM-DD] [--until YYYY-MM-DD]
-todo done ID
-todo schedule
+| Command | Purpose |
+|---|---|
+| `add` | Add a task with an optional estimate, priority, due time, scheduling policy, and minimum block length. |
+| `list` | List tasks, optionally filtered by status or due date. |
+| `done` | Mark a task as completed. |
+| `availability` | Manage weekly working hours and date-specific overrides. |
+| `schedule` | Replace the saved schedule with a newly generated one. |
+| `list scheduled` | Read the saved schedule, optionally filtered by status or date. |
 
-todo availability weekly add|delete --day DAY[,DAY...]
-                                    --from HH:MM --to HH:MM
-todo availability date add|delete|set --date YYYY-MM-DD
-                                      --from HH:MM --to HH:MM
-todo availability date close|reset --date YYYY-MM-DD
-todo availability list
-```
+Durations use an integer followed by `m` or `h`. Due values use local time in `YYYY-MM-DD` or `YYYY-MM-DDTHH:MM` form. Priorities range from 1 to 5.
 
-Durations are strict ASCII integers followed by `m` or `h`. Estimate defaults to `0m`; minimum split defaults to `30m` and must be positive. Priority defaults to 3. Scheduling policy defaults to `spread`. IDs are positive ASCII decimal integers.
+Weekly availability uses `mon` through `sun`. A date override replaces that date's weekly hours: `set` replaces the date with one interval, `add` and `delete` edit its effective intervals, `close` marks it unavailable, and `reset` removes the override.
 
-Due input is local `YYYY-MM-DD` (23:59) or `YYYY-MM-DDTHH:MM`, converted to an absolute Unix timestamp with the machine's current UTC offset. UTC suffixes, seconds, fractional seconds, and non-canonical forms are rejected.
+## Scheduling
 
-Both list commands default to pending tasks; `--status done` selects completed tasks and `--status all` selects both. Due and scheduled ranges include both local endpoint dates. Exact and range filters are mutually exclusive, and duplicate, invalid, conflicting, or reversed filters are input errors.
+A task is eligible when it is pending, has a positive estimate, and has a future due time. Work is placed only inside configured availability, so eligible tasks may remain partly or entirely unscheduled. Higher-priority tasks are favored when there is not enough time.
 
-## Availability
+Scheduling policies control where work is placed before the deadline:
 
-Weekdays are `mon,tue,wed,thu,fri,sat,sun`. Times are minute boundaries from `00:00` through `24:00`; `24:00` is valid only as an end. Intervals cannot cross midnight. Add merges overlapping and adjacent intervals, while delete subtracts an interval and may split an existing interval.
+- `asap`: prefer earlier work
+- `spread`: distribute work across the available period (default)
+- `near_deadline`: prefer later work
 
-A date override completely replaces its weekday's weekly availability. `set` replaces it with one interval; date `add`/`delete` first copy effective weekly intervals when no override exists; `close` stores an empty override; and `reset` removes the override. `availability list` prints weekly entries Monday-first and overrides in date order.
+`schedule` regenerates the complete saved schedule. Adding or completing tasks and changing availability do not update an existing schedule; run `schedule` again after those changes.
 
-## Automatic scheduling
-
-`schedule` samples the current instant and fixed UTC offset once, rounds the planning start up to a minute boundary, and regenerates every eligible task from scratch. A task is eligible when it is pending, has a positive estimate, has a due time, and its due is after planning start. Other tasks are reported as `completed`, `missing_estimate`, `missing_due`, or `deadline_not_after_start` in that precedence order.
-
-Blocks remain inside effective availability, do not overlap, start no earlier than planning start, end no later than due, and never exceed estimates. Blocks normally meet the task's minimum split. A shorter single block is allowed only when the entire estimate is shorter than the minimum; a leftover shorter than the minimum is not scheduled by itself. Adjacent blocks for one task are merged.
-
-Priority weights are 1, 2, 4, 8, and 16. The scheduler first minimizes priority-weighted unscheduled minutes, then the continuous policy error `integral((actual_progress(x) - desired_progress(x))^2, x=0..1)`. Actual progress is piecewise linear across scheduled blocks and gaps. The implementation integrates each segment exactly with three-point Gauss-Legendre quadrature. With `x` as elapsed calendar fraction from planning start to due, desired completion is:
-
-```text
-asap:          1 - (1 - x)^2
-spread:        x
-near_deadline: x^2
-```
-
-A constructive greedy pass orders tasks by priority, deadline, and ID, then places each task at a small set of policy-aware anchors. Deterministic best-improvement hill climbing rebuilds one task, an ordered pair, or an ordered triple, which covers adding, relocating, splitting, merging, and swapping work without separate block-edit operations. The search evaluates at most 20,000 rebuilds per step and accepts at most 1,000 improvements. It is reproducible and constraint-preserving but remains a finite heuristic, not a mathematical global-optimum guarantee.
-
-A successful generation replaces the single saved schedule snapshot. Adding/completing tasks or changing availability does **not** alter that snapshot; only the next `schedule` regenerates it. `list scheduled` reads saved blocks without searching or saving, joins them to current task titles/statuses, and supports all dates, `--on today`, an explicit date, or inclusive `--since`/`--until` ranges. Date overlap and display use the offset saved with the schedule. There is no timezone-database or DST transition handling: one fixed offset applies to the whole generated horizon.
+Times are interpreted with the machine's current UTC offset. The generated schedule keeps that fixed offset and does not model timezone database or daylight-saving transitions.
 
 ## Storage
 
-The path is selected by non-empty `TODO_FILE`, then `$XDG_DATA_HOME/todo/tasks.json`, then `$HOME/.local/share/todo/tasks.json`. Missing files are treated as an empty version 1 state.
+The data file is selected in this order:
 
-Version 1 is one JSON object containing `version`, canonical task and availability arrays, and `current_schedule` (null or metadata plus blocks). Due times, generation metadata, and blocks are Unix seconds; availability intervals are local minutes from midnight. Decoder validation rejects unknown versions, malformed enums/references, duplicate IDs/dates/days, non-canonical intervals, overlapping/non-minute blocks, and non-canonical block order.
+1. `TODO_FILE`
+2. `$XDG_DATA_HOME/todo/tasks.json`
+3. `$HOME/.local/share/todo/tasks.json`
 
-Writes use a sibling `.tmp` file and rename. There is no locking, fsync, or concurrent-writer guarantee. Exit code 0 is success/help, 1 is path/I/O/corrupt-state/internal-invariant failure, and 2 is invalid input/domain failure or excessive search space. Diagnostics go to stderr and begin with `Error:`.
+A missing file starts an empty task list. Writes replace the file through a sibling temporary file. Concurrent writers are not supported.
 
 ## Development
 
 ```sh
-gleam deps download
-gleam format --check src test
 gleam test --target erlang
+scripts/integration_check.sh
 gleam build --target erlang
+gleam format --check src test
 ```
 
-### Scheduling quality benchmark
-
-The deterministic benchmark ranks solutions by the scheduler's lexicographic objective: lower priority-weighted unscheduled minutes first, then lower policy error. Run a suite and save its pipe-separated output with:
-
-```sh
-scripts/benchmark_scheduling.sh quick > candidate.psv
-```
-
-Available suites are:
-
-- `quick` (default): focused regressions and a small profile matrix for iteration.
-- `full`: focused regressions; all six generated profiles at 4, 8, 12, 16, 24, 27, 28, 32, and 64 tasks; selected hard profiles at 128 tasks; and the six base representative workloads. It includes dense coverage around the current 20,000-candidate threshold and may take a few minutes.
-- `holdout`: the six profiles at 4–16 tasks with five disjoint seeds; one disjoint seed per size at 24, 28, and 32 tasks; all profiles at 64 tasks; and selected hard profiles at 128 tasks. It contains 150 cases and is reserved for validating a proposed algorithm change.
-- `oracle`: tiny cases compared with a live exhaustive minute-level optimum, plus eight fixed 8–10 task cases compared with cached CP-SAT optima.
-- `stress`: additional large task sets around the current candidate-composition boundaries; this may take substantially longer.
-- `representative`: the six fixed, LLM-curated base workloads covering normal office work, overload, clustered deadlines, fragmented calendars, deep work, and evening/weekend use.
-- `permutation`: the six representative base workloads plus three deterministic lowbias32 ID permutations and one adversarial ID assignment per workload, for 30 cases total.
-- `all`: full, holdout, oracle, and the 24 non-base representative ID permutations; it deliberately excludes stress.
-
-Each row reports total priority-weighted estimate, estimates and final unscheduled minutes by priority, initial and final scores, oracle regret where available, validity, task and projected-interval counts, initial and final block counts, accepted moves, and one timing each for greedy construction and hill climbing. There is no warm-up or repetition. Compilation and availability projection are excluded, and timings are diagnostic rather than part of the quality ranking.
-
-The checked-in `17f87e7` full and holdout baselines capture the current seeded-hash composition. After committing an intentional sampler or fixture change, capture new full and holdout baselines under that commit name. Compare quick or full results with the matching full baseline, and holdout results with its separate baseline:
-
-```sh
-scripts/compare_scheduling_quality.sh \
-  benchmark/baselines/<commit>-full.psv candidate.psv
-scripts/compare_scheduling_quality.sh \
-  benchmark/baselines/<commit>-holdout.psv holdout-candidate.psv
-```
-
-The report's wins and losses are from the candidate's perspective. It also reports aggregate and per-scenario primary quality loss as a percentage of total priority-weighted estimate, using nearest-rank p50/p95/worst for the latter, plus aggregate and percentile losses for each priority. Positive percentages are regressions. Cases without tasks at a given priority are excluded from that priority's percentiles. A full baseline may contain scenarios absent from a quick candidate, but every candidate scenario must have a baseline entry. Both artifacts must use the current schema because relative and per-priority comparisons require workload metadata. Policy-error values are comparable only between artifacts using the same objective. Comparing additional holdout, stress, or permutation results across revisions requires a corresponding result captured from the baseline revision.
-
-Run the fixed representative base workloads or the complete ID-permutation matrix independently with:
-
-```sh
-scripts/benchmark_scheduling.sh representative > representative.psv
-scripts/benchmark_scheduling.sh permutation > permutation.psv
-```
-
-They are loaded from `benchmark/fixtures/representative-workloads-v1.json`. Fixture deadlines and availability boundaries are relative minutes and are converted to scheduler seconds before execution. ID permutations preserve each workload and its ID set while changing only the task-to-ID assignment. Full includes only the six base workloads so repeated permutations do not distort its aggregate quality metrics; all adds the 24 non-base variants without duplicating those base rows.
-
-Summarize an oracle run without a baseline:
-
-```sh
-scripts/benchmark_scheduling.sh oracle > oracle.psv
-scripts/compare_scheduling_quality.sh oracle.psv
-```
-
-The medium oracle inputs are the hand-authored `benchmark/oracles/medium-cases-v1.json`. Their cached optimal witness blocks are stored in `benchmark/oracles/medium-results-v1.json`; the benchmark evaluates those blocks with the current scoring function, and normal benchmark and test runs do not require Python or OR-Tools. After intentionally editing the input cases or the offline model, regenerate the results with `scripts/generate_scheduling_oracles.sh`. The generator uses `uv`, Python 3.12, and the OR-Tools version pinned in `tools/scheduling_oracle/requirements.txt`, requires both lexicographic solves to report `OPTIMAL`, and writes the results only after every case succeeds.
-
-Baseline files contain quality fields only; timings are intentionally excluded. Keep a baseline immutable and add a new commit-named file after intentionally accepting a quality change.
+See [docs/benchmarking.md](docs/benchmarking.md) before changing the scheduling algorithm or its fixtures.
