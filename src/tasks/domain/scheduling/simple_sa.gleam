@@ -19,15 +19,16 @@ const temperature_start = 1.0
 
 const temperature_end = 0.01
 
-type State {
-  State(
-    current_blocks: List(scheduling_model.ScheduleBlock),
-    current_score: scheduling_model.Score,
-    current_contributions: List(Contribution),
-    best_blocks: List(scheduling_model.ScheduleBlock),
-    best_score: scheduling_model.Score,
-    rng: Rng,
+type Solution {
+  Solution(
+    blocks: List(scheduling_model.ScheduleBlock),
+    score: scheduling_model.Score,
+    contributions: List(Contribution),
   )
+}
+
+type State {
+  State(current: Solution, best: Solution, rng: Rng)
 }
 
 type Proposal {
@@ -47,19 +48,14 @@ pub fn improve(
   let greedy_contributions =
     score.contributions(tasks, greedy_blocks, planning_start)
   let greedy_score = score.total(greedy_contributions)
+  let greedy_solution =
+    Solution(greedy_blocks, greedy_score, greedy_contributions)
   let estimate = weighted_estimate(tasks)
   case tasks == [] || estimate <= 0 {
     True -> greedy_blocks
     False -> {
       let initial =
-        State(
-          greedy_blocks,
-          greedy_score,
-          greedy_contributions,
-          greedy_blocks,
-          greedy_score,
-          deterministic_rng.new(run_seed),
-        )
+        State(greedy_solution, greedy_solution, deterministic_rng.new(run_seed))
       let final = case has_actual_unscheduled(tasks, greedy_blocks) {
         True -> loop(tasks, space, estimate, 0, search_iterations, initial)
         False -> {
@@ -67,7 +63,7 @@ pub fn improve(
             loop(tasks, space, estimate, 0, probe_iterations, initial)
           // Continuation is a policy decision: unlike exact best-ever ranking,
           // a policy-only gain must exceed epsilon to earn the full budget.
-          case score.strictly_better(probed.best_score, greedy_score) {
+          case score.strictly_better(probed.best.score, greedy_score) {
             True ->
               loop(
                 tasks,
@@ -81,8 +77,8 @@ pub fn improve(
           }
         }
       }
-      case score.compare(final.best_score, greedy_score) {
-        order.Lt -> final.best_blocks
+      case score.compare(final.best.score, greedy_score) {
+        order.Lt -> final.best.blocks
         order.Eq | order.Gt -> greedy_blocks
       }
     }
@@ -94,9 +90,10 @@ fn loop(tasks, space, estimate, iteration, limit, state: State) -> State {
     True -> state
     False -> {
       let Proposal(selected, proposal_rng) =
-        propose(tasks, state.current_blocks, state.rng)
-      let candidate = greedy.rebuild(state.current_blocks, selected, space)
-      case candidate == state.current_blocks {
+        propose(tasks, state.current.blocks, state.rng)
+      let candidate_blocks =
+        greedy.rebuild(state.current.blocks, selected, space)
+      case candidate_blocks == state.current.blocks {
         True ->
           loop(
             tasks,
@@ -104,49 +101,25 @@ fn loop(tasks, space, estimate, iteration, limit, state: State) -> State {
             estimate,
             iteration + 1,
             limit,
-            State(
-              state.current_blocks,
-              state.current_score,
-              state.current_contributions,
-              state.best_blocks,
-              state.best_score,
-              proposal_rng,
-            ),
+            State(state.current, state.best, proposal_rng),
           )
         False -> {
           let SearchSpace(_, planning_start, _) = space
-          let replacements =
-            score.contributions(selected, candidate, planning_start)
-          let candidate_contributions =
-            score.replace_contributions(
-              state.current_contributions,
-              replacements,
+          let candidate =
+            replace_solution(
+              state.current,
+              selected,
+              candidate_blocks,
+              planning_start,
             )
-          let candidate_score = score.total(candidate_contributions)
           let #(accepted, acceptance_rng) =
             accept(
-              state.current_score,
-              candidate_score,
+              state.current.score,
+              candidate.score,
               estimate,
               iteration,
               proposal_rng,
             )
-          let #(best_blocks, best_score) = case
-            score.compare(candidate_score, state.best_score)
-          {
-            order.Lt -> #(candidate, candidate_score)
-            order.Eq | order.Gt -> #(state.best_blocks, state.best_score)
-          }
-          let #(current_blocks, current_score, current_contributions) = case
-            accepted
-          {
-            True -> #(candidate, candidate_score, candidate_contributions)
-            False -> #(
-              state.current_blocks,
-              state.current_score,
-              state.current_contributions,
-            )
-          }
           loop(
             tasks,
             space,
@@ -154,17 +127,40 @@ fn loop(tasks, space, estimate, iteration, limit, state: State) -> State {
             iteration + 1,
             limit,
             State(
-              current_blocks,
-              current_score,
-              current_contributions,
-              best_blocks,
-              best_score,
+              select_current(state.current, candidate, accepted),
+              select_better(state.best, candidate),
               acceptance_rng,
             ),
           )
         }
       }
     }
+  }
+}
+
+fn replace_solution(
+  current: Solution,
+  selected: List(scheduling_model.SchedulingTask),
+  blocks: List(scheduling_model.ScheduleBlock),
+  planning_start: Int,
+) -> Solution {
+  let replacements = score.contributions(selected, blocks, planning_start)
+  let contributions =
+    score.replace_contributions(current.contributions, replacements)
+  Solution(blocks, score.total(contributions), contributions)
+}
+
+fn select_current(current: Solution, candidate: Solution, accepted: Bool) {
+  case accepted {
+    True -> candidate
+    False -> current
+  }
+}
+
+fn select_better(current: Solution, candidate: Solution) -> Solution {
+  case score.compare(candidate.score, current.score) {
+    order.Lt -> candidate
+    order.Eq | order.Gt -> current
   }
 }
 
