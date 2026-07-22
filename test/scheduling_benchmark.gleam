@@ -95,42 +95,53 @@ pub fn main() {
 }
 
 fn run(scenario: Scenario) {
-  let Scenario(name, tasks, projected, oracle) = scenario
-  // One timing preserves a useful diagnostic without multiplying deterministic
-  // search work. Runtime is not used to rank solution quality.
+  let #(initial, search, greedy_us, search_us) = measure_scenario(scenario)
+  evaluate_scenario(scenario, initial, search, greedy_us, search_us)
+  |> string.join("|")
+  |> io.println
+}
+
+fn measure_scenario(scenario: Scenario) {
+  let Scenario(_, tasks, projected, _) = scenario
   let space = SearchSpace(projected, 0, 0)
+  // Time only the algorithms; oracle and formatting are diagnostics around them.
   let greedy_started = monotonic_microseconds()
   let initial = greedy.build(tasks, space)
-  let greedy_elapsed = monotonic_microseconds() - greedy_started
+  let greedy_us = monotonic_microseconds() - greedy_started
   let search_started = monotonic_microseconds()
   let search = simple_sa.improve(tasks, space, 101)
-  let search_elapsed = monotonic_microseconds() - search_started
+  #(initial, search, greedy_us, monotonic_microseconds() - search_started)
+}
+
+fn evaluate_scenario(
+  scenario: Scenario,
+  initial: List(scheduling_model.ScheduleBlock),
+  search: simple_sa.SearchResult,
+  greedy_us: Int,
+  search_us: Int,
+) {
+  let Scenario(name, tasks, projected, oracle) = scenario
   let blocks = search.blocks
-  let initial_value = score.evaluate(tasks, initial, 0)
-  let value = score.evaluate(tasks, blocks, 0)
+  let initial_score = score.evaluate(tasks, initial, 0)
+  let final_score = score.evaluate(tasks, blocks, 0)
   let estimates = priority_estimates(tasks)
-  let final_unscheduled = priority_unscheduled(tasks, blocks)
   let oracle = case oracle {
     NoOracle -> None
     ExhaustiveOracle(horizon) -> exact_optimum(tasks, projected, horizon)
-    CachedOracle(score) -> Some(score)
-  }
-  let valid = case invariant.validate_generation(blocks, tasks, space) {
-    Ok(_) -> "true"
-    Error(_) -> "false"
+    CachedOracle(value) -> Some(value)
   }
   let #(oracle_unscheduled, oracle_policy, primary_regret, policy_regret) =
-    oracle_columns(value, oracle)
+    oracle_columns(final_score, oracle)
   [
     [name, int.to_string(weighted_estimate(estimates))],
     priority_values(estimates),
     [
-      int.to_string(initial_value.weighted_unscheduled_minutes),
-      float.to_string(initial_value.weighted_policy_error),
-      int.to_string(value.weighted_unscheduled_minutes),
-      float.to_string(value.weighted_policy_error),
+      int.to_string(initial_score.weighted_unscheduled_minutes),
+      float.to_string(initial_score.weighted_policy_error),
+      int.to_string(final_score.weighted_unscheduled_minutes),
+      float.to_string(final_score.weighted_policy_error),
     ],
-    priority_values(final_unscheduled),
+    priority_values(priority_unscheduled(tasks, blocks)),
     [
       oracle_unscheduled,
       oracle_policy,
@@ -141,14 +152,21 @@ fn run(scenario: Scenario) {
       int.to_string(list.length(initial)),
       int.to_string(list.length(blocks)),
       int.to_string(search.executed_iterations),
-      int.to_string(greedy_elapsed),
-      int.to_string(search_elapsed),
-      valid,
+      int.to_string(greedy_us),
+      int.to_string(search_us),
+      case
+        invariant.validate_generation(
+          blocks,
+          tasks,
+          SearchSpace(projected, 0, 0),
+        )
+      {
+        Ok(_) -> "true"
+        Error(_) -> "false"
+      },
     ],
   ]
   |> list.flatten
-  |> string.join("|")
-  |> io.println
 }
 
 fn priority_estimates(tasks: List(scheduling_model.SchedulingTask)) {
