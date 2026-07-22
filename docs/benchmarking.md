@@ -7,6 +7,32 @@ Use these benchmarks when changing the scheduler. They compare solutions in this
 
 Timings are diagnostic only. Each case runs once, without warm-up; compilation and availability projection are excluded.
 
+## Production search
+
+`scheduler.generate` is the single generation path. It always constructs the
+unchanged greedy schedule first, then applies an adaptive Simple SA search with
+the fixed production seed `101`. No RNG entropy is read from a clock or global
+state.
+
+Empty inputs and inputs with a nonpositive weighted estimate return greedy
+immediately. Otherwise, the adaptive gate explicitly checks actual unweighted
+unscheduled minutes per task (`estimate_minutes - placed_minutes`, when
+positive). If any actual minutes remain, the search runs the full 16,384
+iterations. If greedy places every requested minute, search runs a 1,024
+iteration probe. A probe best continues only when `score.strictly_better`
+considers it meaningfully better: any primary reduction qualifies, while a
+policy-only reduction must exceed epsilon. Exact lexicographic comparison still
+tracks the best-ever candidate and selects the final result. Continuation keeps
+the same current, best, RNG, and absolute iteration state through 16,384 total
+iterations; search is not restarted and its random stream and cooling schedule
+are unchanged. With no meaningful probe improvement, generation returns greedy.
+
+Each RNG stream combines seed `101` with a stable scenario identity derived from
+the ordered eligible task projection (task count, ID, estimate, and deadline).
+The internal `simple_sa.improve` boundary retains an explicit run seed so
+benchmarks can reproduce other streams, but scheduler callers cannot select a
+mode or seed.
+
 ## Common workflow
 
 Run the quick suite while iterating:
@@ -44,7 +70,12 @@ Wins and losses are reported from the candidate's perspective. Positive quality-
 | `permutation` | Representative workloads under 30 task-ID assignments. |
 | `all` | `full`, `holdout`, `oracle`, and non-base representative permutations; excludes `stress`. |
 
-The result file includes workload size, initial and final quality, unscheduled minutes by priority, oracle regret where available, block and move counts, timings, and validity. Baseline files retain quality fields but omit timings.
+The result file includes workload size, initial and final quality, unscheduled
+minutes by priority, oracle regret where available, block counts, timings, and
+validity. Baseline files retain quality fields but omit timings.
+`search_iterations` reports the actual number of attempted adaptive-search
+iterations (`0`, `1024`, or `16384`), and `simple_sa_us` reports elapsed adaptive
+Simple SA time.
 
 ## Baselines
 

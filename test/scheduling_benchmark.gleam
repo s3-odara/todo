@@ -6,15 +6,16 @@ import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/order
 import gleam/string
+import gleeunit/should
 import scheduling_benchmark_hash.{sample}
 import scheduling_fixture
 import scheduling_oracle_fixture
 import tasks/domain/policy.{Asap, NearDeadline, Spread}
 import tasks/domain/scheduling/greedy
-import tasks/domain/scheduling/hill_climb
 import tasks/domain/scheduling/invariant
 import tasks/domain/scheduling/model as scheduling_model
 import tasks/domain/scheduling/score
+import tasks/domain/scheduling/simple_sa
 import tasks/domain/scheduling/timeline.{
   type AbsoluteInterval, AbsoluteInterval, SearchSpace,
 }
@@ -88,7 +89,7 @@ pub fn main() {
     }
   }
   io.println(
-    "scenario|weighted_estimate|estimate_p1|estimate_p2|estimate_p3|estimate_p4|estimate_p5|initial_unscheduled|initial_policy_error|final_unscheduled|final_policy_error|final_unscheduled_p1|final_unscheduled_p2|final_unscheduled_p3|final_unscheduled_p4|final_unscheduled_p5|oracle_unscheduled|oracle_policy_error|primary_regret|policy_regret|tasks|projected_intervals|initial_blocks|final_blocks|accepted_moves|greedy_us|hill_climb_us|valid",
+    "scenario|weighted_estimate|estimate_p1|estimate_p2|estimate_p3|estimate_p4|estimate_p5|initial_unscheduled|initial_policy_error|final_unscheduled|final_policy_error|final_unscheduled_p1|final_unscheduled_p2|final_unscheduled_p3|final_unscheduled_p4|final_unscheduled_p5|oracle_unscheduled|oracle_policy_error|primary_regret|policy_regret|tasks|projected_intervals|initial_blocks|final_blocks|search_iterations|greedy_us|simple_sa_us|valid",
   )
   selected
   |> list.each(run)
@@ -96,25 +97,26 @@ pub fn main() {
 
 fn run(scenario: Scenario) {
   let Scenario(name, tasks, projected, oracle) = scenario
-  // One timing preserves a useful diagnostic without making deterministic quality
-  // cases five times slower. Runtime is not used to rank solution quality.
+  // One timing preserves a useful diagnostic without multiplying deterministic
+  // search work. Runtime is not used to rank solution quality.
   let space = SearchSpace(projected, 0, 0)
   let greedy_started = monotonic_microseconds()
   let initial = greedy.build(tasks, space)
   let greedy_elapsed = monotonic_microseconds() - greedy_started
-  let hill_started = monotonic_microseconds()
-  let result = hill_climb.improve(initial, tasks, space)
-  let hill_elapsed = monotonic_microseconds() - hill_started
+  let search_started = monotonic_microseconds()
+  let blocks =
+    simple_sa.improve(tasks, space, 101, simple_sa.scenario_identity(tasks))
+  let search_elapsed = monotonic_microseconds() - search_started
   let initial_value = score.evaluate(tasks, initial, 0)
-  let value = score.evaluate(tasks, result.blocks, 0)
+  let value = score.evaluate(tasks, blocks, 0)
   let estimates = priority_estimates(tasks)
-  let final_unscheduled = priority_unscheduled(tasks, result.blocks)
+  let final_unscheduled = priority_unscheduled(tasks, blocks)
   let oracle = case oracle {
     NoOracle -> None
     ExhaustiveOracle(horizon) -> exact_optimum(tasks, projected, horizon)
     CachedOracle(score) -> Some(score)
   }
-  let valid = case invariant.validate_generation(result.blocks, tasks, space) {
+  let valid = case invariant.validate_generation(blocks, tasks, space) {
     Ok(_) -> "true"
     Error(_) -> "false"
   }
@@ -138,16 +140,62 @@ fn run(scenario: Scenario) {
       int.to_string(list.length(tasks)),
       int.to_string(list.length(projected)),
       int.to_string(list.length(initial)),
-      int.to_string(list.length(result.blocks)),
-      int.to_string(result.accepted_moves),
+      int.to_string(list.length(blocks)),
+      int.to_string(executed_iterations(tasks, initial, initial_value, value)),
       int.to_string(greedy_elapsed),
-      int.to_string(hill_elapsed),
+      int.to_string(search_elapsed),
       valid,
     ],
   ]
   |> list.flatten
   |> string.join("|")
   |> io.println
+}
+
+fn executed_iterations(
+  tasks: List(scheduling_model.SchedulingTask),
+  initial: List(scheduling_model.ScheduleBlock),
+  initial_score: scheduling_model.Score,
+  final_score: scheduling_model.Score,
+) -> Int {
+  case tasks == [] || weighted_estimate(priority_estimates(tasks)) <= 0 {
+    True -> 0
+    False ->
+      case actual_unscheduled_minutes(tasks, initial) > 0 {
+        True -> simple_sa.search_iterations
+        False ->
+          case score.strictly_better(final_score, initial_score) {
+            True -> simple_sa.search_iterations
+            False -> simple_sa.probe_iterations
+          }
+      }
+  }
+}
+
+pub fn executed_iterations_classifies_adaptive_budgets_test() {
+  let tasks = [
+    scheduling_model.SchedulingTask(1, 60, 3, 3600, Asap, 30),
+  ]
+  let complete = [scheduling_model.ScheduleBlock(1, 0, 3600)]
+  let initial = scheduling_model.Score(0, 1.0)
+  let sub_epsilon = scheduling_model.Score(0, 1.0 -. score.epsilon /. 2.0)
+  let strict = scheduling_model.Score(0, 1.0 -. score.epsilon *. 2.0)
+
+  executed_iterations([], [], initial, initial) |> should.equal(0)
+  executed_iterations(tasks, complete, initial, sub_epsilon)
+  |> should.equal(simple_sa.probe_iterations)
+  executed_iterations(tasks, complete, initial, strict)
+  |> should.equal(simple_sa.search_iterations)
+}
+
+fn actual_unscheduled_minutes(
+  tasks: List(scheduling_model.SchedulingTask),
+  blocks: List(scheduling_model.ScheduleBlock),
+) -> Int {
+  list.fold(tasks, 0, fn(total, task) {
+    let own = list.filter(blocks, fn(block) { block.task_id == task.id })
+    total + int.max(0, task.estimate_minutes - score.placed_minutes(own))
+  })
 }
 
 fn priority_estimates(tasks: List(scheduling_model.SchedulingTask)) {

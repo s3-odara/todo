@@ -113,18 +113,36 @@ pub fn block_progress_and_priority_weight_test() {
   close(value.weighted_policy_error, 0.0)
 }
 
-pub fn task_contributions_preserve_total_and_ordered_replacement_test() {
+pub fn evaluate_is_ordered_sum_of_per_task_scores_test() {
   let first = task(Spread)
   let second = scheduling_model.SchedulingTask(2, 30, 5, 3600, Asap, 30)
   let blocks = [block(0, 1800)]
-  let contributions = score.contributions([first, second], blocks, 0)
-  score.total(contributions)
-  |> should.equal(score.evaluate([first, second], blocks, 0))
+  let scheduling_model.Score(first_minutes, first_policy) =
+    score.evaluate_task(first, blocks, 0)
+  let scheduling_model.Score(second_minutes, second_policy) =
+    score.evaluate_task(second, [], 0)
 
-  let replacement = score.Contribution(2, scheduling_model.Score(0, 0.25))
-  score.replace_contributions(contributions, [replacement])
-  |> should.equal([
-    score.Contribution(1, score.evaluate_task(first, blocks, 0)),
-    replacement,
-  ])
+  score.evaluate([first, second], blocks, 0)
+  |> should.equal(scheduling_model.Score(
+    first_minutes + second_minutes,
+    { 0.0 +. first_policy } +. second_policy,
+  ))
+}
+
+pub fn replacing_contributions_matches_full_evaluation_test() {
+  let first = task(Spread)
+  let second = scheduling_model.SchedulingTask(2, 30, 5, 3600, Asap, 30)
+  let tasks = [first, second]
+  let current_blocks = [block(0, 1800)]
+  let candidate_blocks = [
+    block(0, 1800),
+    scheduling_model.ScheduleBlock(2, 1800, 3600),
+  ]
+  let current = score.contributions(tasks, current_blocks, 0)
+  let replacements = score.contributions([second], candidate_blocks, 0)
+  let updated = score.replace_contributions(current, replacements)
+
+  updated |> should.equal(score.contributions(tasks, candidate_blocks, 0))
+  score.total(updated)
+  |> should.equal(score.evaluate(tasks, candidate_blocks, 0))
 }

@@ -43,20 +43,6 @@ pub fn contributions(
   })
 }
 
-/// Score one task from only that task's canonical blocks.
-pub fn evaluate_task(
-  task: SchedulingTask,
-  own_blocks: List(ScheduleBlock),
-  planning_start: Int,
-) -> Score {
-  let weight = priority_weight(task.priority)
-  Score(
-    weight * int.max(0, task.estimate_minutes - placed_minutes(own_blocks)),
-    int.to_float(weight)
-      *. policy_error_for_blocks(task, own_blocks, planning_start),
-  )
-}
-
 pub fn total(values: List(Contribution)) -> Score {
   list.fold(values, Score(0, 0.0), fn(total, contribution) {
     Score(
@@ -67,11 +53,11 @@ pub fn total(values: List(Contribution)) -> Score {
   })
 }
 
+/// Replace changed task scores without changing task order or Float addition order.
 pub fn replace_contributions(
   current: List(Contribution),
   replacements: List(Contribution),
 ) -> List(Contribution) {
-  // Preserve task order so Float addition and deterministic tie-breaking stay stable.
   list.map(current, fn(contribution) { replacement(contribution, replacements) })
 }
 
@@ -84,6 +70,20 @@ fn replacement(current: Contribution, replacements: List(Contribution)) {
         False -> replacement(current, rest)
       }
   }
+}
+
+/// Score one task from only that task's canonical blocks.
+pub fn evaluate_task(
+  task: SchedulingTask,
+  own_blocks: List(ScheduleBlock),
+  planning_start: Int,
+) -> Score {
+  let weight = priority_weight(task.priority)
+  Score(
+    weight * int.max(0, task.estimate_minutes - placed_minutes(own_blocks)),
+    int.to_float(weight)
+      *. policy_error_for_blocks(task, own_blocks, planning_start),
+  )
 }
 
 /// Integrate squared policy error from one task's canonical blocks.

@@ -6,15 +6,16 @@ import gleam/time/timestamp.{type Timestamp}
 import tasks/domain/app_state.{type AppState, AppState}
 import tasks/domain/local_time
 import tasks/domain/scheduling/eligibility
-import tasks/domain/scheduling/greedy
-import tasks/domain/scheduling/hill_climb
 import tasks/domain/scheduling/invariant
 import tasks/domain/scheduling/model.{
   type GenerationResult, type PlanningContext, GenerationReport,
   GenerationResult, PlanningContext, SavedSchedule, UnscheduledTask,
 }
 import tasks/domain/scheduling/score
+import tasks/domain/scheduling/simple_sa
 import tasks/domain/scheduling/timeline.{SearchSpace}
+
+const production_seed = 101
 
 pub type SchedulingError {
   SearchSpaceTooLarge
@@ -42,7 +43,9 @@ pub fn context(now: Timestamp, utc_offset: Duration) -> PlanningContext {
   )
 }
 
-/// Pure deterministic generation. This function performs no clock or store IO.
+/// Pure deterministic adaptive generation. This function performs no clock,
+/// store, or entropy IO. Its scenario substream uses the ordered eligible task
+/// projection and the fixed production seed.
 pub fn generate(
   state: AppState,
   context: PlanningContext,
@@ -66,8 +69,13 @@ pub fn generate(
     }),
   )
   let space = SearchSpace(projected, planning_start, offset)
-  let initial = greedy.build(eligible, space)
-  let blocks = hill_climb.improve(initial, eligible, space).blocks
+  let blocks =
+    simple_sa.improve(
+      eligible,
+      space,
+      production_seed,
+      simple_sa.scenario_identity(eligible),
+    )
   use _ <- result.try(
     invariant.validate_generation(blocks, eligible, space)
     |> result.map_error(fn(_) { InvalidGeneratedSchedule }),

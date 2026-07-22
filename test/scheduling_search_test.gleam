@@ -9,12 +9,9 @@ import tasks/domain/due
 import tasks/domain/local_time.{Thu}
 import tasks/domain/model.{type Todo, Pending, Todo}
 import tasks/domain/policy.{Asap, NearDeadline, Spread}
-import tasks/domain/scheduling/greedy
-import tasks/domain/scheduling/hill_climb
 import tasks/domain/scheduling/invariant
 import tasks/domain/scheduling/model as scheduling_model
 import tasks/domain/scheduling/scheduler
-import tasks/domain/scheduling/score
 import tasks/domain/scheduling/timeline.{AbsoluteInterval, SearchSpace}
 import tasks/runtime/parallel
 
@@ -66,12 +63,6 @@ fn scheduling_task(task: Todo) -> scheduling_model.SchedulingTask {
     task.scheduling_policy,
     task.minimum_split_minutes,
   )
-}
-
-fn scheduling_tasks(
-  tasks: List(Todo),
-) -> List(scheduling_model.SchedulingTask) {
-  list.map(tasks, scheduling_task)
 }
 
 pub fn context_rounds_exact_negative_nanosecond_and_second_offset_test() {
@@ -160,70 +151,6 @@ pub fn policy_secondary_objective_moves_work_earlier_or_later_test() {
   )) = scheduler.generate(state([near], availability), context)
   let ordered = asap_block.start_seconds < near_block.start_seconds
   ordered |> should.be_true
-}
-
-pub fn pair_rebuild_can_replace_low_priority_work_atomically_test() {
-  let projected = [AbsoluteInterval(0, 3600)]
-  let low =
-    Todo(
-      1,
-      "low",
-      60,
-      1,
-      Some(due.from_unix_seconds(3600)),
-      Pending,
-      Spread,
-      30,
-    )
-  let high =
-    Todo(
-      2,
-      "high",
-      60,
-      5,
-      Some(due.from_unix_seconds(3600)),
-      Pending,
-      Spread,
-      30,
-    )
-  let tasks = scheduling_tasks([low, high])
-  let initial = [
-    scheduling_model.ScheduleBlock(1, 0, 3600),
-  ]
-  let before = score.evaluate(tasks, initial, 0)
-  let space = SearchSpace(projected, 0, 0)
-  let result = hill_climb.improve(initial, tasks, space)
-  let after = score.evaluate(tasks, result.blocks, 0)
-
-  score.strictly_better(after, than: before) |> should.be_true
-  result.accepted_moves |> should.equal(1)
-  result.blocks
-  |> should.equal([
-    scheduling_model.ScheduleBlock(2, 0, 3600),
-  ])
-  invariant.validate_generation(result.blocks, tasks, space)
-  |> should.be_ok
-}
-
-pub fn exact_s7_schedule_and_score_are_characterized_test() {
-  let projected = [AbsoluteInterval(0, 480)]
-  let tasks = [
-    Todo(1, "one", 3, 4, Some(due.from_unix_seconds(240)), Pending, Asap, 2),
-    Todo(2, "two", 3, 1, Some(due.from_unix_seconds(360)), Pending, Spread, 2),
-    Todo(3, "three", 5, 4, Some(due.from_unix_seconds(240)), Pending, Spread, 2),
-  ]
-  let tasks = scheduling_tasks(tasks)
-  let space = SearchSpace(projected, 0, 0)
-  let initial = greedy.build(tasks, space)
-  let result = hill_climb.improve(initial, tasks, space)
-  let expected_blocks = [
-    scheduling_model.ScheduleBlock(3, 0, 240),
-    scheduling_model.ScheduleBlock(2, 240, 360),
-  ]
-  let expected_score = scheduling_model.Score(33, 4.558518518518518)
-  result.blocks |> should.equal(expected_blocks)
-  score.evaluate(tasks, result.blocks, 0) |> should.equal(expected_score)
-  result.accepted_moves |> should.equal(1)
 }
 
 pub fn empty_availability_reports_all_unscheduled_test() {
