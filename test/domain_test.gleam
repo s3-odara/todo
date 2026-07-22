@@ -90,7 +90,14 @@ pub fn titles_may_contain_up_to_two_hundred_codepoints_test() {
 }
 
 pub fn minute_and_hour_estimates_are_normalized_to_minutes_test() {
-  [#("0m", 0), #("0h", 0), #("8760h", 525_600), #("525600m", 525_600)]
+  [
+    #("0m", 0),
+    #("01m", 1),
+    #("+1h", 60),
+    #("0h", 0),
+    #("8760h", 525_600),
+    #("525600m", 525_600),
+  ]
   |> list.each(fn(example) {
     let #(input, minutes) = example
     validated_add("x", input, "3")
@@ -99,21 +106,21 @@ pub fn minute_and_hour_estimates_are_normalized_to_minutes_test() {
 }
 
 pub fn malformed_or_excessive_estimates_are_rejected_test() {
-  ["525601m", "8761h", "01m", "1h30m", "1.5h", "3H", "-1m", "1"]
+  ["525601m", "8761h", "1h30m", "1.5h", "3H", "-1m", "1"]
   |> list.each(fn(estimate) {
     validated_add("x", estimate, "3") |> should.equal(Error(Nil))
   })
 }
 
 pub fn priority_must_be_between_one_and_five_test() {
-  [#("1", 1), #("5", 5)]
+  [#("1", 1), #("01", 1), #("+5", 5), #("5", 5)]
   |> list.each(fn(example) {
     let #(input, priority) = example
     validated_add("x", "0m", input)
     |> should.equal(Ok(ValidatedAdd("x", 0, priority, None, Spread, 30)))
   })
 
-  ["0", "6", "01", "x"]
+  ["0", "6", "x"]
   |> list.each(fn(priority) {
     validated_add("x", "0m", priority) |> should.equal(Error(Nil))
   })
@@ -132,18 +139,25 @@ pub fn minimum_split_must_be_a_positive_bounded_duration_test() {
   |> should.equal(Ok(ValidatedAdd("x", 0, 3, None, Spread, 1)))
   validated_scheduling("spread", "525600m")
   |> should.equal(Ok(ValidatedAdd("x", 0, 3, None, Spread, 525_600)))
-  ["0m", "0h", "525601m", "8761h", "01m", "-1m", "30"]
+  ["01m", "+1m"]
+  |> list.each(fn(value) {
+    validated_scheduling("spread", value)
+    |> should.equal(Ok(ValidatedAdd("x", 0, 3, None, Spread, 1)))
+  })
+  ["0m", "0h", "525601m", "8761h", "-1m", "30"]
   |> list.each(fn(value) {
     validated_scheduling("spread", value) |> should.equal(Error(Nil))
   })
 }
 
-pub fn task_id_must_be_a_positive_ascii_decimal_test() {
+pub fn task_id_must_be_a_positive_integer_test() {
   validation.done("1") |> should.equal(Ok(1))
+  validation.done("01") |> should.equal(Ok(1))
+  validation.done("+1") |> should.equal(Ok(1))
   validation.done("2147483648")
   |> should.equal(Ok(2_147_483_648))
 
-  ["0", "01", "1x"]
+  ["0", "1x"]
   |> list.each(fn(id) { validation.done(id) |> should.equal(Error(Nil)) })
 }
 

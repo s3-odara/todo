@@ -224,17 +224,11 @@ fn required_value(options: Options, name: String) -> Result(String, Nil) {
 }
 
 fn optional_value(options: Options, name: String) -> Option(String) {
-  case required_value(options, name) {
-    Ok(value) -> Some(value)
-    Error(_) -> None
-  }
+  required_value(options, name) |> option.from_result
 }
 
 fn value_or(options: Options, name: String, default: String) -> String {
-  case optional_value(options, name) {
-    Some(value) -> value
-    None -> default
-  }
+  optional_value(options, name) |> option.unwrap(default)
 }
 
 fn required_parsed(options, name, parser) {

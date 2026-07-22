@@ -7,7 +7,6 @@ import gleam/order
 import gleam/result
 import gleam/string
 import gleam/time/calendar.{type Date}
-import tasks/domain/ascii
 
 pub type LocalMinute =
   Int
@@ -48,8 +47,8 @@ fn parse_minute(
 ) -> Result(LocalMinute, Nil) {
   case string.to_graphemes(value) {
     [a, b, ":", c, d] -> {
-      use hour <- result.try(ascii.parse_digits([a, b]))
-      use minute <- result.try(ascii.parse_digits([c, d]))
+      use hour <- result.try(int.parse(a <> b))
+      use minute <- result.try(int.parse(c <> d))
       case hour, minute, allow_end_of_day {
         24, 0, True -> Ok(1440)
         hour, minute, _
@@ -262,14 +261,10 @@ fn weekly_for(
   entries: List(WeeklyAvailability),
   day: Weekday,
 ) -> List(Interval) {
-  case entries {
-    [] -> []
-    [WeeklyAvailability(entry_day, intervals), ..rest] ->
-      case entry_day == day {
-        True -> intervals
-        False -> weekly_for(rest, day)
-      }
-  }
+  entries
+  |> list.find(fn(entry) { entry.day == day })
+  |> result.map(fn(entry) { entry.intervals })
+  |> result.unwrap([])
 }
 
 fn put_weekly(
@@ -300,14 +295,9 @@ fn find_override(
   entries: List(DateOverride),
   date: Date,
 ) -> Result(List(Interval), Nil) {
-  case entries {
-    [] -> Error(Nil)
-    [DateOverride(entry_date, intervals), ..rest] ->
-      case entry_date == date {
-        True -> Ok(intervals)
-        False -> find_override(rest, date)
-      }
-  }
+  entries
+  |> list.find(fn(entry) { entry.date == date })
+  |> result.map(fn(entry) { entry.intervals })
 }
 
 fn put_override(value, date, intervals) {

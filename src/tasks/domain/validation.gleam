@@ -1,8 +1,8 @@
+import gleam/int
 import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/result
 import gleam/string
-import tasks/domain/ascii
 import tasks/domain/due.{type Due}
 import tasks/domain/model.{type ValidatedAdd, ValidatedAdd}
 import tasks/domain/policy.{parse as parse_policy}
@@ -53,7 +53,7 @@ fn title(value: String) -> Result(String, Nil) {
 }
 
 fn id(value: String) -> Result(Int, Nil) {
-  case strict_number(value) {
+  case int.parse(value) {
     Ok(n) if n > 0 -> Ok(n)
     _ -> Error(Nil)
   }
@@ -103,21 +103,9 @@ fn number_between(
   minimum: Int,
   maximum: Int,
 ) -> Result(Int, Nil) {
-  case strict_number(value) {
+  // Range validation is sufficient; alternate integer spellings need no custom parser.
+  case int.parse(value) {
     Ok(number) if number >= minimum && number <= maximum -> Ok(number)
     _ -> Error(Nil)
-  }
-}
-
-fn strict_number(value: String) -> Result(Int, Nil) {
-  case value {
-    "0" -> Ok(0)
-    _ -> {
-      let digits = string.to_graphemes(value)
-      case string.starts_with(value, "0") || !ascii.digits(digits) {
-        True -> Error(Nil)
-        False -> ascii.parse_digits(digits)
-      }
-    }
   }
 }
