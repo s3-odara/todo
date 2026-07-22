@@ -1,3 +1,4 @@
+import datebook/weekday.{Friday, Monday}
 import gleam/list
 import gleam/option.{None, Some}
 import gleam/time/calendar.{Date, July}
@@ -6,7 +7,6 @@ import gleeunit/should
 import tasks/domain/app_state.{AppState}
 import tasks/domain/availability
 import tasks/domain/due
-import tasks/domain/local_time
 import tasks/domain/model.{Done, Todo}
 import tasks/domain/policy.{Asap}
 import tasks/domain/scheduling/model as scheduling_model
@@ -47,10 +47,10 @@ pub fn availability_round_trip_is_canonical_and_preserves_closed_dates_test() {
   let value =
     availability.Availability(
       [
-        availability.WeeklyAvailability(local_time.Fri, [
+        availability.WeeklyAvailability(Friday, [
           availability.Interval(780, 840),
         ]),
-        availability.WeeklyAvailability(local_time.Mon, [
+        availability.WeeklyAvailability(Monday, [
           availability.Interval(540, 720),
         ]),
       ],
@@ -67,10 +67,10 @@ pub fn availability_round_trip_is_canonical_and_preserves_closed_dates_test() {
       [],
       availability.Availability(
         [
-          availability.WeeklyAvailability(local_time.Mon, [
+          availability.WeeklyAvailability(Monday, [
             availability.Interval(540, 720),
           ]),
-          availability.WeeklyAvailability(local_time.Fri, [
+          availability.WeeklyAvailability(Friday, [
             availability.Interval(780, 840),
           ]),
         ],

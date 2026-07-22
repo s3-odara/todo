@@ -1,12 +1,11 @@
+import datebook/date
 import gleam/int
 import gleam/list
 import gleam/order
-import gleam/result
 import gleam/time/calendar
 import gleam/time/duration
 import gleam/time/timestamp
 import tasks/domain/availability
-import tasks/domain/local_time
 import tasks/domain/scheduling/model.{type ScheduleBlock}
 
 pub const projected_interval_limit = 10_000
@@ -26,7 +25,6 @@ pub type SearchSpace {
 
 pub type TimelineError {
   SearchSpaceTooLarge
-  InvalidCalendarRange
 }
 
 type ProjectionState {
@@ -77,13 +75,17 @@ fn project_dates(value, date, last_date, lower, upper, offset, state) {
     False ->
       case calendar.naive_date_compare(date, last_date) {
         order.Eq -> Ok(finish_projection(next))
-        _ -> {
-          use following <- result.try(
-            local_time.next_date(date)
-            |> result.map_error(fn(_) { InvalidCalendarRange }),
+        // Both endpoints come from ordered timestamps, so each next date is valid.
+        _ ->
+          project_dates(
+            value,
+            date.next(date),
+            last_date,
+            lower,
+            upper,
+            offset,
+            next,
           )
-          project_dates(value, following, last_date, lower, upper, offset, next)
-        }
       }
   }
 }

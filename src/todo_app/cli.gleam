@@ -357,8 +357,6 @@ pub fn scheduling_error(error: SchedulingError) -> Outcome {
   case error {
     scheduler.SearchSpaceTooLarge ->
       grammar_error("schedule search space is too large")
-    scheduler.InvalidCalendarRange ->
-      persistence_error("invalid scheduling calendar range")
     scheduler.InvalidGeneratedSchedule ->
       persistence_error("invalid generated schedule")
   }

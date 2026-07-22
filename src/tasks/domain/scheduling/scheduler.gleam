@@ -19,7 +19,6 @@ const production_seed = 101
 
 pub type SchedulingError {
   SearchSpaceTooLarge
-  InvalidCalendarRange
   InvalidGeneratedSchedule
 }
 
@@ -63,7 +62,6 @@ pub fn generate(
     |> result.map_error(fn(error) {
       case error {
         timeline.SearchSpaceTooLarge -> SearchSpaceTooLarge
-        timeline.InvalidCalendarRange -> InvalidCalendarRange
       }
     }),
   )

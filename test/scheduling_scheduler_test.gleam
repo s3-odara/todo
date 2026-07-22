@@ -1,3 +1,4 @@
+import datebook/weekday.{Thursday}
 import gleam/list
 import gleam/option.{None, Some}
 import gleam/time/duration
@@ -6,7 +7,6 @@ import gleeunit/should
 import tasks/domain/app_state.{AppState}
 import tasks/domain/availability.{Availability, Interval, WeeklyAvailability}
 import tasks/domain/due
-import tasks/domain/local_time.{Thu}
 import tasks/domain/model.{Pending, Todo}
 import tasks/domain/policy.{Asap, NearDeadline, Spread}
 import tasks/domain/scheduling/model as scheduling_model
@@ -35,7 +35,7 @@ fn epoch_context() {
 }
 
 fn thursday_availability(intervals) {
-  Availability([WeeklyAvailability(Thu, intervals)], [])
+  Availability([WeeklyAvailability(Thursday, intervals)], [])
 }
 
 pub fn context_preserves_exact_minute_boundary_test() {

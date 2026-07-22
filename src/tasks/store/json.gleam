@@ -1,3 +1,4 @@
+import datebook/weekday.{Monday}
 import gleam/dynamic/decode
 import gleam/int
 import gleam/json
@@ -14,7 +15,7 @@ import tasks/domain/availability.{
   weekday_string,
 }
 import tasks/domain/due
-import tasks/domain/local_time.{Mon}
+import tasks/domain/local_time
 import tasks/domain/model.{
   type Todo, Pending, Todo, parse_status, status_to_string,
 }
@@ -151,7 +152,7 @@ fn weekday_decoder() {
   |> decode.then(fn(value) {
     case availability.parse_day(value) {
       Ok(day) -> decode.success(day)
-      Error(_) -> decode.failure(Mon, expected: "weekday")
+      Error(_) -> decode.failure(Monday, expected: "weekday")
     }
   })
 }

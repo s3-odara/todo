@@ -1,3 +1,6 @@
+import datebook/weekday.{
+  type Weekday, Friday, Monday, Saturday, Sunday, Thursday, Tuesday, Wednesday,
+}
 import gleam/int
 import gleam/list
 import gleam/order
@@ -5,7 +8,6 @@ import gleam/result
 import gleam/string
 import gleam/time/calendar.{type Date}
 import tasks/domain/ascii
-import tasks/domain/local_time.{type Weekday, Fri, Mon, Sat, Sun, Thu, Tue, Wed}
 
 pub type LocalMinute =
   Int
@@ -83,13 +85,13 @@ pub fn parse_days(value: String) -> Result(List(Weekday), Nil) {
 
 pub fn parse_day(value: String) -> Result(Weekday, Nil) {
   case value {
-    "mon" -> Ok(Mon)
-    "tue" -> Ok(Tue)
-    "wed" -> Ok(Wed)
-    "thu" -> Ok(Thu)
-    "fri" -> Ok(Fri)
-    "sat" -> Ok(Sat)
-    "sun" -> Ok(Sun)
+    "mon" -> Ok(Monday)
+    "tue" -> Ok(Tuesday)
+    "wed" -> Ok(Wednesday)
+    "thu" -> Ok(Thursday)
+    "fri" -> Ok(Friday)
+    "sat" -> Ok(Saturday)
+    "sun" -> Ok(Sunday)
     _ -> Error(Nil)
   }
 }
@@ -201,11 +203,8 @@ pub fn effective(value: Availability, date: Date) -> List(Interval) {
   let Availability(weekly, overrides) = value
   case find_override(overrides, date) {
     Ok(intervals) -> intervals
-    Error(_) ->
-      case local_time.weekday_for_date(date) {
-        Ok(day) -> weekly_for(weekly, day)
-        Error(_) -> []
-      }
+    // CLI and JSON inputs are validated before they reach the domain state.
+    Error(_) -> weekly_for(weekly, weekday.from_date(date))
   }
 }
 
@@ -222,26 +221,18 @@ pub fn apply(value: Availability, mutation: Mutation) -> Availability {
 }
 
 pub fn weekday_number(day: Weekday) -> Int {
-  case day {
-    Mon -> 1
-    Tue -> 2
-    Wed -> 3
-    Thu -> 4
-    Fri -> 5
-    Sat -> 6
-    Sun -> 7
-  }
+  weekday.days_since(day, Monday) + 1
 }
 
 pub fn weekday_string(day: Weekday) -> String {
   case day {
-    Mon -> "mon"
-    Tue -> "tue"
-    Wed -> "wed"
-    Thu -> "thu"
-    Fri -> "fri"
-    Sat -> "sat"
-    Sun -> "sun"
+    Monday -> "mon"
+    Tuesday -> "tue"
+    Wednesday -> "wed"
+    Thursday -> "thu"
+    Friday -> "fri"
+    Saturday -> "sat"
+    Sunday -> "sun"
   }
 }
 

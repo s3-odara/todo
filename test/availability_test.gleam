@@ -1,21 +1,21 @@
+import datebook/weekday.{Friday, Monday, Sunday}
 import gleam/list
-import gleam/time/calendar.{Date, December, February, January, July}
+import gleam/time/calendar.{Date, July}
 import gleeunit/should
 import tasks/domain/availability.{
   Availability, DateOverride, Interval, WeeklyAvailability,
 }
-import tasks/domain/local_time.{Fri, Mon, Sun}
 
 pub fn touching_and_overlapping_intervals_are_merged_test() {
   let value =
     availability.empty()
-    |> availability.weekly_add([Mon], Interval(540, 600))
-    |> availability.weekly_add([Mon], Interval(600, 660))
-    |> availability.weekly_add([Mon], Interval(570, 720))
+    |> availability.weekly_add([Monday], Interval(540, 600))
+    |> availability.weekly_add([Monday], Interval(600, 660))
+    |> availability.weekly_add([Monday], Interval(570, 720))
 
   value
   |> should.equal(
-    Availability([WeeklyAvailability(Mon, [Interval(540, 720)])], []),
+    Availability([WeeklyAvailability(Monday, [Interval(540, 720)])], []),
   )
 }
 
@@ -42,7 +42,7 @@ pub fn date_add_and_delete_copy_weekly_before_overriding_test() {
   let monday = Date(2026, July, 20)
   let weekly =
     availability.empty()
-    |> availability.weekly_add([Mon], Interval(540, 720))
+    |> availability.weekly_add([Monday], Interval(540, 720))
   let added = availability.date_add(weekly, monday, Interval(780, 840))
   availability.effective(added, monday)
   |> should.equal([Interval(540, 720), Interval(780, 840)])
@@ -56,7 +56,7 @@ pub fn close_overrides_weekly_availability_with_no_hours_test() {
   let monday = Date(2026, July, 20)
   let weekly =
     availability.empty()
-    |> availability.weekly_add([Mon], Interval(540, 720))
+    |> availability.weekly_add([Monday], Interval(540, 720))
 
   let closed = availability.date_close(weekly, monday)
 
@@ -67,7 +67,7 @@ pub fn reset_restores_weekly_availability_after_close_test() {
   let monday = Date(2026, July, 20)
   let weekly =
     availability.empty()
-    |> availability.weekly_add([Mon], Interval(540, 720))
+    |> availability.weekly_add([Monday], Interval(540, 720))
   let closed = availability.date_close(weekly, monday)
 
   let reset = availability.date_reset(closed, monday)
@@ -79,7 +79,7 @@ pub fn reset_without_an_override_leaves_availability_unchanged_test() {
   let monday = Date(2026, July, 20)
   let weekly =
     availability.empty()
-    |> availability.weekly_add([Mon], Interval(540, 720))
+    |> availability.weekly_add([Monday], Interval(540, 720))
 
   availability.date_reset(weekly, monday) |> should.equal(weekly)
 }
@@ -98,8 +98,8 @@ pub fn aggregate_canonicality_is_a_domain_rule_test() {
   let canonical =
     Availability(
       [
-        WeeklyAvailability(Mon, [Interval(540, 720)]),
-        WeeklyAvailability(Fri, [Interval(780, 840)]),
+        WeeklyAvailability(Monday, [Interval(540, 720)]),
+        WeeklyAvailability(Friday, [Interval(780, 840)]),
       ],
       [DateOverride(Date(2026, July, 21), [])],
     )
@@ -109,39 +109,23 @@ pub fn aggregate_canonicality_is_a_domain_rule_test() {
   availability.is_canonical(Availability(list.reverse(weekly), overrides))
   |> should.be_false
   availability.is_canonical(Availability(
-    [WeeklyAvailability(Mon, [])],
+    [WeeklyAvailability(Monday, [])],
     overrides,
   ))
   |> should.be_false
 }
 
 pub fn day_parser_rejects_duplicates_unknown_and_empty_parts_test() {
-  availability.parse_days("mon,fri,sun") |> should.equal(Ok([Mon, Fri, Sun]))
+  availability.parse_days("mon,fri,sun")
+  |> should.equal(Ok([Monday, Friday, Sunday]))
   let assert Error(_) = availability.parse_days("mon,mon")
   let assert Error(_) = availability.parse_days("mon,wat")
   let assert Error(_) = availability.parse_days("mon,")
 }
 
-pub fn local_time_wrapper_handles_known_weekdays_and_date_boundaries_test() {
-  local_time.weekday_for_date(Date(2026, July, 20))
-  |> should.equal(Ok(local_time.Mon))
-  local_time.weekday_for_date(Date(2026, July, 19))
-  |> should.equal(Ok(local_time.Sun))
-  local_time.weekday_for_date(Date(1969, December, 31))
-  |> should.equal(Ok(local_time.Wed))
-  local_time.next_date(Date(2024, February, 28))
-  |> should.equal(Ok(Date(2024, February, 29)))
-  local_time.next_date(Date(2026, December, 31))
-  |> should.equal(Ok(Date(2027, January, 1)))
-  local_time.next_date(Date(1, January, 1))
-  |> should.equal(Ok(Date(1, January, 2)))
-  let assert Error(_) = local_time.weekday_for_date(Date(0, January, 1))
-  let assert Error(_) = local_time.next_date(Date(2026, February, 30))
-}
-
 pub fn empty_override_takes_precedence_over_weekly_test() {
   let monday = Date(2026, July, 20)
-  Availability([WeeklyAvailability(Mon, [Interval(540, 720)])], [
+  Availability([WeeklyAvailability(Monday, [Interval(540, 720)])], [
     DateOverride(monday, []),
   ])
   |> availability.effective(monday)
