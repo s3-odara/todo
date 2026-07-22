@@ -2,8 +2,8 @@ import gleam/int
 import gleam/list
 import tasks/domain/filter.{type StatusFilter, type TimeWindow}
 import tasks/domain/model.{
-  type TaskError, type Todo, type ValidatedAdd, AlreadyDone, Done, NotFound,
-  Pending, Todo, ValidatedAdd,
+  type AddValues, type TaskError, type Todo, AddValues, AlreadyDone, Done,
+  NotFound, Pending, Todo,
 }
 
 // BEAM integers are arbitrary precision, so max + 1 cannot overflow.
@@ -13,9 +13,8 @@ fn next_id(todos: List(Todo)) -> Int {
   |> int.add(1)
 }
 
-pub fn add(todos: List(Todo), values: ValidatedAdd) -> #(List(Todo), Todo) {
-  let ValidatedAdd(title, estimate, priority, due, policy, minimum_split) =
-    values
+pub fn add(todos: List(Todo), values: AddValues) -> #(List(Todo), Todo) {
+  let AddValues(title, estimate, priority, due, policy, minimum_split) = values
   let added =
     Todo(
       next_id(todos),

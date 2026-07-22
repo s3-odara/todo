@@ -11,7 +11,7 @@ import tasks/domain/due
 import tasks/domain/filter.{
   AllStatuses, AnyTime, DateRange, DoneOnly, On, Overdue, PendingOnly, Today,
 }
-import tasks/domain/model.{Done, Pending, Todo, ValidatedAdd}
+import tasks/domain/model.{AddValues, Done, Pending, Todo}
 import tasks/domain/policy.{Asap, NearDeadline, Spread}
 import tasks/domain/scheduling/model as scheduling_model
 import todo_app/cli
@@ -69,10 +69,7 @@ pub fn help_is_selected_when_no_command_or_a_help_flag_is_given_test() {
 pub fn commands_ignore_time_when_their_behavior_is_not_time_relative_test() {
   run_command(cli.Help, state_with([]))
   |> should.equal(cli.help())
-  run_command(
-    cli.Add(ValidatedAdd("x", 0, 3, None, Spread, 30)),
-    state_with([]),
-  )
+  run_command(cli.Add(AddValues("x", 0, 3, None, Spread, 30)), state_with([]))
   |> should.equal(cli.Outcome(0, ["Added task 1: x"], []))
 }
 
@@ -95,7 +92,7 @@ pub fn help_lists_the_available_commands_test() {
 
 pub fn add_defaults_are_applied_test() {
   parse(["add", "x"])
-  |> should.equal(Ok(cli.Add(ValidatedAdd("x", 0, 3, None, Spread, 30))))
+  |> should.equal(Ok(cli.Add(AddValues("x", 0, 3, None, Spread, 30))))
 }
 
 pub fn add_scheduling_options_are_parsed_test() {
@@ -107,10 +104,10 @@ pub fn add_scheduling_options_are_parsed_test() {
     "--scheduling-policy",
     "asap",
   ])
-  |> should.equal(Ok(cli.Add(ValidatedAdd("x", 0, 3, None, Asap, 45))))
+  |> should.equal(Ok(cli.Add(AddValues("x", 0, 3, None, Asap, 45))))
 
   parse(["add", "x", "--scheduling-policy", "near_deadline"])
-  |> should.equal(Ok(cli.Add(ValidatedAdd("x", 0, 3, None, NearDeadline, 30))))
+  |> should.equal(Ok(cli.Add(AddValues("x", 0, 3, None, NearDeadline, 30))))
 }
 
 pub fn invalid_scheduling_options_are_rejected_test() {
@@ -140,7 +137,7 @@ pub fn invalid_scheduling_options_are_rejected_test() {
 
 pub fn due_parser_is_only_called_when_due_is_present_test() {
   cli.parse(["add", "x"], fn(_) { panic as "due parser must not run" })
-  |> should.equal(Ok(cli.Add(ValidatedAdd("x", 0, 3, None, Spread, 30))))
+  |> should.equal(Ok(cli.Add(AddValues("x", 0, 3, None, Spread, 30))))
 }
 
 pub fn add_options_can_be_given_in_any_order_test() {
@@ -156,7 +153,7 @@ pub fn add_options_can_be_given_in_any_order_test() {
   ])
   |> should.equal(
     Ok(
-      cli.Add(ValidatedAdd(
+      cli.Add(AddValues(
         "x",
         120,
         5,
@@ -575,7 +572,7 @@ pub fn mutations_mark_only_structural_changes_for_persistence_test() {
   let #(now, offset) = clock()
   let added =
     runtime.execute(
-      cli.Add(ValidatedAdd("x", 0, 3, None, Spread, 30)),
+      cli.Add(AddValues("x", 0, 3, None, Spread, 30)),
       state,
       now,
       offset,

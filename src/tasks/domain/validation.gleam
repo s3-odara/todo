@@ -4,7 +4,7 @@ import gleam/option.{type Option, None, Some}
 import gleam/result
 import gleam/string
 import tasks/domain/due.{type Due}
-import tasks/domain/model.{type ValidatedAdd, ValidatedAdd}
+import tasks/domain/model.{type AddValues, AddValues}
 import tasks/domain/policy.{parse as parse_policy}
 
 pub fn add(
@@ -15,7 +15,7 @@ pub fn add(
   raw_policy: String,
   raw_minimum_split: String,
   due_parser: fn(String) -> Result(Due, Nil),
-) -> Result(ValidatedAdd, Nil) {
+) -> Result(AddValues, Nil) {
   case
     title(raw_title),
     estimate(raw_estimate),
@@ -25,7 +25,7 @@ pub fn add(
     positive_duration(raw_minimum_split)
   {
     Ok(clean), Ok(minutes), Ok(rank), Ok(due_value), Ok(policy), Ok(split) ->
-      Ok(ValidatedAdd(clean, minutes, rank, due_value, policy, split))
+      Ok(AddValues(clean, minutes, rank, due_value, policy, split))
     _, _, _, _, _, _ -> Error(Nil)
   }
 }

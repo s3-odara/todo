@@ -15,7 +15,7 @@ import tasks/domain/filter.{
 }
 import tasks/domain/local_time
 import tasks/domain/model.{
-  type TaskError, type Todo, type ValidatedAdd, AlreadyDone, NotFound,
+  type AddValues, type TaskError, type Todo, AlreadyDone, NotFound,
   status_to_string,
 }
 import tasks/domain/scheduling/model as scheduling_model
@@ -24,7 +24,7 @@ import tasks/domain/validation
 
 pub type Command {
   Help
-  Add(ValidatedAdd)
+  Add(AddValues)
   ListTasks(status: StatusFilter, filter: TimeFilter)
   ListScheduled(status: StatusFilter, filter: TimeFilter)
   GenerateSchedule

@@ -35,9 +35,9 @@ pub type Todo {
   )
 }
 
-/// Values accepted by domain validation and ready for a pure task transition.
-pub type ValidatedAdd {
-  ValidatedAdd(
+/// Values needed to create a task before its ID and status are assigned.
+pub type AddValues {
+  AddValues(
     title: String,
     estimate_minutes: Int,
     priority: Int,

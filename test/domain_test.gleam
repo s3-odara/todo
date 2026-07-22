@@ -11,9 +11,7 @@ import tasks/domain/filter.{
   AllStatuses, AnyTime, DateRange, DoneOnly, On, Overdue, PendingOnly, Today,
   Window,
 }
-import tasks/domain/model.{
-  AlreadyDone, Done, NotFound, Pending, Todo, ValidatedAdd,
-}
+import tasks/domain/model.{AddValues, AlreadyDone, Done, NotFound, Pending, Todo}
 import tasks/domain/policy.{Asap, NearDeadline, Spread, parse as parse_policy}
 import tasks/domain/tasks
 import tasks/domain/validation
@@ -59,7 +57,7 @@ fn pending_due(id, title, canonical) {
 
 pub fn title_is_trimmed_test() {
   validated_add(" clean ", "0m", "3")
-  |> should.equal(Ok(ValidatedAdd("clean", 0, 3, None, Spread, 30)))
+  |> should.equal(Ok(AddValues("clean", 0, 3, None, Spread, 30)))
 }
 
 pub fn empty_controlled_or_excessive_titles_are_rejected_test() {
@@ -81,7 +79,7 @@ pub fn titles_may_contain_up_to_two_hundred_codepoints_test() {
   ["a", string.repeat("a", 200)]
   |> list.each(fn(title) {
     validated_add(title, "0m", "3")
-    |> should.equal(Ok(ValidatedAdd(title, 0, 3, None, Spread, 30)))
+    |> should.equal(Ok(AddValues(title, 0, 3, None, Spread, 30)))
   })
 }
 
@@ -97,7 +95,7 @@ pub fn minute_and_hour_estimates_are_normalized_to_minutes_test() {
   |> list.each(fn(example) {
     let #(input, minutes) = example
     validated_add("x", input, "3")
-    |> should.equal(Ok(ValidatedAdd("x", minutes, 3, None, Spread, 30)))
+    |> should.equal(Ok(AddValues("x", minutes, 3, None, Spread, 30)))
   })
 }
 
@@ -113,7 +111,7 @@ pub fn priority_must_be_between_one_and_five_test() {
   |> list.each(fn(example) {
     let #(input, priority) = example
     validated_add("x", "0m", input)
-    |> should.equal(Ok(ValidatedAdd("x", 0, priority, None, Spread, 30)))
+    |> should.equal(Ok(AddValues("x", 0, priority, None, Spread, 30)))
   })
 
   ["0", "6", "x"]
@@ -132,13 +130,13 @@ pub fn scheduling_policy_is_strictly_parsed_test() {
 
 pub fn minimum_split_must_be_a_positive_bounded_duration_test() {
   validated_scheduling("spread", "1m")
-  |> should.equal(Ok(ValidatedAdd("x", 0, 3, None, Spread, 1)))
+  |> should.equal(Ok(AddValues("x", 0, 3, None, Spread, 1)))
   validated_scheduling("spread", "525600m")
-  |> should.equal(Ok(ValidatedAdd("x", 0, 3, None, Spread, 525_600)))
+  |> should.equal(Ok(AddValues("x", 0, 3, None, Spread, 525_600)))
   ["01m", "+1m"]
   |> list.each(fn(value) {
     validated_scheduling("spread", value)
-    |> should.equal(Ok(ValidatedAdd("x", 0, 3, None, Spread, 1)))
+    |> should.equal(Ok(AddValues("x", 0, 3, None, Spread, 1)))
   })
   ["0m", "0h", "525601m", "8761h", "-1m", "30"]
   |> list.each(fn(value) {
@@ -203,7 +201,7 @@ pub fn adding_a_task_assigns_an_id_greater_than_every_existing_id_test() {
   let existing = [lower, highest, middle]
   let added = Todo(2_147_483_648, "new", 0, 3, None, Pending, Spread, 30)
 
-  tasks.add(existing, ValidatedAdd("new", 0, 3, None, Spread, 30))
+  tasks.add(existing, AddValues("new", 0, 3, None, Spread, 30))
   |> should.equal(#([added, ..existing], added))
 }
 
