@@ -16,6 +16,7 @@ const placement_candidate_limit = 20_000
 type Candidate {
   Candidate(
     block: scheduling_model.ScheduleBlock,
+    own_blocks: List(scheduling_model.ScheduleBlock),
     score: scheduling_model.Score,
   )
 }
@@ -57,11 +58,21 @@ fn place_task(
 ) -> List(scheduling_model.ScheduleBlock) {
   let own_blocks =
     list.filter(blocks, fn(existing) { existing.task_id == task.id })
+  place_remaining(blocks, own_blocks, task, space)
+}
+
+fn place_remaining(
+  blocks: List(scheduling_model.ScheduleBlock),
+  own_blocks: List(scheduling_model.ScheduleBlock),
+  task: scheduling_model.SchedulingTask,
+  space: SearchSpace,
+) -> List(scheduling_model.ScheduleBlock) {
   case best_placement(blocks, own_blocks, task, space) {
     option.None -> blocks
     option.Some(candidate) ->
-      place_task(
+      place_remaining(
         invariant.insert_canonical(blocks, candidate.block),
+        candidate.own_blocks,
         task,
         space,
       )
@@ -130,6 +141,7 @@ fn best_placement(
                 best,
                 Candidate(
                   block,
+                  next_own,
                   score.evaluate_task(task, next_own, planning_start),
                 ),
               )
