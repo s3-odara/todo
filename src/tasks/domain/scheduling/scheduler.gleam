@@ -74,15 +74,14 @@ pub fn generate(
     |> result.map_error(fn(_) { InvalidGeneratedSchedule }),
   )
   let unscheduled =
-    eligible
-    |> list.map(fn(task) {
+    list.filter_map(eligible, fn(task) {
       let own = list.filter(blocks, fn(block) { block.task_id == task.id })
-      UnscheduledTask(
-        task.id,
-        task.estimate_minutes - score.placed_minutes(own),
-      )
+      let minutes = task.estimate_minutes - score.placed_minutes(own)
+      case minutes > 0 {
+        True -> Ok(UnscheduledTask(task.id, minutes))
+        False -> Error(Nil)
+      }
     })
-    |> list.filter(fn(entry) { entry.minutes > 0 })
   Ok(GenerationResult(
     SavedSchedule(generated_at, planning_timestamp, offset, blocks),
     GenerationReport(unscheduled, excluded),
