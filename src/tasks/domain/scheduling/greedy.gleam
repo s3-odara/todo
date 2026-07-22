@@ -109,62 +109,42 @@ fn best_placement(
         False ->
           // Choose the global maximum before applying the candidate budget so
           // fragmentation cannot hide a longer, primary-score-winning block.
-          fold_flat_map_up_to(
-            intervals,
-            placement_candidate_limit,
-            option.None,
-            fn(interval) {
-              let capacity = { interval.end - interval.start } / 60
-              case capacity < block_length {
-                True -> []
-                False ->
-                  anchors(
-                    task,
-                    placed,
-                    interval,
-                    block_length,
-                    planning_start,
-                    offset,
-                  )
-              }
-            },
-            fn(best, start) {
-              let block =
-                scheduling_model.ScheduleBlock(
-                  task.id,
-                  start,
-                  start + block_length * 60,
+          intervals
+          |> list.flat_map(fn(interval) {
+            let capacity = { interval.end - interval.start } / 60
+            case capacity < block_length {
+              True -> []
+              False ->
+                anchors(
+                  task,
+                  placed,
+                  interval,
+                  block_length,
+                  planning_start,
+                  offset,
                 )
-              let next_own = invariant.insert_canonical(own_blocks, block)
-              // Other tasks are unchanged, so their scores cancel.
-              choose_better(
-                best,
-                Candidate(
-                  block,
-                  next_own,
-                  score.evaluate_task(task, next_own, planning_start),
-                ),
+            }
+          })
+          |> list.take(placement_candidate_limit)
+          |> list.fold(option.None, fn(best, start) {
+            let block =
+              scheduling_model.ScheduleBlock(
+                task.id,
+                start,
+                start + block_length * 60,
               )
-            },
-          )
+            let next_own = invariant.insert_canonical(own_blocks, block)
+            // Other tasks are unchanged, so their scores cancel.
+            choose_better(
+              best,
+              Candidate(
+                block,
+                next_own,
+                score.evaluate_task(task, next_own, planning_start),
+              ),
+            )
+          })
       }
-    }
-  }
-}
-
-// Fold the first limit values of a flattened expansion without building it.
-fn fold_flat_map_up_to(items, limit, initial, expand, reduce) {
-  case items, limit <= 0 {
-    [], _ | _, True -> initial
-    [item, ..rest], False -> {
-      let values = expand(item) |> list.take(limit)
-      fold_flat_map_up_to(
-        rest,
-        limit - list.length(values),
-        list.fold(values, initial, reduce),
-        expand,
-        reduce,
-      )
     }
   }
 }

@@ -211,7 +211,7 @@ fn choose_target(
     }
     False -> {
       let #(selected, rng) = deterministic_rng.index(rng, list.length(tasks))
-      let #(target, _) = take_at(tasks, selected, [])
+      let #(target, _) = take_at(tasks, selected)
       #(target, rng)
     }
   }
@@ -247,18 +247,16 @@ fn draw(items: List(a), remaining: Int, rng: Rng, selected: List(a)) {
     True -> #(list.reverse(selected), rng)
     False -> {
       let #(index, rng) = deterministic_rng.index(rng, list.length(items))
-      let #(value, rest) = take_at(items, index, [])
+      let #(value, rest) = take_at(items, index)
       draw(rest, remaining - 1, rng, [value, ..selected])
     }
   }
 }
 
-fn take_at(items: List(a), index: Int, before: List(a)) -> #(a, List(a)) {
-  let assert [first, ..rest] = items
-  case index <= 0 {
-    True -> #(first, list.append(list.reverse(before), rest))
-    False -> take_at(rest, index - 1, [first, ..before])
-  }
+fn take_at(items: List(a), index: Int) -> #(a, List(a)) {
+  let #(before, at_and_after) = list.split(items, index)
+  let assert [value, ..after] = at_and_after
+  #(value, list.append(before, after))
 }
 
 fn coin(rng: Rng) -> #(Bool, Rng) {
