@@ -104,8 +104,7 @@ fn run(scenario: Scenario) {
   let initial = greedy.build(tasks, space)
   let greedy_elapsed = monotonic_microseconds() - greedy_started
   let search_started = monotonic_microseconds()
-  let blocks =
-    simple_sa.improve(tasks, space, 101, simple_sa.scenario_identity(tasks))
+  let blocks = simple_sa.improve(tasks, space, 101)
   let search_elapsed = monotonic_microseconds() - search_started
   let initial_value = score.evaluate(tasks, initial, 0)
   let value = score.evaluate(tasks, blocks, 0)

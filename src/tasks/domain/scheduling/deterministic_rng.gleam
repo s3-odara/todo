@@ -13,13 +13,6 @@ pub fn new(seed: Int) -> Rng {
   Rng(int.absolute_value(seed) % { modulus - 1 } + 1)
 }
 
-/// Stable compatibility derivation from a run seed and lossy scenario tag.
-/// Distinct scenarios may collide; this preserves established streams rather
-/// than providing collision-resistant substream separation.
-pub fn for_scenario(run_seed: Int, scenario_identity: Int) -> Rng {
-  new(run_seed * 1_000_003 + scenario_identity * 9176 + 104_729)
-}
-
 pub fn next(rng: Rng) -> #(Int, Rng) {
   let value = { rng.state * multiplier } % modulus
   #(value, Rng(value))

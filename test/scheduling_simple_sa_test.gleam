@@ -44,7 +44,7 @@ fn workload() {
 }
 
 fn improve_seed101(tasks, space) {
-  simple_sa.improve(tasks, space, 101, simple_sa.scenario_identity(tasks))
+  simple_sa.improve(tasks, space, 101)
 }
 
 fn reproduce_seed101(tasks, space) {
@@ -124,12 +124,12 @@ pub fn scheduler_generate_matches_literal_seed101_result_and_repeats_test() {
     scheduling_model.ScheduleBlock(12, 0, 8640),
     scheduling_model.ScheduleBlock(6, 8640, 9600),
     scheduling_model.ScheduleBlock(7, 9600, 14_400),
-    scheduling_model.ScheduleBlock(3, 18_000, 19_980),
-    scheduling_model.ScheduleBlock(2, 19_980, 28_200),
-    scheduling_model.ScheduleBlock(10, 28_200, 32_400),
+    scheduling_model.ScheduleBlock(2, 18_000, 26_220),
+    scheduling_model.ScheduleBlock(10, 26_220, 30_420),
+    scheduling_model.ScheduleBlock(3, 30_420, 32_400),
     scheduling_model.ScheduleBlock(3, 36_000, 37_200),
-    scheduling_model.ScheduleBlock(11, 37_200, 42_420),
-    scheduling_model.ScheduleBlock(5, 42_420, 49_440),
+    scheduling_model.ScheduleBlock(11, 37_200, 41_400),
+    scheduling_model.ScheduleBlock(5, 41_400, 49_020),
   ]
   let expected =
     scheduling_model.GenerationResult(
@@ -138,11 +138,10 @@ pub fn scheduler_generate_matches_literal_seed101_result_and_repeats_test() {
         [
           scheduling_model.UnscheduledTask(1, 100),
           scheduling_model.UnscheduledTask(4, 90),
-          scheduling_model.UnscheduledTask(5, 10),
           scheduling_model.UnscheduledTask(6, 27),
           scheduling_model.UnscheduledTask(8, 117),
           scheduling_model.UnscheduledTask(9, 33),
-          scheduling_model.UnscheduledTask(11, 20),
+          scheduling_model.UnscheduledTask(11, 37),
         ],
         [],
       ),
@@ -152,7 +151,7 @@ pub fn scheduler_generate_matches_literal_seed101_result_and_repeats_test() {
   first |> should.equal(expected)
   repeat |> should.equal(first)
   score.evaluate(scheduler_seed_tasks(), first.saved_schedule.blocks, 0)
-  |> should.equal(scheduling_model.Score(965, 9.334134963074609))
+  |> should.equal(scheduling_model.Score(919, 9.636740220458))
 }
 
 pub fn same_seed_reproducible_valid_and_never_worse_test() {
@@ -225,11 +224,13 @@ pub fn incomplete_seed101_preserves_locked_full_chain_result_test() {
   |> should.equal(scheduling_model.Score(480, 1.6070023148148147))
 }
 
-pub fn rng_stream_identity_and_bounds_test() {
-  let #(a, _) = deterministic_rng.next(deterministic_rng.for_scenario(101, 77))
-  let #(b, _) = deterministic_rng.next(deterministic_rng.for_scenario(101, 78))
-  let different = a != b
-  different |> should.be_true
+pub fn rng_seed_reproducibility_and_bounds_test() {
+  let #(a, _) = deterministic_rng.next(deterministic_rng.new(101))
+  let #(repeat, _) = deterministic_rng.next(deterministic_rng.new(101))
+  let #(different, _) = deterministic_rng.next(deterministic_rng.new(102))
+  a |> should.equal(repeat)
+  let seeds_diverge = a != different
+  seeds_diverge |> should.be_true
   let values = rng_values(2000, deterministic_rng.new(41), [])
   list.all(values, fn(value) { value >= 0 && value < 7 })
   |> should.be_true

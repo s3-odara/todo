@@ -44,8 +44,7 @@ pub fn context(now: Timestamp, utc_offset: Duration) -> PlanningContext {
 }
 
 /// Pure deterministic adaptive generation. This function performs no clock,
-/// store, or entropy IO. Its scenario substream uses the ordered eligible task
-/// projection and the fixed production seed.
+/// store, or entropy IO. Search randomness comes from the fixed production seed.
 pub fn generate(
   state: AppState,
   context: PlanningContext,
@@ -69,13 +68,7 @@ pub fn generate(
     }),
   )
   let space = SearchSpace(projected, planning_start, offset)
-  let blocks =
-    simple_sa.improve(
-      eligible,
-      space,
-      production_seed,
-      simple_sa.scenario_identity(eligible),
-    )
+  let blocks = simple_sa.improve(eligible, space, production_seed)
   use _ <- result.try(
     invariant.validate_generation(blocks, eligible, space)
     |> result.map_error(fn(_) { InvalidGeneratedSchedule }),

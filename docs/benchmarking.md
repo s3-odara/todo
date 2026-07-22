@@ -27,11 +27,11 @@ the same current, best, RNG, and absolute iteration state through 16,384 total
 iterations; search is not restarted and its random stream and cooling schedule
 are unchanged. With no meaningful probe improvement, generation returns greedy.
 
-Each RNG stream combines seed `101` with a stable scenario identity derived from
-the ordered eligible task projection (task count, ID, estimate, and deadline).
-The internal `simple_sa.improve` boundary retains an explicit run seed so
-benchmarks can reproduce other streams, but scheduler callers cannot select a
-mode or seed.
+Every search starts from seed `101`. Workloads intentionally share the same
+random stream; their task counts, candidate sets, and accepted transitions make
+the actual searches diverge. The internal `simple_sa.improve` boundary retains
+an explicit seed so benchmarks can reproduce other streams, but scheduler
+callers cannot select a mode or seed.
 
 ## Common workflow
 

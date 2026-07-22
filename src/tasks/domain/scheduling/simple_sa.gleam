@@ -35,14 +35,12 @@ type Proposal {
 }
 
 /// Adaptively improve the unchanged greedy solution with Simple SA.
-/// `run_seed` remains an explicit benchmark/internal reproducibility boundary.
-/// `scenario_identity` is a compatibility stream tag; it is not entropy or a
-/// collision-resistant identity.
+/// The explicit seed makes the pure search reproducible. Different workloads
+/// intentionally share its random stream; their candidate sets drive divergence.
 pub fn improve(
   tasks: List(scheduling_model.SchedulingTask),
   space: SearchSpace,
   run_seed: Int,
-  scenario_identity: Int,
 ) -> List(scheduling_model.ScheduleBlock) {
   let SearchSpace(_, planning_start, _) = space
   let greedy_blocks = greedy.build(tasks, space)
@@ -60,7 +58,7 @@ pub fn improve(
           greedy_contributions,
           greedy_blocks,
           greedy_score,
-          deterministic_rng.for_scenario(run_seed, scenario_identity),
+          deterministic_rng.new(run_seed),
         )
       let final = case has_actual_unscheduled(tasks, greedy_blocks) {
         True -> loop(tasks, space, estimate, 0, search_iterations, initial)
@@ -321,26 +319,6 @@ fn has_actual_unscheduled(
       Error(_) -> 0
     }
     task.estimate_minutes - placed_minutes > 0
-  })
-}
-
-/// Compatibility stream tag used by generation and benchmark substreams.
-///
-/// This deliberately preserves the established compatibility fold and is not a
-/// collision-resistant hash. It includes ordered task count, ID, estimate, and
-/// deadline, but omits priority, scheduling policy, minimum split, and search
-/// space. Its linear arithmetic also permits collisions among included fields.
-/// It is suitable only for reproducing the established stream, never as a
-/// unique scenario identifier or for security-sensitive use.
-pub fn scenario_identity(tasks: List(scheduling_model.SchedulingTask)) -> Int {
-  list.fold(tasks, list.length(tasks) * 97, fn(value, task) {
-    value
-    * 31
-    + task.id
-    * 17
-    + task.estimate_minutes
-    * 7
-    + task.deadline_seconds
   })
 }
 
