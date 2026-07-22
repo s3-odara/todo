@@ -6,7 +6,6 @@ import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/order
 import gleam/string
-import gleeunit/should
 import scheduling_benchmark_hash.{sample}
 import scheduling_fixture
 import scheduling_oracle_fixture
@@ -104,8 +103,9 @@ fn run(scenario: Scenario) {
   let initial = greedy.build(tasks, space)
   let greedy_elapsed = monotonic_microseconds() - greedy_started
   let search_started = monotonic_microseconds()
-  let blocks = simple_sa.improve(tasks, space, 101)
+  let search = simple_sa.improve(tasks, space, 101)
   let search_elapsed = monotonic_microseconds() - search_started
+  let blocks = search.blocks
   let initial_value = score.evaluate(tasks, initial, 0)
   let value = score.evaluate(tasks, blocks, 0)
   let estimates = priority_estimates(tasks)
@@ -140,7 +140,7 @@ fn run(scenario: Scenario) {
       int.to_string(list.length(projected)),
       int.to_string(list.length(initial)),
       int.to_string(list.length(blocks)),
-      int.to_string(executed_iterations(tasks, initial, initial_value, value)),
+      int.to_string(search.executed_iterations),
       int.to_string(greedy_elapsed),
       int.to_string(search_elapsed),
       valid,
@@ -149,52 +149,6 @@ fn run(scenario: Scenario) {
   |> list.flatten
   |> string.join("|")
   |> io.println
-}
-
-fn executed_iterations(
-  tasks: List(scheduling_model.SchedulingTask),
-  initial: List(scheduling_model.ScheduleBlock),
-  initial_score: scheduling_model.Score,
-  final_score: scheduling_model.Score,
-) -> Int {
-  case tasks == [] || weighted_estimate(priority_estimates(tasks)) <= 0 {
-    True -> 0
-    False ->
-      case actual_unscheduled_minutes(tasks, initial) > 0 {
-        True -> simple_sa.search_iterations
-        False ->
-          case score.strictly_better(final_score, initial_score) {
-            True -> simple_sa.search_iterations
-            False -> simple_sa.probe_iterations
-          }
-      }
-  }
-}
-
-pub fn executed_iterations_classifies_adaptive_budgets_test() {
-  let tasks = [
-    scheduling_model.SchedulingTask(1, 60, 3, 3600, Asap, 30),
-  ]
-  let complete = [scheduling_model.ScheduleBlock(1, 0, 3600)]
-  let initial = scheduling_model.Score(0, 1.0)
-  let sub_epsilon = scheduling_model.Score(0, 1.0 -. score.epsilon /. 2.0)
-  let strict = scheduling_model.Score(0, 1.0 -. score.epsilon *. 2.0)
-
-  executed_iterations([], [], initial, initial) |> should.equal(0)
-  executed_iterations(tasks, complete, initial, sub_epsilon)
-  |> should.equal(simple_sa.probe_iterations)
-  executed_iterations(tasks, complete, initial, strict)
-  |> should.equal(simple_sa.search_iterations)
-}
-
-fn actual_unscheduled_minutes(
-  tasks: List(scheduling_model.SchedulingTask),
-  blocks: List(scheduling_model.ScheduleBlock),
-) -> Int {
-  list.fold(tasks, 0, fn(total, task) {
-    let own = list.filter(blocks, fn(block) { block.task_id == task.id })
-    total + int.max(0, task.estimate_minutes - score.placed_minutes(own))
-  })
 }
 
 fn priority_estimates(tasks: List(scheduling_model.SchedulingTask)) {

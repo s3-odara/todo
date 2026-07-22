@@ -43,8 +43,12 @@ fn workload() {
   )
 }
 
-fn improve_seed101(tasks, space) {
+fn search_seed101(tasks, space) {
   simple_sa.improve(tasks, space, 101)
+}
+
+fn improve_seed101(tasks, space) {
+  search_seed101(tasks, space).blocks
 }
 
 fn reproduce_seed101(tasks, space) {
@@ -157,8 +161,12 @@ pub fn scheduler_generate_matches_literal_seed101_result_and_repeats_test() {
 pub fn same_seed_reproducible_valid_and_never_worse_test() {
   let #(tasks, space) = workload()
   let initial = greedy.build(tasks, space)
-  let #(first, repeat) = reproduce_seed101(tasks, space)
-  first |> should.equal(repeat)
+  let first_search = search_seed101(tasks, space)
+  let repeat_search = search_seed101(tasks, space)
+  first_search |> should.equal(repeat_search)
+  first_search.executed_iterations
+  |> should.equal(simple_sa.search_iterations)
+  let first = first_search.blocks
   invariant.validate_generation(first, tasks, space) |> should.be_ok
   let not_worse =
     score.compare(
@@ -173,12 +181,14 @@ pub fn same_seed_reproducible_valid_and_never_worse_test() {
 
 pub fn empty_and_nonpositive_weight_inputs_return_greedy_test() {
   let space = SearchSpace([AbsoluteInterval(0, 3600)], 0, 0)
-  improve_seed101([], space) |> should.equal([])
+  search_seed101([], space)
+  |> should.equal(simple_sa.SearchResult([], 0))
 
   let tasks = [
     scheduling_model.SchedulingTask(1, 60, 0, 3600, Asap, 30),
   ]
-  improve_seed101(tasks, space) |> should.equal(greedy.build(tasks, space))
+  search_seed101(tasks, space)
+  |> should.equal(simple_sa.SearchResult(greedy.build(tasks, space), 0))
 }
 
 pub fn full_placement_without_improvement_returns_greedy_test() {
@@ -186,7 +196,11 @@ pub fn full_placement_without_improvement_returns_greedy_test() {
     scheduling_model.SchedulingTask(1, 60, 3, 3600, Asap, 30),
   ]
   let space = SearchSpace([AbsoluteInterval(0, 3600)], 0, 0)
-  improve_seed101(tasks, space) |> should.equal(greedy.build(tasks, space))
+  search_seed101(tasks, space)
+  |> should.equal(simple_sa.SearchResult(
+    greedy.build(tasks, space),
+    simple_sa.probe_iterations,
+  ))
 }
 
 pub fn full_placement_probe_improvement_preserves_full_chain_result_test() {
@@ -204,7 +218,9 @@ pub fn full_placement_probe_improvement_preserves_full_chain_result_test() {
     scheduling_model.ScheduleBlock(1_018_021, 10_260, 13_140),
     scheduling_model.ScheduleBlock(1_015_967, 13_140, 18_060),
   ]
-  let improved = improve_seed101(tasks, space)
+  let search = search_seed101(tasks, space)
+  search.executed_iterations |> should.equal(simple_sa.search_iterations)
+  let improved = search.blocks
   score.evaluate(tasks, initial, 0).weighted_unscheduled_minutes
   |> should.equal(0)
   score.compare(

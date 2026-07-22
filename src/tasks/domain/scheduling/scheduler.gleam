@@ -68,7 +68,7 @@ pub fn generate(
     }),
   )
   let space = SearchSpace(projected, planning_start, offset)
-  let blocks = simple_sa.improve(eligible, space, production_seed)
+  let blocks = simple_sa.improve(eligible, space, production_seed).blocks
   use _ <- result.try(
     invariant.validate_generation(blocks, eligible, space)
     |> result.map_error(fn(_) { InvalidGeneratedSchedule }),

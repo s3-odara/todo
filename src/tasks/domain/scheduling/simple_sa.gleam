@@ -35,6 +35,13 @@ type Proposal {
   Proposal(selected: List(scheduling_model.SchedulingTask), rng: Rng)
 }
 
+pub type SearchResult {
+  SearchResult(
+    blocks: List(scheduling_model.ScheduleBlock),
+    executed_iterations: Int,
+  )
+}
+
 /// Adaptively improve the unchanged greedy solution with Simple SA.
 /// The explicit seed makes the pure search reproducible. Different workloads
 /// intentionally share its random stream; their candidate sets drive divergence.
@@ -42,7 +49,7 @@ pub fn improve(
   tasks: List(scheduling_model.SchedulingTask),
   space: SearchSpace,
   run_seed: Int,
-) -> List(scheduling_model.ScheduleBlock) {
+) -> SearchResult {
   let SearchSpace(_, planning_start, _) = space
   let greedy_blocks = greedy.build(tasks, space)
   let greedy_contributions =
@@ -52,19 +59,23 @@ pub fn improve(
     Solution(greedy_blocks, greedy_score, greedy_contributions)
   let estimate = weighted_estimate(tasks)
   case tasks == [] || estimate <= 0 {
-    True -> greedy_blocks
+    True -> SearchResult(greedy_blocks, 0)
     False -> {
       let initial =
         State(greedy_solution, greedy_solution, deterministic_rng.new(run_seed))
-      let final = case has_actual_unscheduled(tasks, greedy_blocks) {
-        True -> loop(tasks, space, estimate, 0, search_iterations, initial)
+      let #(final, executed_iterations) = case
+        has_actual_unscheduled(tasks, greedy_blocks)
+      {
+        True -> #(
+          loop(tasks, space, estimate, 0, search_iterations, initial),
+          search_iterations,
+        )
         False -> {
           let probed =
             loop(tasks, space, estimate, 0, probe_iterations, initial)
-          // Continuation is a policy decision: unlike exact best-ever ranking,
-          // a policy-only gain must exceed epsilon to earn the full budget.
+          // A policy-only gain must exceed epsilon to earn the full budget.
           case score.strictly_better(probed.best.score, greedy_score) {
-            True ->
+            True -> #(
               loop(
                 tasks,
                 space,
@@ -72,15 +83,18 @@ pub fn improve(
                 probe_iterations,
                 search_iterations,
                 probed,
-              )
-            False -> initial
+              ),
+              search_iterations,
+            )
+            False -> #(initial, probe_iterations)
           }
         }
       }
-      case score.compare(final.best.score, greedy_score) {
+      let blocks = case score.compare(final.best.score, greedy_score) {
         order.Lt -> final.best.blocks
         order.Eq | order.Gt -> greedy_blocks
       }
+      SearchResult(blocks, executed_iterations)
     }
   }
 }
