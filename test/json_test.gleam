@@ -2,7 +2,6 @@ import datebook/weekday.{Friday, Monday}
 import gleam/list
 import gleam/option.{None, Some}
 import gleam/time/calendar.{Date, July}
-import gleam/time/timestamp
 import gleeunit/should
 import tasks/domain/app_state.{AppState}
 import tasks/domain/availability
@@ -99,14 +98,9 @@ pub fn malformed_non_null_schedule_is_rejected_test() {
 pub fn persisted_schedule_round_trip_test() {
   let task = Todo(1, "old snapshot", 0, 3, None, Done, Asap, 45)
   let schedule =
-    scheduling_model.SavedSchedule(
-      timestamp.from_unix_seconds(1),
-      timestamp.from_unix_seconds(0),
-      0,
-      [
-        scheduling_model.ScheduleBlock(1, 60, 120),
-      ],
-    )
+    scheduling_model.SavedSchedule(1, 0, 0, [
+      scheduling_model.ScheduleBlock(1, 60, 120),
+    ])
   let state = AppState([task], availability.empty(), Some(schedule))
   json.decode(json.encode(state)) |> should.equal(Ok(state))
 }

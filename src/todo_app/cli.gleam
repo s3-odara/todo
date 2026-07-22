@@ -474,8 +474,8 @@ pub fn schedule_generated(
 ) -> Outcome {
   let scheduling_model.GenerationResult(saved, report) = generated
   let scheduling_model.SavedSchedule(
-    generated_at,
-    planning_start,
+    generated_at_seconds,
+    planning_start_seconds,
     offset_seconds,
     blocks,
   ) = saved
@@ -502,9 +502,9 @@ pub fn schedule_generated(
     list.flatten([
       [
         "SCHEDULE\tGENERATED_AT\t"
-          <> local_time.format_timestamp(generated_at, offset)
+          <> format_unix_minute(generated_at_seconds, offset)
           <> "\tPLANNING_START\t"
-          <> local_time.format_timestamp(planning_start, offset),
+          <> format_unix_minute(planning_start_seconds, offset),
         "BLOCKS",
       ],
       block_lines,

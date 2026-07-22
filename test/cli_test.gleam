@@ -500,7 +500,7 @@ pub fn scheduled_rows_use_the_saved_offset_and_current_task_test() {
   let #(end_seconds, _) = timestamp.to_unix_seconds_and_nanoseconds(end)
   let task = Todo(1, "x", 30, 3, None, Done, Spread, 30)
   let schedule =
-    scheduling_model.SavedSchedule(start, start, 32_400, [
+    scheduling_model.SavedSchedule(start_seconds, start_seconds, 32_400, [
       scheduling_model.ScheduleBlock(1, start_seconds, end_seconds),
     ])
   let state = AppState([task], availability.empty(), Some(schedule))

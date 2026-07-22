@@ -41,7 +41,7 @@ fn thursday_availability(intervals) {
 pub fn context_preserves_exact_minute_boundary_test() {
   let context =
     scheduler.context(timestamp.from_unix_seconds(-60), duration.seconds(0))
-  context.planning_start |> should.equal(timestamp.from_unix_seconds(-60))
+  context.planning_start_seconds |> should.equal(-60)
 }
 
 pub fn context_ceils_partial_minute_test() {
@@ -50,13 +50,13 @@ pub fn context_ceils_partial_minute_test() {
       timestamp.from_unix_seconds_and_nanoseconds(seconds: 0, nanoseconds: 1),
       duration.seconds(0),
     )
-  context.planning_start |> should.equal(timestamp.from_unix_seconds(60))
+  context.planning_start_seconds |> should.equal(60)
 }
 
 pub fn context_uses_second_precision_utc_offset_test() {
   let context =
     scheduler.context(timestamp.from_unix_seconds(0), duration.seconds(30))
-  context.planning_start |> should.equal(timestamp.from_unix_seconds(30))
+  context.planning_start_seconds |> should.equal(30)
 }
 
 pub fn same_input_produces_same_generation_test() {

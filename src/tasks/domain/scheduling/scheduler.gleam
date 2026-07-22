@@ -35,11 +35,7 @@ pub fn context(now: Timestamp, utc_offset: Duration) -> PlanningContext {
     False -> local_nanoseconds + minute_nanoseconds - remainder
   }
   let planning_seconds = rounded / 1_000_000_000 - offset_seconds
-  PlanningContext(
-    timestamp.from_unix_seconds(seconds),
-    timestamp.from_unix_seconds(planning_seconds),
-    offset_seconds,
-  )
+  PlanningContext(seconds, planning_seconds, offset_seconds)
 }
 
 /// Pure deterministic adaptive generation. This function performs no clock,
@@ -49,8 +45,7 @@ pub fn generate(
   context: PlanningContext,
 ) -> Result(GenerationResult, SchedulingError) {
   let AppState(tasks: all_tasks, availability: availability, ..) = state
-  let PlanningContext(generated_at, planning_timestamp, offset) = context
-  let planning_start = timestamp_seconds(planning_timestamp)
+  let PlanningContext(generated_at, planning_start, offset) = context
   let eligibility.Classification(eligible, excluded) =
     eligibility.classify(all_tasks, planning_start)
   let horizon =
@@ -81,12 +76,7 @@ pub fn generate(
       }
     })
   Ok(GenerationResult(
-    SavedSchedule(generated_at, planning_timestamp, offset, blocks),
+    SavedSchedule(generated_at, planning_start, offset, blocks),
     GenerationReport(unscheduled, excluded),
   ))
-}
-
-fn timestamp_seconds(value: Timestamp) -> Int {
-  let #(seconds, _) = timestamp.to_unix_seconds_and_nanoseconds(value)
-  seconds
 }

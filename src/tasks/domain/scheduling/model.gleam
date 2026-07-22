@@ -1,4 +1,3 @@
-import gleam/time/timestamp.{type Timestamp}
 import tasks/domain/policy.{type SchedulingPolicy}
 
 pub type ExcludedReason {
@@ -16,10 +15,12 @@ pub type UnscheduledTask {
   UnscheduledTask(task_id: Int, minutes: Int)
 }
 
+// Scheduling calculations already use Unix seconds for deadlines and blocks.
+// Keep timestamp conversion at the application boundary instead of mixing forms.
 pub type PlanningContext {
   PlanningContext(
-    generated_at: Timestamp,
-    planning_start: Timestamp,
+    generated_at_seconds: Int,
+    planning_start_seconds: Int,
     utc_offset_seconds: Int,
   )
 }
@@ -50,8 +51,8 @@ pub type ScheduleBlock {
 
 pub type SavedSchedule {
   SavedSchedule(
-    generated_at: Timestamp,
-    planning_start: Timestamp,
+    generated_at_seconds: Int,
+    planning_start_seconds: Int,
     utc_offset_seconds: Int,
     blocks: List(ScheduleBlock),
   )

@@ -6,7 +6,6 @@ import gleam/list
 import gleam/order
 import gleam/result
 import gleam/time/calendar
-import gleam/time/timestamp
 import tasks/domain/app_state.{type AppState, AppState}
 import tasks/domain/availability.{
   type Availability, type DateOverride, type Interval, type WeeklyAvailability,
@@ -135,14 +134,8 @@ fn weekday_decoder() {
 }
 
 fn schedule_decoder() {
-  use generated_at <- decode.field(
-    "generated_at",
-    decode.int |> decode.map(timestamp.from_unix_seconds),
-  )
-  use planning_start <- decode.field(
-    "planning_start",
-    decode.int |> decode.map(timestamp.from_unix_seconds),
-  )
+  use generated_at <- decode.field("generated_at", decode.int)
+  use planning_start <- decode.field("planning_start", decode.int)
   use utc_offset_seconds <- decode.field("utc_offset_seconds", decode.int)
   use blocks <- decode.field(
     "blocks",
@@ -252,8 +245,8 @@ fn intervals_json(values: List(Interval)) -> json.Json {
 
 fn schedule_json(value: scheduling_model.SavedSchedule) -> json.Json {
   json.object([
-    #("generated_at", instant_json(value.generated_at)),
-    #("planning_start", instant_json(value.planning_start)),
+    #("generated_at", json.int(value.generated_at_seconds)),
+    #("planning_start", json.int(value.planning_start_seconds)),
     #("utc_offset_seconds", json.int(value.utc_offset_seconds)),
     #(
       "blocks",
@@ -274,11 +267,6 @@ fn schedule_json(value: scheduling_model.SavedSchedule) -> json.Json {
       ),
     ),
   ])
-}
-
-fn instant_json(value) -> json.Json {
-  let #(seconds, _) = timestamp.to_unix_seconds_and_nanoseconds(value)
-  json.int(seconds)
 }
 
 fn due_json(value) -> json.Json {
