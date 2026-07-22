@@ -22,7 +22,6 @@ import tasks/domain/model.{
 import tasks/domain/scheduling/model as scheduling_model
 import tasks/domain/scheduling/scheduler.{type SchedulingError}
 import tasks/domain/validation
-import todo_app/service.{type ScheduledListing, ScheduledItem, ScheduledListing}
 
 pub type Command {
   Help
@@ -451,8 +450,10 @@ pub fn listed(
   )
 }
 
-pub fn scheduled_listed(listing: ScheduledListing) -> Outcome {
-  let ScheduledListing(offset_seconds, items) = listing
+pub fn scheduled_listed(
+  offset_seconds: Int,
+  items: List(#(scheduling_model.ScheduleBlock, Todo)),
+) -> Outcome {
   let offset = duration.seconds(offset_seconds)
   Outcome(
     0,
@@ -461,7 +462,7 @@ pub fn scheduled_listed(listing: ScheduledListing) -> Outcome {
       "No scheduled tasks.",
       "START\tEND\tID\tSTATUS\tTITLE",
       fn(item) {
-        let ScheduledItem(block, task) = item
+        let #(block, task) = item
         tab_row([
           format_unix_minute(block.start_seconds, offset),
           format_unix_minute(block.end_seconds, offset),

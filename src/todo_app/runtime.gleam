@@ -1,65 +1,132 @@
+import gleam/list
+import gleam/option.{None, Some}
+import gleam/result
 import gleam/time/duration.{type Duration}
 import gleam/time/timestamp.{type Timestamp}
-import tasks/domain/filter.{ScheduledList, TaskList}
+import tasks/domain/app_state.{type AppState, AppState}
+import tasks/domain/availability
+import tasks/domain/filter.{
+  type ResolvedScheduledFilter, type StatusFilter, ScheduledList, TaskList,
+}
+import tasks/domain/scheduling/invariant
+import tasks/domain/scheduling/model as scheduling_model
 import tasks/domain/scheduling/scheduler
+import tasks/domain/tasks
 import todo_app/cli.{
   type Command, type Outcome, Add, AvailabilityList, GenerateSchedule, Help,
   List, MutateAvailability, RunDone,
 }
-import todo_app/service
-import todo_app/store.{type Store}
 
-/// Application boundary: adapters supply persistence and one coherent clock sample.
-pub fn run(
+/// A pure command result. Persistence stays in the outer shell so command
+/// behavior can be tested without simulating a store.
+pub type Execution {
+  Execution(state: AppState, outcome: Outcome, changed: Bool)
+}
+
+pub fn execute(
   command: Command,
-  store: Store,
-  clock: fn() -> #(Timestamp, Duration),
-) -> Outcome {
+  state: AppState,
+  now: Timestamp,
+  offset: Duration,
+) -> Execution {
   case command {
-    Help -> cli.help()
-    Add(values) -> service.add(store, values) |> service_outcome(cli.added)
+    Help -> unchanged(state, cli.help())
+    Add(values) -> {
+      let #(updated_tasks, added) = tasks.add(state.tasks, values)
+      changed(AppState(..state, tasks: updated_tasks), cli.added(added))
+    }
     List(TaskList(criteria)) -> {
       let filter.ListFilter(status, _) = criteria
-      let #(now, offset) = clock()
-      let resolved = filter.resolve(criteria, now, offset)
-      service.list(store, resolved)
-      |> service_outcome(fn(items) { cli.listed(items, status, offset) })
+      let items =
+        state.tasks
+        |> tasks.visible(filter.resolve(criteria, now, offset))
+        |> tasks.sorted_by_id
+      unchanged(state, cli.listed(items, status, offset))
     }
     List(ScheduledList(status, scheduled_filter)) -> {
       let resolved = case scheduled_filter {
         filter.AllScheduled -> filter.ResolvedAllScheduled
         filter.ScheduledExact(filter.ScheduledDate(date)) ->
           filter.ResolvedScheduledDate(date)
-        filter.ScheduledExact(filter.ScheduledToday) -> {
-          let #(current, _) = clock()
-          filter.ResolvedScheduledToday(current)
-        }
+        filter.ScheduledExact(filter.ScheduledToday) ->
+          filter.ResolvedScheduledToday(now)
         filter.ScheduledRange(since, until) ->
           filter.ResolvedScheduledRange(since, until)
       }
-      service.scheduled_list(store, status, resolved)
-      |> service_outcome(cli.scheduled_listed)
+      let #(saved_offset, items) = scheduled_list(state, status, resolved)
+      unchanged(state, cli.scheduled_listed(saved_offset, items))
     }
-    GenerateSchedule -> {
-      let #(now, offset) = clock()
-      service.generate_schedule(store, scheduler.context(now, offset))
-      |> service_outcome(cli.schedule_generated)
-    }
-    RunDone(id) -> service.done(store, id) |> service_outcome(cli.completed)
+    GenerateSchedule ->
+      case scheduler.generate(state, scheduler.context(now, offset)) {
+        Ok(generated) -> {
+          let scheduling_model.GenerationResult(saved_schedule, _) = generated
+          changed(
+            AppState(..state, current_schedule: Some(saved_schedule)),
+            cli.schedule_generated(generated),
+          )
+        }
+        Error(error) -> unchanged(state, cli.scheduling_error(error))
+      }
+    RunDone(id) ->
+      case tasks.complete(state.tasks, id) {
+        Ok(#(updated_tasks, completed)) ->
+          changed(
+            AppState(..state, tasks: updated_tasks),
+            cli.completed(completed),
+          )
+        Error(error) -> unchanged(state, cli.domain_error(error))
+      }
     AvailabilityList ->
-      service.availability_list(store)
-      |> service_outcome(cli.availability_listed)
-    MutateAvailability(mutation) ->
-      service.mutate_availability(store, mutation)
-      |> service_outcome(fn(_) { cli.availability_updated() })
+      unchanged(state, cli.availability_listed(state.availability))
+    MutateAvailability(mutation) -> {
+      let updated =
+        AppState(
+          ..state,
+          availability: availability.apply(state.availability, mutation),
+        )
+      Execution(updated, cli.availability_updated(), updated != state)
+    }
   }
 }
 
-fn service_outcome(result, on_success) {
-  case result {
-    Ok(value) -> on_success(value)
-    Error(service.Persisted(message)) -> cli.persistence_error(message)
-    Error(service.Domain(error)) -> cli.domain_error(error)
-    Error(service.Scheduling(error)) -> cli.scheduling_error(error)
+fn scheduled_list(
+  state: AppState,
+  status: StatusFilter,
+  scheduled_filter: ResolvedScheduledFilter,
+) {
+  case state.current_schedule {
+    None -> #(0, [])
+    Some(saved) -> {
+      let offset = duration.seconds(saved.utc_offset_seconds)
+      let window = filter.scheduled_window(scheduled_filter, offset)
+      let items =
+        saved.blocks
+        |> list.filter_map(fn(block) {
+          use task <- result.try(
+            list.find(state.tasks, fn(task) { task.id == block.task_id }),
+          )
+          case
+            filter.status_matches(status, task.status)
+            && filter.block_overlaps(
+              block.start_seconds,
+              block.end_seconds,
+              window,
+            )
+          {
+            True -> Ok(#(block, task))
+            False -> Error(Nil)
+          }
+        })
+        |> list.sort(by: fn(a, b) { invariant.block_compare(a.0, b.0) })
+      #(saved.utc_offset_seconds, items)
+    }
   }
+}
+
+fn unchanged(state: AppState, outcome: Outcome) -> Execution {
+  Execution(state, outcome, False)
+}
+
+fn changed(state: AppState, outcome: Outcome) -> Execution {
+  Execution(state, outcome, True)
 }

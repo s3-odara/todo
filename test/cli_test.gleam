@@ -18,8 +18,6 @@ import tasks/domain/policy.{Asap, NearDeadline, Spread}
 import tasks/domain/scheduling/model as scheduling_model
 import todo_app/cli
 import todo_app/runtime
-import todo_app/service
-import todo_app/store.{Store}
 
 fn today() {
   Date(2026, July, 24)
@@ -38,9 +36,12 @@ fn parse(args) {
   cli.parse(args, fn(value) { due.input(value, calendar.utc_offset) })
 }
 
-fn run(args, store) {
+fn run(args, state) {
   case parse(args) {
-    Ok(command) -> runtime.run(command, store, clock)
+    Ok(command) -> {
+      let #(now, offset) = clock()
+      runtime.execute(command, state, now, offset).outcome
+    }
     Error(message) -> cli.grammar_error(message)
   }
 }
@@ -49,12 +50,9 @@ fn state_with(tasks) {
   AppState(tasks, availability.empty(), None)
 }
 
-fn store_with(tasks) {
-  Store(fn() { Ok(state_with(tasks)) }, fn(_) { Ok(Nil) })
-}
-
-fn clock_must_not_run() {
-  panic as "clock must not run for this command"
+fn run_command(command, state) {
+  let #(now, offset) = clock()
+  runtime.execute(command, state, now, offset).outcome
 }
 
 pub fn help_is_selected_when_no_command_or_a_help_flag_is_given_test() {
@@ -70,13 +68,12 @@ pub fn help_is_selected_when_no_command_or_a_help_flag_is_given_test() {
   |> list.each(fn(args) { parse(args) |> should.equal(Ok(cli.Help)) })
 }
 
-pub fn non_list_commands_do_not_read_the_clock_test() {
-  runtime.run(cli.Help, store_with([]), clock_must_not_run)
+pub fn commands_ignore_time_when_their_behavior_is_not_time_relative_test() {
+  run_command(cli.Help, state_with([]))
   |> should.equal(cli.help())
-  runtime.run(
+  run_command(
     cli.Add(ValidatedAdd("x", 0, 3, None, Spread, 30)),
-    store_with([]),
-    clock_must_not_run,
+    state_with([]),
   )
   |> should.equal(cli.Outcome(0, ["Added task 1: x"], []))
 }
@@ -348,17 +345,16 @@ pub fn scheduled_list_conflicts_and_invalid_ranges_are_rejected_test() {
   |> list.each(fn(args) { parse(args) |> should.equal(Error("invalid input")) })
 }
 
-pub fn explicit_scheduled_list_does_not_read_clock_test() {
+pub fn explicit_scheduled_list_ignores_the_supplied_current_time_test() {
   [
     AllScheduled,
     ScheduledExact(ScheduledDate(today())),
     ScheduledRange(Some(today()), None),
   ]
   |> list.each(fn(scheduled_filter) {
-    runtime.run(
+    run_command(
       cli.List(ScheduledList(PendingOnly, scheduled_filter)),
-      store_with([]),
-      clock_must_not_run,
+      state_with([]),
     )
     |> should.equal(cli.Outcome(0, ["No scheduled tasks."], []))
   })
@@ -483,7 +479,7 @@ pub fn reversed_due_range_is_invalid_input_test() {
 }
 
 pub fn list_input_errors_use_the_cli_grammar_error_contract_test() {
-  run(["list", "--status", "unknown"], store_with([]))
+  run(["list", "--status", "unknown"], state_with([]))
   |> should.equal(cli.Outcome(2, [], ["Error: invalid input"]))
 }
 
@@ -513,7 +509,7 @@ pub fn availability_formatter_is_stable_and_marks_closed_overrides_test() {
 }
 
 pub fn an_empty_list_uses_the_status_specific_message_test() {
-  let empty = store_with([])
+  let empty = state_with([])
 
   run(["list"], empty)
   |> should.equal(cli.Outcome(0, ["No pending tasks."], []))
@@ -524,9 +520,9 @@ pub fn an_empty_list_uses_the_status_specific_message_test() {
 }
 
 pub fn tasks_are_rendered_as_tab_separated_rows_test() {
-  let store = store_with([Todo(1, "x", 5, 3, None, Pending, Spread, 30)])
+  let state = state_with([Todo(1, "x", 5, 3, None, Pending, Spread, 30)])
 
-  run(["list"], store)
+  run(["list"], state)
   |> should.equal(
     cli.Outcome(
       0,
@@ -542,14 +538,19 @@ pub fn scheduled_rows_use_the_saved_offset_and_current_task_test() {
   let #(start_seconds, _) = timestamp.to_unix_seconds_and_nanoseconds(start)
   let #(end_seconds, _) = timestamp.to_unix_seconds_and_nanoseconds(end)
   let task = Todo(1, "x", 30, 3, None, Done, Spread, 30)
-  cli.scheduled_listed(
-    service.ScheduledListing(32_400, [
-      service.ScheduledItem(
-        scheduling_model.ScheduleBlock(1, start_seconds, end_seconds),
-        task,
-      ),
-    ]),
-  )
+  let schedule =
+    scheduling_model.SavedSchedule(start, start, 32_400, [
+      scheduling_model.ScheduleBlock(1, start_seconds, end_seconds),
+    ])
+  let state = AppState([task], availability.empty(), Some(schedule))
+  let #(now, offset) = clock()
+
+  runtime.execute(
+    cli.List(ScheduledList(AllStatuses, AllScheduled)),
+    state,
+    now,
+    offset,
+  ).outcome
   |> should.equal(
     cli.Outcome(
       0,
@@ -567,11 +568,12 @@ pub fn stored_due_is_rendered_with_the_current_local_offset_test() {
   let assert Ok(stored) = due.input("2026-07-24T09:00", japan)
   let command = cli.List(TaskList(ListFilter(PendingOnly, None)))
 
-  runtime.run(
+  runtime.execute(
     command,
-    store_with([Todo(1, "x", 0, 3, Some(stored), Pending, Spread, 30)]),
-    fn() { #(due.instant(due_at("2026-07-24T12:00")), japan) },
-  )
+    state_with([Todo(1, "x", 0, 3, Some(stored), Pending, Spread, 30)]),
+    due.instant(due_at("2026-07-24T12:00")),
+    japan,
+  ).outcome
   |> should.equal(
     cli.Outcome(
       0,
@@ -585,39 +587,81 @@ pub fn stored_due_is_rendered_with_the_current_local_offset_test() {
 }
 
 pub fn invalid_input_is_reported_on_stderr_test() {
-  run(["add", "x", "--priority", "9"], store_with([]))
+  run(["add", "x", "--priority", "9"], state_with([]))
   |> should.equal(cli.Outcome(2, [], ["Error: invalid input"]))
 }
 
 pub fn an_unknown_task_is_reported_on_stderr_test() {
-  let store = store_with([Todo(1, "x", 5, 3, None, Pending, Spread, 30)])
+  let state = state_with([Todo(1, "x", 5, 3, None, Pending, Spread, 30)])
 
-  run(["done", "99"], store)
+  run(["done", "99"], state)
   |> should.equal(cli.Outcome(2, [], ["Error: task not found"]))
 }
 
 pub fn an_already_completed_task_is_reported_on_stderr_test() {
-  let store = store_with([Todo(1, "x", 5, 3, None, Done, Spread, 30)])
+  let state = state_with([Todo(1, "x", 5, 3, None, Done, Spread, 30)])
 
-  run(["done", "1"], store)
+  run(["done", "1"], state)
   |> should.equal(cli.Outcome(2, [], ["Error: task is already completed"]))
 }
 
-pub fn a_persistence_failure_is_reported_with_exit_code_one_test() {
-  let store = Store(fn() { Error("corrupt data") }, fn(_) { Ok(Nil) })
+pub fn a_failed_command_does_not_mark_state_as_changed_test() {
+  let state = state_with([Todo(1, "x", 5, 3, None, Pending, Spread, 30)])
+  let #(now, offset) = clock()
+  let execution = runtime.execute(cli.RunDone(99), state, now, offset)
 
-  run(["list"], store)
-  |> should.equal(cli.Outcome(1, [], ["Error: corrupt data"]))
+  execution.changed |> should.be_false
+  execution.state |> should.equal(state)
+}
+
+pub fn mutations_mark_only_structural_changes_for_persistence_test() {
+  let state = state_with([])
+  let #(now, offset) = clock()
+  let added =
+    runtime.execute(
+      cli.Add(ValidatedAdd("x", 0, 3, None, Spread, 30)),
+      state,
+      now,
+      offset,
+    )
+  let assert Ok(date) = due.parse_date("2026-07-20")
+  let reset =
+    runtime.execute(
+      cli.MutateAvailability(availability.ResetDate(date)),
+      state,
+      now,
+      offset,
+    )
+
+  added.changed |> should.be_true
+  added.state.tasks
+  |> should.equal([Todo(1, "x", 0, 3, None, Pending, Spread, 30)])
+  reset.changed |> should.be_false
+  reset.state |> should.equal(state)
 }
 
 pub fn adding_a_task_reports_its_id_and_title_test() {
-  run(["add", "x"], store_with([]))
+  run(["add", "x"], state_with([]))
   |> should.equal(cli.Outcome(0, ["Added task 1: x"], []))
 }
 
-pub fn completing_a_task_reports_its_id_and_title_test() {
-  let store = store_with([Todo(1, "x", 0, 3, None, Pending, Spread, 30)])
+pub fn completing_a_task_updates_state_and_reports_the_task_test() {
+  let state = state_with([Todo(1, "x", 0, 3, None, Pending, Spread, 30)])
+  let #(now, offset) = clock()
+  let execution = runtime.execute(cli.RunDone(1), state, now, offset)
 
-  run(["done", "1"], store)
+  execution.outcome
   |> should.equal(cli.Outcome(0, ["Completed task 1: x"], []))
+  execution.changed |> should.be_true
+  execution.state.tasks
+  |> should.equal([Todo(1, "x", 0, 3, None, Done, Spread, 30)])
+}
+
+pub fn schedule_generation_updates_the_snapshot_test() {
+  let state = state_with([])
+  let #(now, offset) = clock()
+  let execution = runtime.execute(cli.GenerateSchedule, state, now, offset)
+
+  execution.changed |> should.be_true
+  execution.state.current_schedule |> should.be_some
 }
