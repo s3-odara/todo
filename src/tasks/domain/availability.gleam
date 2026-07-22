@@ -95,87 +95,52 @@ pub fn parse_day(value: String) -> Result(Weekday, Nil) {
   }
 }
 
-fn add_intervals(values: List(Interval), addition: Interval) -> List(Interval) {
-  canonicalize([addition, ..values])
+type IntervalEdit {
+  AddInterval(Interval)
+  DeleteInterval(Interval)
+  ReplaceIntervals(List(Interval))
 }
 
-pub fn delete_intervals(
+fn edit_intervals(
   values: List(Interval),
-  deletion: Interval,
+  edit: IntervalEdit,
 ) -> List(Interval) {
-  values
-  |> list.flat_map(fn(value) { subtract(value, deletion) })
-  |> canonicalize
+  case edit {
+    AddInterval(interval) -> canonicalize([interval, ..values])
+    DeleteInterval(interval) ->
+      values
+      |> list.flat_map(fn(value) { subtract(value, interval) })
+      |> canonicalize
+    ReplaceIntervals(intervals) -> canonicalize(intervals)
+  }
 }
 
-pub fn canonicalize(values: List(Interval)) -> List(Interval) {
+fn canonicalize(values: List(Interval)) -> List(Interval) {
   values
   |> list.sort(by: interval_compare)
   |> merge_sorted([])
   |> list.reverse
 }
 
-pub fn weekly_add(
-  value: Availability,
-  days: List(Weekday),
-  interval: Interval,
-) -> Availability {
-  update_weekly(value, days, fn(intervals) {
-    add_intervals(intervals, interval)
-  })
-}
-
-fn weekly_delete(
-  value: Availability,
-  days: List(Weekday),
-  interval: Interval,
-) -> Availability {
-  update_weekly(value, days, fn(intervals) {
-    delete_intervals(intervals, interval)
-  })
-}
-
-fn update_weekly(value, days, update) {
+fn edit_weekly(value: Availability, days: List(Weekday), edit: IntervalEdit) {
   let Availability(weekly, overrides) = value
   Availability(
     days
       |> list.fold(weekly, fn(entries, day) {
-        put_weekly(entries, day, update(weekly_for(entries, day)))
+        put_weekly(entries, day, edit_intervals(weekly_for(entries, day), edit))
       })
       |> sort_weekly,
     overrides,
   )
 }
 
-fn date_set(
-  value: Availability,
-  date: Date,
-  interval: Interval,
-) -> Availability {
-  put_override(value, date, [interval])
+fn edit_date(value: Availability, date: Date, edit: IntervalEdit) {
+  // Date edits snapshot effective weekly hours so later weekly changes do not
+  // alter an existing override.
+  put_override(value, date, edit_intervals(effective(value, date), edit))
 }
 
-pub fn date_add(
-  value: Availability,
-  date: Date,
-  interval: Interval,
-) -> Availability {
-  put_override(value, date, add_intervals(effective(value, date), interval))
-}
-
-pub fn date_delete(
-  value: Availability,
-  date: Date,
-  interval: Interval,
-) -> Availability {
-  put_override(value, date, delete_intervals(effective(value, date), interval))
-}
-
-pub fn date_close(value: Availability, date: Date) -> Availability {
-  put_override(value, date, [])
-}
-
-pub fn date_reset(value: Availability, date: Date) -> Availability {
+fn reset_date(value: Availability, date: Date) -> Availability {
   let Availability(weekly, overrides) = value
   Availability(weekly, list.filter(overrides, fn(entry) { entry.date != date }))
 }
@@ -191,13 +156,16 @@ pub fn effective(value: Availability, date: Date) -> List(Interval) {
 
 pub fn apply(value: Availability, mutation: Mutation) -> Availability {
   case mutation {
-    AddWeekly(days, interval) -> weekly_add(value, days, interval)
-    DeleteWeekly(days, interval) -> weekly_delete(value, days, interval)
-    SetDate(date, interval) -> date_set(value, date, interval)
-    AddDate(date, interval) -> date_add(value, date, interval)
-    DeleteDate(date, interval) -> date_delete(value, date, interval)
-    CloseDate(date) -> date_close(value, date)
-    ResetDate(date) -> date_reset(value, date)
+    AddWeekly(days, interval) -> edit_weekly(value, days, AddInterval(interval))
+    DeleteWeekly(days, interval) ->
+      edit_weekly(value, days, DeleteInterval(interval))
+    SetDate(date, interval) ->
+      edit_date(value, date, ReplaceIntervals([interval]))
+    AddDate(date, interval) -> edit_date(value, date, AddInterval(interval))
+    DeleteDate(date, interval) ->
+      edit_date(value, date, DeleteInterval(interval))
+    CloseDate(date) -> edit_date(value, date, ReplaceIntervals([]))
+    ResetDate(date) -> reset_date(value, date)
   }
 }
 
@@ -305,7 +273,7 @@ fn put_override(value, date, intervals) {
   let without = list.filter(overrides, fn(entry) { entry.date != date })
   Availability(
     weekly,
-    [DateOverride(date, canonicalize(intervals)), ..without]
+    [DateOverride(date, intervals), ..without]
       |> sort_overrides,
   )
 }
