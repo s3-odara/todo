@@ -10,13 +10,13 @@ import tasks/store/file
 
 const root = "/tmp/todo-app-file-test"
 
-pub fn missing_file_is_an_empty_version_one_state_test() {
+pub fn missing_file_is_an_empty_state_test() {
   let _ = simplifile.delete_all([root])
   file.load(root <> "/missing.json")
   |> should.equal(Ok(AppState([], availability.empty(), None)))
 }
 
-pub fn save_creates_parent_and_round_trips_version_one_state_test() {
+pub fn save_creates_parent_and_round_trips_state_test() {
   let _ = simplifile.delete_all([root])
   let path = root <> "/nested/tasks.json"
   let state =
@@ -30,7 +30,7 @@ pub fn save_creates_parent_and_round_trips_version_one_state_test() {
   file.load(path) |> should.equal(Ok(state))
   simplifile.read(path <> ".tmp") |> should.equal(Error(simplifile.Enoent))
   let assert Ok(saved) = simplifile.read(path)
-  string.starts_with(saved, "{\"version\":1,") |> should.be_true
+  string.starts_with(saved, "{\"tasks\":") |> should.be_true
 
   let _ = simplifile.delete_all([root])
 }

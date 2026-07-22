@@ -3,7 +3,6 @@ import gleam/list
 import gleam/option
 import gleam/order
 import tasks/domain/local_time
-import tasks/domain/model as task_model
 import tasks/domain/scheduling/model.{
   type ScheduleBlock, type SchedulingTask, ScheduleBlock,
   effective_minimum_split,
@@ -73,24 +72,6 @@ pub fn validate_generation(
     && all_after(canonical, planning_start)
     && contained(canonical, projected)
     && task_constraints(tasks, canonical)
-  {
-    True -> Ok(Nil)
-    False -> Error(InvalidSchedule)
-  }
-}
-
-/// Persisted schedules are snapshots: only structural properties are live.
-pub fn validate_persisted(
-  blocks: List(ScheduleBlock),
-  tasks: List(task_model.Todo),
-  utc_offset_seconds: Int,
-) -> Result(Nil, InvariantError) {
-  case
-    blocks == canonicalize(blocks)
-    && structural(blocks, utc_offset_seconds)
-    && references_tasks(blocks, fn(id) {
-      list.any(tasks, fn(task) { task.id == id })
-    })
   {
     True -> Ok(Nil)
     False -> Error(InvalidSchedule)

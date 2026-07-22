@@ -4,10 +4,8 @@ import gleam/result
 import gleam/string
 import tasks/domain/ascii
 import tasks/domain/due.{type Due}
-import tasks/domain/model.{
-  type Status, type Todo, type ValidatedAdd, Todo, ValidatedAdd,
-}
-import tasks/domain/policy.{type SchedulingPolicy, parse as parse_policy}
+import tasks/domain/model.{type ValidatedAdd, ValidatedAdd}
+import tasks/domain/policy.{parse as parse_policy}
 
 pub fn add(
   raw_title: String,
@@ -29,41 +27,6 @@ pub fn add(
     Ok(clean), Ok(minutes), Ok(rank), Ok(due_value), Ok(policy), Ok(split) ->
       Ok(ValidatedAdd(clean, minutes, rank, due_value, policy, split))
     _, _, _, _, _, _ -> Error(Nil)
-  }
-}
-
-pub fn persisted_task(
-  id_value: Int,
-  title_value: String,
-  estimate_minutes: Int,
-  priority_value: Int,
-  due_value: Option(Due),
-  status: Status,
-  scheduling_policy: SchedulingPolicy,
-  minimum_split_minutes: Int,
-) -> Result(Todo, Nil) {
-  case title(title_value) {
-    Ok(clean)
-      if clean == title_value
-      && id_value > 0
-      && estimate_minutes >= 0
-      && estimate_minutes <= 525_600
-      && priority_value >= 1
-      && priority_value <= 5
-      && minimum_split_minutes >= 1
-      && minimum_split_minutes <= 525_600
-    ->
-      Ok(Todo(
-        id_value,
-        title_value,
-        estimate_minutes,
-        priority_value,
-        due_value,
-        status,
-        scheduling_policy,
-        minimum_split_minutes,
-      ))
-    _ -> Error(Nil)
   }
 }
 

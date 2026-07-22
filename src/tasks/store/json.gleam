@@ -3,7 +3,6 @@ import gleam/dynamic/decode
 import gleam/int
 import gleam/json
 import gleam/list
-import gleam/option.{None}
 import gleam/order
 import gleam/result
 import gleam/time/calendar
@@ -21,33 +20,20 @@ import tasks/domain/model.{
 }
 import tasks/domain/policy.{Spread}
 import tasks/domain/scheduling/model as scheduling_model
-import tasks/domain/validation
 
 pub fn decode(text: String) -> Result(AppState, String) {
   json.parse(from: text, using: state_decoder())
   |> result.map_error(fn(_) { "invalid JSON" })
-  |> result.try(fn(state) {
-    app_state.validate_aggregate(state)
-    |> result.map_error(fn(_) { "invalid JSON" })
-  })
 }
 
 fn state_decoder() {
-  use version <- decode.field("version", decode.int)
   use tasks <- decode.field("tasks", decode.list(of: task_decoder()))
   use availability <- decode.field("availability", availability_decoder())
   use current_schedule <- decode.field(
     "current_schedule",
     decode.optional(schedule_decoder()),
   )
-  case version {
-    1 -> decode.success(AppState(tasks, availability, current_schedule))
-    _ ->
-      decode.failure(
-        AppState(tasks, availability, current_schedule),
-        expected: "version 1 AppState",
-      )
-  }
+  decode.success(AppState(tasks, availability, current_schedule))
 }
 
 fn task_decoder() {
@@ -62,25 +48,17 @@ fn task_decoder() {
   use status <- decode.field("status", status_decoder())
   use scheduling_policy <- decode.field("scheduling_policy", policy_decoder())
   use minimum_split <- decode.field("minimum_split_minutes", decode.int)
-  case
-    validation.persisted_task(
-      id,
-      title,
-      estimate,
-      priority,
-      due_value,
-      status,
-      scheduling_policy,
-      minimum_split,
-    )
-  {
-    Ok(task) -> decode.success(task)
-    Error(_) ->
-      decode.failure(
-        Todo(1, "invalid", 0, 3, None, Pending, Spread, 30),
-        expected: "valid task",
-      )
-  }
+  // This file is written by the CLI; decoding restores its typed state directly.
+  decode.success(Todo(
+    id,
+    title,
+    estimate,
+    priority,
+    due_value,
+    status,
+    scheduling_policy,
+    minimum_split,
+  ))
 }
 
 fn status_decoder() {
@@ -143,7 +121,6 @@ fn date_override_decoder() {
 fn interval_decoder() {
   use from <- decode.field("from", decode.int)
   use to <- decode.field("to", decode.int)
-  // AppState aggregate validation owns interval and ordering invariants.
   decode.success(Interval(from, to))
 }
 
@@ -187,10 +164,8 @@ fn schedule_block_decoder() {
 }
 
 pub fn encode(state: AppState) -> String {
-  // The version belongs to this storage envelope, not to the domain state.
   let AppState(tasks, availability, current_schedule) = state
   json.object([
-    #("version", json.int(1)),
     #(
       "tasks",
       json.array(
