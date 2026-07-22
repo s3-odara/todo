@@ -5,16 +5,14 @@ import gleam/time/duration.{type Duration}
 import gleam/time/timestamp.{type Timestamp}
 import tasks/domain/app_state.{type AppState, AppState}
 import tasks/domain/availability
-import tasks/domain/filter.{
-  type ResolvedScheduledFilter, type StatusFilter, ScheduledList, TaskList,
-}
+import tasks/domain/filter.{type StatusFilter, type TimeFilter}
 import tasks/domain/scheduling/invariant
 import tasks/domain/scheduling/model as scheduling_model
 import tasks/domain/scheduling/scheduler
 import tasks/domain/tasks
 import todo_app/cli.{
   type Command, type Outcome, Add, AvailabilityList, GenerateSchedule, Help,
-  List, MutateAvailability, RunDone,
+  ListScheduled, ListTasks, MutateAvailability, RunDone,
 }
 
 /// A pure command result. Persistence stays in the outer shell so command
@@ -35,25 +33,16 @@ pub fn execute(
       let #(updated_tasks, added) = tasks.add(state.tasks, values)
       changed(AppState(..state, tasks: updated_tasks), cli.added(added))
     }
-    List(TaskList(criteria)) -> {
-      let filter.ListFilter(status, _) = criteria
+    ListTasks(status, time_filter) -> {
       let items =
         state.tasks
-        |> tasks.visible(filter.resolve(criteria, now, offset))
+        |> tasks.visible(status, filter.resolve(time_filter, now, offset))
         |> tasks.sorted_by_id
       unchanged(state, cli.listed(items, status, offset))
     }
-    List(ScheduledList(status, scheduled_filter)) -> {
-      let resolved = case scheduled_filter {
-        filter.AllScheduled -> filter.ResolvedAllScheduled
-        filter.ScheduledExact(filter.ScheduledDate(date)) ->
-          filter.ResolvedScheduledDate(date)
-        filter.ScheduledExact(filter.ScheduledToday) ->
-          filter.ResolvedScheduledToday(now)
-        filter.ScheduledRange(since, until) ->
-          filter.ResolvedScheduledRange(since, until)
-      }
-      let #(saved_offset, items) = scheduled_list(state, status, resolved)
+    ListScheduled(status, time_filter) -> {
+      let #(saved_offset, items) =
+        scheduled_list(state, status, time_filter, now)
       unchanged(state, cli.scheduled_listed(saved_offset, items))
     }
     GenerateSchedule ->
@@ -92,13 +81,15 @@ pub fn execute(
 fn scheduled_list(
   state: AppState,
   status: StatusFilter,
-  scheduled_filter: ResolvedScheduledFilter,
+  time_filter: TimeFilter,
+  now: Timestamp,
 ) {
   case state.current_schedule {
     None -> #(0, [])
     Some(saved) -> {
       let offset = duration.seconds(saved.utc_offset_seconds)
-      let window = filter.scheduled_window(scheduled_filter, offset)
+      // Saved blocks keep the offset used when they were generated.
+      let window = filter.resolve(time_filter, now, offset)
       let items =
         saved.blocks
         |> list.filter_map(fn(block) {

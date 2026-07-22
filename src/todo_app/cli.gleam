@@ -10,9 +10,8 @@ import gleam/time/timestamp
 import tasks/domain/availability.{type Availability, type Mutation}
 import tasks/domain/due.{type Due}
 import tasks/domain/filter.{
-  type DueFilter, type ListQuery, type StatusFilter, AllScheduled, AllStatuses,
-  DoneOnly, Exact, ListFilter, Overdue, PendingOnly, Range, ScheduledDate,
-  ScheduledExact, ScheduledList, ScheduledRange, ScheduledToday, TaskList, Today,
+  type StatusFilter, type TimeFilter, AllStatuses, AnyTime, DateRange, DoneOnly,
+  On, Overdue, PendingOnly, Today,
 }
 import tasks/domain/local_time
 import tasks/domain/model.{
@@ -26,7 +25,8 @@ import tasks/domain/validation
 pub type Command {
   Help
   Add(ValidatedAdd)
-  List(ListQuery)
+  ListTasks(status: StatusFilter, filter: TimeFilter)
+  ListScheduled(status: StatusFilter, filter: TimeFilter)
   GenerateSchedule
   RunDone(id: Int)
   AvailabilityList
@@ -130,8 +130,8 @@ fn task_list_command(args) {
   use until <- result.try(
     optional_parsed(options, "due-until", due.parse_date) |> invalid_input,
   )
-  task_temporal_filter(exact, since, until)
-  |> result.map(fn(temporal) { List(TaskList(ListFilter(status, temporal))) })
+  temporal_filter(exact, since, until)
+  |> result.map(fn(temporal) { ListTasks(status, temporal) })
   |> invalid_input
 }
 
@@ -154,8 +154,8 @@ fn scheduled_list_command(args) {
   use until <- result.try(
     optional_parsed(options, "until", due.parse_date) |> invalid_input,
   )
-  scheduled_filter(exact, since, until)
-  |> result.map(fn(temporal) { List(ScheduledList(status, temporal)) })
+  temporal_filter(exact, since, until)
+  |> result.map(fn(temporal) { ListScheduled(status, temporal) })
   |> invalid_input
 }
 
@@ -263,39 +263,28 @@ fn parse_status_filter(value) {
   }
 }
 
-fn parse_due_filter(value: String) -> Result(DueFilter, Nil) {
+fn parse_due_filter(value: String) -> Result(TimeFilter, Nil) {
   case value {
     "today" -> Ok(Today)
     "overdue" -> Ok(Overdue)
-    value -> due.parse_date(value) |> result.map(Exact)
+    value -> due.parse_date(value) |> result.map(On)
   }
 }
 
-fn parse_scheduled_exact(value: String) {
+fn parse_scheduled_exact(value: String) -> Result(TimeFilter, Nil) {
   case value {
-    "today" -> Ok(ScheduledToday)
-    value -> due.parse_date(value) |> result.map(ScheduledDate)
+    "today" -> Ok(Today)
+    value -> due.parse_date(value) |> result.map(On)
   }
 }
 
-fn task_temporal_filter(exact, since, until) {
+fn temporal_filter(exact, since, until) {
   case exact, since, until {
-    None, None, None -> Ok(None)
-    Some(filter), None, None -> Ok(Some(filter))
+    None, None, None -> Ok(AnyTime)
+    Some(filter), None, None -> Ok(filter)
     None, _, _ ->
       validate_range(since, until)
-      |> result.map(fn(_) { Some(Range(since, until)) })
-    _, _, _ -> Error(Nil)
-  }
-}
-
-fn scheduled_filter(exact, since, until) {
-  case exact, since, until {
-    None, None, None -> Ok(AllScheduled)
-    Some(filter), None, None -> Ok(ScheduledExact(filter))
-    None, _, _ ->
-      validate_range(since, until)
-      |> result.map(fn(_) { ScheduledRange(since, until) })
+      |> result.map(fn(_) { DateRange(since, until) })
     _, _, _ -> Error(Nil)
   }
 }

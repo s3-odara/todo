@@ -8,8 +8,8 @@ import gleam/time/timestamp
 import gleeunit/should
 import tasks/domain/due
 import tasks/domain/filter.{
-  AllStatuses, DoneOnly, DueWindow, Exact, ListFilter, Overdue, PendingOnly,
-  Range, ResolvedListFilter, Today,
+  AllStatuses, AnyTime, DateRange, DoneOnly, On, Overdue, PendingOnly, Today,
+  Window,
 }
 import tasks/domain/model.{
   AlreadyDone, Done, NotFound, Pending, Todo, ValidatedAdd,
@@ -43,17 +43,13 @@ fn now() {
   due.instant(due_at("2026-07-24T12:00"))
 }
 
-fn pending_filter() {
-  ListFilter(PendingOnly, None)
+fn resolved(time_filter) {
+  filter.resolve(time_filter, now(), calendar.utc_offset)
 }
 
-fn resolved(criteria) {
-  filter.resolve(criteria, now(), calendar.utc_offset)
-}
-
-fn visible_sorted(todos, criteria) {
+fn visible_sorted(todos, status, time_filter) {
   todos
-  |> tasks.visible(criteria)
+  |> tasks.visible(status, resolved(time_filter))
   |> tasks.sorted_by_id
 }
 
@@ -216,7 +212,7 @@ pub fn visibility_filters_without_reordering_test() {
   let second = Todo(2, "second", 0, 1, None, Pending, Spread, 30)
   let completed = Todo(3, "completed", 0, 3, None, Done, Spread, 30)
 
-  tasks.visible([completed, second, first], resolved(pending_filter()))
+  tasks.visible([completed, second, first], PendingOnly, resolved(AnyTime))
   |> should.equal([second, first])
 }
 
@@ -233,7 +229,7 @@ pub fn completed_tasks_are_included_when_requested_test() {
   let pending = Todo(1, "pending", 0, 3, None, Pending, Spread, 30)
   let completed = Todo(2, "completed", 0, 3, None, Done, Spread, 30)
 
-  visible_sorted([completed, pending], resolved(ListFilter(AllStatuses, None)))
+  visible_sorted([completed, pending], AllStatuses, AnyTime)
   |> should.equal([pending, completed])
 }
 
@@ -241,32 +237,18 @@ pub fn done_only_filters_completed_tasks_test() {
   let pending = Todo(1, "pending", 0, 3, None, Pending, Spread, 30)
   let completed = Todo(2, "completed", 0, 3, None, Done, Spread, 30)
 
-  visible_sorted([pending, completed], resolved(ListFilter(DoneOnly, None)))
+  visible_sorted([pending, completed], DoneOnly, AnyTime)
   |> should.equal([completed])
 }
 
 pub fn relative_due_filters_resolve_to_absolute_dates_test() {
-  filter.resolve(
-    ListFilter(PendingOnly, Some(Today)),
-    now(),
-    calendar.utc_offset,
-  )
-  |> should.equal(ResolvedListFilter(
-    PendingOnly,
-    Some(DueWindow(
-      Some(due.instant(due_at("2026-07-24T00:00"))),
-      Some(due.instant(due_at("2026-07-25T00:00"))),
-    )),
+  filter.resolve(Today, now(), calendar.utc_offset)
+  |> should.equal(Window(
+    Some(due.instant(due_at("2026-07-24T00:00"))),
+    Some(due.instant(due_at("2026-07-25T00:00"))),
   ))
-  filter.resolve(
-    ListFilter(PendingOnly, Some(Overdue)),
-    now(),
-    calendar.utc_offset,
-  )
-  |> should.equal(ResolvedListFilter(
-    PendingOnly,
-    Some(DueWindow(None, Some(now()))),
-  ))
+  filter.resolve(Overdue, now(), calendar.utc_offset)
+  |> should.equal(Window(None, Some(now())))
 }
 
 pub fn exact_due_filter_ignores_the_stored_time_test() {
@@ -274,10 +256,7 @@ pub fn exact_due_filter_ignores_the_stored_time_test() {
   let evening = pending_due(1, "evening", "2026-07-24T23:59")
   let later = pending_due(3, "later", "2026-07-25T00:00")
 
-  visible_sorted(
-    [morning, later, evening],
-    resolved(ListFilter(PendingOnly, Some(Exact(today())))),
-  )
+  visible_sorted([morning, later, evening], PendingOnly, On(today()))
   |> should.equal([evening, morning])
 }
 
@@ -285,10 +264,7 @@ pub fn today_due_filter_excludes_tasks_without_a_due_date_test() {
   let undated = Todo(1, "undated", 0, 3, None, Pending, Spread, 30)
   let due_today = pending_due(2, "today", "2026-07-24T12:00")
 
-  visible_sorted(
-    [undated, due_today],
-    resolved(ListFilter(PendingOnly, Some(Today))),
-  )
+  visible_sorted([undated, due_today], PendingOnly, Today)
   |> should.equal([due_today])
 }
 
@@ -296,10 +272,9 @@ pub fn date_filters_use_the_current_local_offset_test() {
   let japan = duration.hours(9)
   let assert Ok(stored) = due.input("2026-07-24T00:30", japan)
   let task = Todo(1, "local date", 0, 3, Some(stored), Pending, Spread, 30)
-  let criteria =
-    filter.resolve(ListFilter(PendingOnly, Some(Exact(today()))), now(), japan)
+  let window = filter.resolve(On(today()), now(), japan)
 
-  visible_sorted([task], criteria) |> should.equal([task])
+  tasks.visible([task], PendingOnly, window) |> should.equal([task])
 }
 
 pub fn overdue_is_strictly_before_now_test() {
@@ -307,10 +282,7 @@ pub fn overdue_is_strictly_before_now_test() {
   let earlier_today = pending_due(2, "earlier", "2026-07-24T11:59")
   let due_now = pending_due(3, "now", "2026-07-24T12:00")
 
-  visible_sorted(
-    [due_now, earlier_today, yesterday],
-    resolved(ListFilter(PendingOnly, Some(Overdue))),
-  )
+  visible_sorted([due_now, earlier_today, yesterday], PendingOnly, Overdue)
   |> should.equal([yesterday, earlier_today])
 }
 
@@ -322,7 +294,8 @@ pub fn due_range_includes_both_boundaries_test() {
 
   visible_sorted(
     [outside, end, start],
-    resolved(ListFilter(PendingOnly, Some(Range(Some(today()), Some(until))))),
+    PendingOnly,
+    DateRange(Some(today()), Some(until)),
   )
   |> should.equal([start, end])
 }
@@ -334,12 +307,14 @@ pub fn one_sided_due_ranges_are_inclusive_test() {
 
   visible_sorted(
     [after, boundary, before],
-    resolved(ListFilter(PendingOnly, Some(Range(Some(today()), None)))),
+    PendingOnly,
+    DateRange(Some(today()), None),
   )
   |> should.equal([boundary, after])
   visible_sorted(
     [after, boundary, before],
-    resolved(ListFilter(PendingOnly, Some(Range(None, Some(today()))))),
+    PendingOnly,
+    DateRange(None, Some(today())),
   )
   |> should.equal([before, boundary])
 }
@@ -349,10 +324,7 @@ pub fn status_and_due_filters_are_combined_with_and_test() {
   let completed =
     Todo(2, "done", 0, 3, Some(due_at("2026-07-23T00:00")), Done, Spread, 30)
 
-  visible_sorted(
-    [pending, completed],
-    resolved(ListFilter(DoneOnly, Some(Overdue))),
-  )
+  visible_sorted([pending, completed], DoneOnly, Overdue)
   |> should.equal([completed])
 }
 

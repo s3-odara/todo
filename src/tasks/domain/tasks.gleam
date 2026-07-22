@@ -1,6 +1,6 @@
 import gleam/int
 import gleam/list
-import tasks/domain/filter.{type ResolvedListFilter}
+import tasks/domain/filter.{type StatusFilter, type TimeWindow}
 import tasks/domain/model.{
   type TaskError, type Todo, type ValidatedAdd, AlreadyDone, Done, NotFound,
   Pending, Todo, ValidatedAdd,
@@ -52,9 +52,13 @@ pub fn complete(
   }
 }
 
-pub fn visible(todos: List(Todo), criteria: ResolvedListFilter) -> List(Todo) {
+pub fn visible(
+  todos: List(Todo),
+  status: StatusFilter,
+  window: TimeWindow,
+) -> List(Todo) {
   list.filter(todos, fn(task) {
-    filter.matches(criteria, task.status, task.due)
+    filter.task_matches(status, window, task.status, task.due)
   })
 }
 
