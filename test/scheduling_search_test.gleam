@@ -1,4 +1,3 @@
-import gleam/list
 import gleam/option.{None, Some}
 import gleam/time/duration
 import gleam/time/timestamp
@@ -13,28 +12,6 @@ import tasks/domain/scheduling/invariant
 import tasks/domain/scheduling/model as scheduling_model
 import tasks/domain/scheduling/scheduler
 import tasks/domain/scheduling/timeline.{AbsoluteInterval, SearchSpace}
-import tasks/runtime/parallel
-
-pub fn parallel_runtime_worker_count_and_reduction_test() {
-  let schedulers = parallel.online_scheduler_count()
-  let at_least_one = schedulers >= 1
-  at_least_one |> should.be_true
-  parallel.worker_count(8, 0) |> should.equal(0)
-  parallel.worker_count(8, 1) |> should.equal(1)
-  parallel.worker_count(8, 3) |> should.equal(3)
-  parallel.worker_count(2, 8) |> should.equal(2)
-  parallel.worker_count(0, 3) |> should.equal(1)
-
-  let sum = fn(values) {
-    list.fold(values, 0, fn(total, value) { total + value })
-  }
-  parallel.map_chunks_reduce([], 0, sum, fn(a, b) { a + b })
-  |> should.equal(0)
-  parallel.map_chunks_reduce([1], 0, sum, fn(a, b) { a + b })
-  |> should.equal(1)
-  parallel.map_chunks_reduce([1, 2, 3, 4], 0, sum, fn(a, b) { a + b })
-  |> should.equal(10)
-}
 
 fn state(tasks, availability) {
   AppState(tasks, availability, None)

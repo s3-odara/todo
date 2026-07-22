@@ -237,8 +237,8 @@ pub fn priority_weight(priority: Int) -> Int {
 
 /// Total ordering used to rank candidates deterministically.
 ///
-/// Epsilon is deliberately excluded: approximate equality is not transitive,
-/// so it cannot be composed safely by the parallel candidate reduction.
+/// Epsilon is deliberately excluded because approximate equality is not
+/// transitive and therefore cannot define a total ordering.
 pub fn compare(a: Score, b: Score) -> order.Order {
   case
     int.compare(a.weighted_unscheduled_minutes, b.weighted_unscheduled_minutes)
