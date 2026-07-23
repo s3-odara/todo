@@ -1,0 +1,365 @@
+{
+  "ortools_version": "9.15.6755",
+  "results": [
+    {
+      "name": "medium_balanced_policy_mix",
+      "blocks": [
+        {
+          "task_id": 101,
+          "start_minute": 0,
+          "end_minute": 1
+        },
+        {
+          "task_id": 601,
+          "start_minute": 1,
+          "end_minute": 2
+        },
+        {
+          "task_id": 101,
+          "start_minute": 2,
+          "end_minute": 3
+        },
+        {
+          "task_id": 401,
+          "start_minute": 3,
+          "end_minute": 4
+        },
+        {
+          "task_id": 211,
+          "start_minute": 4,
+          "end_minute": 5
+        },
+        {
+          "task_id": 307,
+          "start_minute": 5,
+          "end_minute": 7
+        },
+        {
+          "task_id": 503,
+          "start_minute": 7,
+          "end_minute": 8
+        },
+        {
+          "task_id": 701,
+          "start_minute": 8,
+          "end_minute": 10
+        },
+        {
+          "task_id": 809,
+          "start_minute": 10,
+          "end_minute": 11
+        },
+        {
+          "task_id": 503,
+          "start_minute": 11,
+          "end_minute": 12
+        }
+      ]
+    },
+    {
+      "name": "medium_overloaded_priority",
+      "blocks": [
+        {
+          "task_id": 1103,
+          "start_minute": 0,
+          "end_minute": 2
+        },
+        {
+          "task_id": 1301,
+          "start_minute": 2,
+          "end_minute": 3
+        },
+        {
+          "task_id": 1213,
+          "start_minute": 3,
+          "end_minute": 5
+        },
+        {
+          "task_id": 1103,
+          "start_minute": 5,
+          "end_minute": 6
+        },
+        {
+          "task_id": 1601,
+          "start_minute": 6,
+          "end_minute": 8
+        },
+        {
+          "task_id": 1511,
+          "start_minute": 8,
+          "end_minute": 9
+        },
+        {
+          "task_id": 1301,
+          "start_minute": 9,
+          "end_minute": 10
+        },
+        {
+          "task_id": 1511,
+          "start_minute": 10,
+          "end_minute": 11
+        },
+        {
+          "task_id": 1301,
+          "start_minute": 11,
+          "end_minute": 12
+        }
+      ]
+    },
+    {
+      "name": "medium_fragmented_availability",
+      "blocks": [
+        {
+          "task_id": 3011,
+          "start_minute": 0,
+          "end_minute": 3
+        },
+        {
+          "task_id": 3301,
+          "start_minute": 4,
+          "end_minute": 6
+        },
+        {
+          "task_id": 3203,
+          "start_minute": 6,
+          "end_minute": 7
+        },
+        {
+          "task_id": 3119,
+          "start_minute": 9,
+          "end_minute": 11
+        },
+        {
+          "task_id": 3203,
+          "start_minute": 11,
+          "end_minute": 12
+        }
+      ]
+    },
+    {
+      "name": "medium_minimum_split_traps",
+      "blocks": [
+        {
+          "task_id": 4201,
+          "start_minute": 0,
+          "end_minute": 2
+        },
+        {
+          "task_id": 4001,
+          "start_minute": 3,
+          "end_minute": 6
+        },
+        {
+          "task_id": 4111,
+          "start_minute": 8,
+          "end_minute": 12
+        }
+      ]
+    },
+    {
+      "name": "medium_clustered_deadlines",
+      "blocks": [
+        {
+          "task_id": 5303,
+          "start_minute": 0,
+          "end_minute": 1
+        },
+        {
+          "task_id": 5101,
+          "start_minute": 1,
+          "end_minute": 2
+        },
+        {
+          "task_id": 5003,
+          "start_minute": 2,
+          "end_minute": 4
+        },
+        {
+          "task_id": 5209,
+          "start_minute": 4,
+          "end_minute": 6
+        },
+        {
+          "task_id": 5407,
+          "start_minute": 6,
+          "end_minute": 7
+        },
+        {
+          "task_id": 5501,
+          "start_minute": 8,
+          "end_minute": 10
+        },
+        {
+          "task_id": 5701,
+          "start_minute": 10,
+          "end_minute": 11
+        },
+        {
+          "task_id": 5407,
+          "start_minute": 11,
+          "end_minute": 12
+        }
+      ]
+    },
+    {
+      "name": "medium_policy_tie_break",
+      "blocks": [
+        {
+          "task_id": 6007,
+          "start_minute": 0,
+          "end_minute": 1
+        },
+        {
+          "task_id": 6607,
+          "start_minute": 1,
+          "end_minute": 2
+        },
+        {
+          "task_id": 6203,
+          "start_minute": 2,
+          "end_minute": 3
+        },
+        {
+          "task_id": 6301,
+          "start_minute": 3,
+          "end_minute": 4
+        },
+        {
+          "task_id": 6401,
+          "start_minute": 4,
+          "end_minute": 5
+        },
+        {
+          "task_id": 6503,
+          "start_minute": 5,
+          "end_minute": 6
+        },
+        {
+          "task_id": 6007,
+          "start_minute": 6,
+          "end_minute": 7
+        },
+        {
+          "task_id": 6607,
+          "start_minute": 7,
+          "end_minute": 8
+        },
+        {
+          "task_id": 6701,
+          "start_minute": 8,
+          "end_minute": 9
+        },
+        {
+          "task_id": 6101,
+          "start_minute": 9,
+          "end_minute": 10
+        },
+        {
+          "task_id": 6203,
+          "start_minute": 10,
+          "end_minute": 11
+        },
+        {
+          "task_id": 6401,
+          "start_minute": 11,
+          "end_minute": 12
+        }
+      ]
+    },
+    {
+      "name": "medium_displacement_chain",
+      "blocks": [
+        {
+          "task_id": 7103,
+          "start_minute": 0,
+          "end_minute": 1
+        },
+        {
+          "task_id": 7307,
+          "start_minute": 1,
+          "end_minute": 2
+        },
+        {
+          "task_id": 7001,
+          "start_minute": 2,
+          "end_minute": 4
+        },
+        {
+          "task_id": 7207,
+          "start_minute": 4,
+          "end_minute": 6
+        },
+        {
+          "task_id": 7411,
+          "start_minute": 6,
+          "end_minute": 8
+        },
+        {
+          "task_id": 7703,
+          "start_minute": 8,
+          "end_minute": 9
+        },
+        {
+          "task_id": 7603,
+          "start_minute": 9,
+          "end_minute": 11
+        }
+      ]
+    },
+    {
+      "name": "medium_sparse_policy_placement",
+      "blocks": [
+        {
+          "task_id": 8401,
+          "start_minute": 0,
+          "end_minute": 1
+        },
+        {
+          "task_id": 8009,
+          "start_minute": 1,
+          "end_minute": 2
+        },
+        {
+          "task_id": 8311,
+          "start_minute": 2,
+          "end_minute": 3
+        },
+        {
+          "task_id": 8609,
+          "start_minute": 3,
+          "end_minute": 4
+        },
+        {
+          "task_id": 8101,
+          "start_minute": 4,
+          "end_minute": 5
+        },
+        {
+          "task_id": 8209,
+          "start_minute": 7,
+          "end_minute": 8
+        },
+        {
+          "task_id": 8707,
+          "start_minute": 8,
+          "end_minute": 9
+        },
+        {
+          "task_id": 8501,
+          "start_minute": 9,
+          "end_minute": 10
+        },
+        {
+          "task_id": 8803,
+          "start_minute": 10,
+          "end_minute": 11
+        },
+        {
+          "task_id": 8903,
+          "start_minute": 11,
+          "end_minute": 12
+        }
+      ]
+    }
+  ]
+}

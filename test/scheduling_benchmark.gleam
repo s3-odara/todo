@@ -5,18 +5,29 @@ import gleam/io
 import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/order
+import gleam/string
+import scheduling_benchmark_hash.{sample}
+import scheduling_fixture
+import scheduling_oracle_fixture
 import tasks/domain/policy.{Asap, NearDeadline, Spread}
 import tasks/domain/scheduling/greedy
-import tasks/domain/scheduling/hill_climb
 import tasks/domain/scheduling/invariant
 import tasks/domain/scheduling/model as scheduling_model
 import tasks/domain/scheduling/score
+import tasks/domain/scheduling/simple_sa
 import tasks/domain/scheduling/timeline.{
   type AbsoluteInterval, AbsoluteInterval, SearchSpace,
 }
 
 @external(erlang, "scheduling_benchmark_ffi", "monotonic_microseconds")
+@external(javascript, "./scheduling_benchmark_ffi.mjs", "monotonic_microseconds")
 fn monotonic_microseconds() -> Int
+
+const representative_fixture_path = "benchmark/fixtures/representative-workloads-v1.json"
+
+const medium_oracle_cases_path = "benchmark/oracles/medium-cases-v1.json"
+
+const medium_oracle_results_path = "benchmark/oracles/medium-results-v1.json"
 
 type Profile {
   Underloaded
@@ -27,13 +38,29 @@ type Profile {
   MinimumSplitTraps
 }
 
+type FixtureSelection {
+  RepresentativeBase
+  IdPermutations
+  AllRepresentativeIds
+}
+
+type Oracle {
+  NoOracle
+  ExhaustiveOracle(horizon: Int)
+  CachedOracle(score: scheduling_model.Score)
+}
+
 type Scenario {
   Scenario(
     name: String,
     tasks: List(scheduling_model.SchedulingTask),
     projected: List(AbsoluteInterval),
-    oracle_horizon: Option(Int),
+    oracle: Oracle,
   )
+}
+
+type PriorityMinutes {
+  PriorityMinutes(p1: Int, p2: Int, p3: Int, p4: Int, p5: Int)
 }
 
 pub fn main() {
@@ -43,95 +70,147 @@ pub fn main() {
         focused_scenarios(),
         profile_scenarios_for_sizes([101], [4, 8]),
       )
-    ["full"] ->
-      list.append(
-        focused_scenarios(),
-        profile_scenarios_for_sizes([101, 211, 307, 401, 503], [4, 8, 12, 16]),
-      )
-    ["holdout"] ->
-      profile_scenarios_for_sizes([9001, 9011, 9029, 9041, 9059], [4, 8, 12, 16])
-    ["oracle"] -> exact_scenarios()
-    ["stress"] -> stress_scenarios()
+    ["full"] -> full_scenarios()
+    ["holdout"] -> holdout_scenarios()
+    ["oracle"] -> oracle_scenarios()
+    ["representative"] -> representative_scenarios(RepresentativeBase)
+    ["permutation"] -> representative_scenarios(AllRepresentativeIds)
     ["all"] ->
-      focused_scenarios()
-      |> list.append(
-        profile_scenarios_for_sizes([101, 211, 307, 401, 503], [4, 8, 12, 16]),
-      )
-      |> list.append(
-        profile_scenarios_for_sizes([9001, 9011, 9029, 9041, 9059], [
-          4,
-          8,
-          12,
-          16,
-        ]),
-      )
-      |> list.append(exact_scenarios())
+      full_scenarios()
+      |> list.append(holdout_scenarios())
+      |> list.append(oracle_scenarios())
+      |> list.append(representative_scenarios(IdPermutations))
     _ -> {
       io.println(
-        "usage: scheduling_benchmark [quick|full|holdout|oracle|stress|all]",
+        "usage: scheduling_benchmark [quick|full|holdout|oracle|representative|permutation|all]",
       )
       []
     }
   }
   io.println(
-    "scenario|initial_unscheduled|initial_policy_error|final_unscheduled|final_policy_error|oracle_unscheduled|oracle_policy_error|primary_regret|policy_regret|blocks|accepted_moves|greedy_us|hill_climb_us|valid",
+    "scenario|weighted_estimate|estimate_p1|estimate_p2|estimate_p3|estimate_p4|estimate_p5|initial_unscheduled|initial_policy_error|final_unscheduled|final_policy_error|final_unscheduled_p1|final_unscheduled_p2|final_unscheduled_p3|final_unscheduled_p4|final_unscheduled_p5|oracle_unscheduled|oracle_policy_error|primary_regret|policy_regret|tasks|projected_intervals|initial_blocks|final_blocks|search_iterations|greedy_us|simple_sa_us|valid",
   )
   selected
   |> list.each(run)
 }
 
 fn run(scenario: Scenario) {
-  let Scenario(name, tasks, projected, oracle_horizon) = scenario
-  // One timing preserves a useful diagnostic without making deterministic quality
-  // cases five times slower. Runtime is not used to rank solution quality.
+  let #(initial, search, greedy_us, search_us) = measure_scenario(scenario)
+  evaluate_scenario(scenario, initial, search, greedy_us, search_us)
+  |> string.join("|")
+  |> io.println
+}
+
+fn measure_scenario(scenario: Scenario) {
+  let Scenario(_, tasks, projected, _) = scenario
   let space = SearchSpace(projected, 0, 0)
+  // Time only the algorithms; oracle and formatting are diagnostics around them.
   let greedy_started = monotonic_microseconds()
   let initial = greedy.build(tasks, space)
-  let greedy_elapsed = monotonic_microseconds() - greedy_started
-  let hill_started = monotonic_microseconds()
-  let result = hill_climb.improve(initial, tasks, space)
-  let hill_elapsed = monotonic_microseconds() - hill_started
-  let initial_value = score.evaluate(tasks, initial, 0)
-  let value = score.evaluate(tasks, result.blocks, 0)
-  let oracle = case oracle_horizon {
-    None -> None
-    Some(horizon) -> exact_optimum(tasks, projected, horizon)
-  }
-  let valid = case invariant.validate_generation(result.blocks, tasks, space) {
-    Ok(_) -> "true"
-    Error(_) -> "false"
+  let greedy_us = monotonic_microseconds() - greedy_started
+  let search_started = monotonic_microseconds()
+  let search = simple_sa.improve(tasks, space, 101)
+  #(initial, search, greedy_us, monotonic_microseconds() - search_started)
+}
+
+fn evaluate_scenario(
+  scenario: Scenario,
+  initial: List(scheduling_model.ScheduleBlock),
+  search: simple_sa.SearchResult,
+  greedy_us: Int,
+  search_us: Int,
+) {
+  let Scenario(name, tasks, projected, oracle) = scenario
+  let blocks = search.blocks
+  let initial_score = score.evaluate(tasks, initial, 0)
+  let final_score = score.evaluate(tasks, blocks, 0)
+  let estimates = priority_estimates(tasks)
+  let oracle = case oracle {
+    NoOracle -> None
+    ExhaustiveOracle(horizon) -> exact_optimum(tasks, projected, horizon)
+    CachedOracle(value) -> Some(value)
   }
   let #(oracle_unscheduled, oracle_policy, primary_regret, policy_regret) =
-    oracle_columns(value, oracle)
-  io.println(
-    name
-    <> "|"
-    <> int.to_string(initial_value.weighted_unscheduled_minutes)
-    <> "|"
-    <> float.to_string(initial_value.weighted_policy_error)
-    <> "|"
-    <> int.to_string(value.weighted_unscheduled_minutes)
-    <> "|"
-    <> float.to_string(value.weighted_policy_error)
-    <> "|"
-    <> oracle_unscheduled
-    <> "|"
-    <> oracle_policy
-    <> "|"
-    <> primary_regret
-    <> "|"
-    <> policy_regret
-    <> "|"
-    <> int.to_string(list.length(result.blocks))
-    <> "|"
-    <> int.to_string(result.accepted_moves)
-    <> "|"
-    <> int.to_string(greedy_elapsed)
-    <> "|"
-    <> int.to_string(hill_elapsed)
-    <> "|"
-    <> valid,
-  )
+    oracle_columns(final_score, oracle)
+  [
+    [name, int.to_string(weighted_estimate(estimates))],
+    priority_values(estimates),
+    [
+      int.to_string(initial_score.weighted_unscheduled_minutes),
+      float.to_string(initial_score.weighted_policy_error),
+      int.to_string(final_score.weighted_unscheduled_minutes),
+      float.to_string(final_score.weighted_policy_error),
+    ],
+    priority_values(priority_unscheduled(tasks, blocks)),
+    [
+      oracle_unscheduled,
+      oracle_policy,
+      primary_regret,
+      policy_regret,
+      int.to_string(list.length(tasks)),
+      int.to_string(list.length(projected)),
+      int.to_string(list.length(initial)),
+      int.to_string(list.length(blocks)),
+      int.to_string(search.executed_iterations),
+      int.to_string(greedy_us),
+      int.to_string(search_us),
+      case
+        invariant.validate_generation(
+          blocks,
+          tasks,
+          SearchSpace(projected, 0, 0),
+        )
+      {
+        Ok(_) -> "true"
+        Error(_) -> "false"
+      },
+    ],
+  ]
+  |> list.flatten
+}
+
+fn priority_estimates(tasks: List(scheduling_model.SchedulingTask)) {
+  list.fold(tasks, PriorityMinutes(0, 0, 0, 0, 0), fn(totals, task) {
+    add_priority_minutes(totals, task.priority, task.estimate_minutes)
+  })
+}
+
+fn priority_unscheduled(
+  tasks: List(scheduling_model.SchedulingTask),
+  blocks: List(scheduling_model.ScheduleBlock),
+) {
+  list.fold(tasks, PriorityMinutes(0, 0, 0, 0, 0), fn(totals, task) {
+    let own = list.filter(blocks, fn(block) { block.task_id == task.id })
+    let unscheduled =
+      int.max(0, task.estimate_minutes - score.placed_minutes(own))
+    add_priority_minutes(totals, task.priority, unscheduled)
+  })
+}
+
+fn add_priority_minutes(totals: PriorityMinutes, priority: Int, minutes: Int) {
+  case totals, priority {
+    PriorityMinutes(p1, p2, p3, p4, p5), 1 ->
+      PriorityMinutes(p1 + minutes, p2, p3, p4, p5)
+    PriorityMinutes(p1, p2, p3, p4, p5), 2 ->
+      PriorityMinutes(p1, p2 + minutes, p3, p4, p5)
+    PriorityMinutes(p1, p2, p3, p4, p5), 3 ->
+      PriorityMinutes(p1, p2, p3 + minutes, p4, p5)
+    PriorityMinutes(p1, p2, p3, p4, p5), 4 ->
+      PriorityMinutes(p1, p2, p3, p4 + minutes, p5)
+    PriorityMinutes(p1, p2, p3, p4, p5), 5 ->
+      PriorityMinutes(p1, p2, p3, p4, p5 + minutes)
+    _, _ -> totals
+  }
+}
+
+fn weighted_estimate(minutes: PriorityMinutes) {
+  let PriorityMinutes(p1, p2, p3, p4, p5) = minutes
+  p1 + p2 * 2 + p3 * 4 + p4 * 8 + p5 * 16
+}
+
+fn priority_values(minutes: PriorityMinutes) {
+  let PriorityMinutes(p1, p2, p3, p4, p5) = minutes
+  [p1, p2, p3, p4, p5] |> list.map(int.to_string)
 }
 
 fn oracle_columns(
@@ -166,7 +245,7 @@ fn focused_scenarios() -> List(Scenario) {
       "short_remainder",
       [task(1, 100, 3, 120, 30, Spread)],
       [interval(0, 80), interval(90, 120)],
-      None,
+      NoOracle,
     ),
     Scenario(
       "priority_contention",
@@ -177,7 +256,7 @@ fn focused_scenarios() -> List(Scenario) {
         task(4, 120, 3, 360, 30, Spread),
       ],
       [interval(0, 300)],
-      None,
+      NoOracle,
     ),
     Scenario(
       "fragmented",
@@ -190,13 +269,13 @@ fn focused_scenarios() -> List(Scenario) {
         interval(330, 390),
         interval(420, 480),
       ],
-      None,
+      NoOracle,
     ),
     Scenario(
       "mixed_medium",
       legacy_generated_tasks(12, 3, []),
       [interval(0, 240), interval(300, 540), interval(600, 840)],
-      None,
+      NoOracle,
     ),
   ]
 }
@@ -230,25 +309,74 @@ fn legacy_generated_tasks(
   }
 }
 
+fn representative_scenarios(selection: FixtureSelection) -> List(Scenario) {
+  let scheduling_fixture.FixtureCorpus(base, permutations) = case
+    scheduling_fixture.load(representative_fixture_path)
+  {
+    Ok(corpus) -> corpus
+    Error(error) -> panic as error
+  }
+  let selected = case selection {
+    RepresentativeBase -> base
+    IdPermutations -> permutations
+    AllRepresentativeIds -> list.append(base, permutations)
+  }
+  list.map(selected, fn(scenario) {
+    let scheduling_fixture.FixtureScenario(name, tasks, projected) = scenario
+    Scenario(name, tasks, projected, NoOracle)
+  })
+}
+
+fn full_scenarios() -> List(Scenario) {
+  focused_scenarios()
+  |> list.append(
+    profile_scenarios_for_sizes([101, 211, 307, 401, 503], [4, 8, 12, 16]),
+  )
+  |> list.append(profile_scenarios_for_sizes([101, 211, 307], [24, 27, 28, 32]))
+  |> list.append(profile_scenarios_for_sizes([7001], [64]))
+  // Cover every profile at a large size, with a second seed for profiles that
+  // are especially sensitive to contention and fragmented availability.
+  |> list.append(profile_scenarios(profiles(), [7001], [128]))
+  |> list.append(
+    profile_scenarios([Balanced, Fragmented, MinimumSplitTraps], [7013], [128]),
+  )
+  |> list.append(representative_scenarios(RepresentativeBase))
+}
+
+fn holdout_scenarios() -> List(Scenario) {
+  profile_scenarios_for_sizes([9001, 9011, 9029, 9041, 9059], [4, 8, 12, 16])
+  // One distinct seed per size detects boundary-specific regressions without
+  // multiplying the cost of this validation-only suite.
+  |> list.append(profile_scenarios_for_sizes([9001], [24]))
+  |> list.append(profile_scenarios_for_sizes([9011], [28]))
+  |> list.append(profile_scenarios_for_sizes([9029], [32]))
+  |> list.append(profile_scenarios_for_sizes([9041], [64]))
+  |> list.append(
+    profile_scenarios([Balanced, Fragmented, MinimumSplitTraps], [9041, 9059], [
+      128,
+    ]),
+  )
+}
+
 fn profile_scenarios_for_sizes(
   seeds: List(Int),
   sizes: List(Int),
 ) -> List(Scenario) {
-  profiles()
+  profile_scenarios(profiles(), seeds, sizes)
+}
+
+fn profile_scenarios(
+  selected_profiles: List(Profile),
+  seeds: List(Int),
+  sizes: List(Int),
+) -> List(Scenario) {
+  selected_profiles
   |> list.flat_map(fn(profile) {
     sizes
     |> list.flat_map(fn(count) {
       seeds
       |> list.map(fn(seed) { profile_scenario(profile, count, seed) })
     })
-  })
-}
-
-fn stress_scenarios() -> List(Scenario) {
-  profiles()
-  |> list.flat_map(fn(profile) {
-    [32, 64, 128, 141, 142, 143]
-    |> list.map(fn(count) { profile_scenario(profile, count, 7001) })
   })
 }
 
@@ -275,7 +403,7 @@ fn profile_scenario(profile, count, seed) -> Scenario {
     name,
     generated_tasks(profile, count, seed, horizon),
     projected,
-    None,
+    NoOracle,
   )
 }
 
@@ -400,12 +528,6 @@ fn first_or(values: List(Int), fallback: Int) -> Int {
   }
 }
 
-// A fixed integer hash gives reproducible, independently varied fixtures without
-// coupling the benchmark to a random-library implementation.
-fn sample(seed: Int, index: Int, bound: Int) -> Int {
-  { seed * 1_103_515_245 + index * 12_345 + index * index * 97 } % bound
-}
-
 fn exact_scenarios() -> List(Scenario) {
   int.range(from: 1, to: 31, with: [], run: fn(scenarios, seed) {
     [exact_scenario(seed), ..scenarios]
@@ -434,7 +556,42 @@ fn exact_scenario(seed: Int) -> Scenario {
       }
       task(id, estimate, priority, deadline, minimum, policy)
     })
-  Scenario("exact_s" <> int.to_string(seed), tasks, projected, Some(horizon))
+  Scenario(
+    "exact_s" <> int.to_string(seed),
+    tasks,
+    projected,
+    ExhaustiveOracle(horizon),
+  )
+}
+
+fn oracle_scenarios() {
+  list.append(exact_scenarios(), medium_oracle_scenarios())
+}
+
+fn medium_oracle_scenarios() -> List(Scenario) {
+  let scenarios = case
+    scheduling_oracle_fixture.load(
+      medium_oracle_cases_path,
+      medium_oracle_results_path,
+    )
+  {
+    Ok(scenarios) -> scenarios
+    Error(error) -> panic as error
+  }
+  list.map(scenarios, fn(scenario) {
+    let scheduling_oracle_fixture.OracleScenario(
+      name,
+      tasks,
+      projected,
+      witness,
+    ) = scenario
+    Scenario(
+      name,
+      tasks,
+      projected,
+      CachedOracle(score.evaluate(tasks, witness, 0)),
+    )
+  })
 }
 
 fn exact_optimum(

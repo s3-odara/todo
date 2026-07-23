@@ -1,12 +1,11 @@
+import datebook/weekday.{Monday}
 import gleam/dynamic/decode
 import gleam/int
 import gleam/json
 import gleam/list
-import gleam/option.{None}
 import gleam/order
 import gleam/result
 import gleam/time/calendar
-import gleam/time/timestamp
 import tasks/domain/app_state.{type AppState, AppState}
 import tasks/domain/availability.{
   type Availability, type DateOverride, type Interval, type WeeklyAvailability,
@@ -14,43 +13,31 @@ import tasks/domain/availability.{
   weekday_string,
 }
 import tasks/domain/due
-import tasks/domain/local_time.{Mon}
+import tasks/domain/local_time
 import tasks/domain/model.{
   type Todo, Pending, Todo, parse_status, status_to_string,
 }
 import tasks/domain/policy.{Spread}
 import tasks/domain/scheduling/model as scheduling_model
-import tasks/domain/validation
+import tasks/domain/task_id
 
 pub fn decode(text: String) -> Result(AppState, String) {
   json.parse(from: text, using: state_decoder())
   |> result.map_error(fn(_) { "invalid JSON" })
-  |> result.try(fn(state) {
-    app_state.validate_aggregate(state)
-    |> result.map_error(fn(_) { "invalid JSON" })
-  })
 }
 
 fn state_decoder() {
-  use version <- decode.field("version", decode.int)
   use tasks <- decode.field("tasks", decode.list(of: task_decoder()))
   use availability <- decode.field("availability", availability_decoder())
   use current_schedule <- decode.field(
     "current_schedule",
     decode.optional(schedule_decoder()),
   )
-  case version {
-    1 -> decode.success(AppState(tasks, availability, current_schedule))
-    _ ->
-      decode.failure(
-        AppState(tasks, availability, current_schedule),
-        expected: "version 1 AppState",
-      )
-  }
+  decode.success(AppState(tasks, availability, current_schedule))
 }
 
 fn task_decoder() {
-  use id <- decode.field("id", decode.int)
+  use id <- decode.field("id", task_id_decoder())
   use title <- decode.field("title", decode.string)
   use estimate <- decode.field("estimate_minutes", decode.int)
   use priority <- decode.field("priority", decode.int)
@@ -61,25 +48,31 @@ fn task_decoder() {
   use status <- decode.field("status", status_decoder())
   use scheduling_policy <- decode.field("scheduling_policy", policy_decoder())
   use minimum_split <- decode.field("minimum_split_minutes", decode.int)
-  case
-    validation.persisted_task(
-      id,
-      title,
-      estimate,
-      priority,
-      due_value,
-      status,
-      scheduling_policy,
-      minimum_split,
-    )
-  {
-    Ok(task) -> decode.success(task)
-    Error(_) ->
-      decode.failure(
-        Todo(1, "invalid", 0, 3, None, Pending, Spread, 30),
-        expected: "valid task",
-      )
-  }
+  // This file is written by the CLI; decoding restores its typed state directly.
+  decode.success(Todo(
+    id,
+    title,
+    estimate,
+    priority,
+    due_value,
+    status,
+    scheduling_policy,
+    minimum_split,
+  ))
+}
+
+fn task_id_decoder() {
+  decode.string
+  |> decode.then(fn(value) {
+    case task_id.parse(value) {
+      Ok(id) -> decode.success(id)
+      Error(_) -> {
+        let assert Ok(invalid) =
+          task_id.parse("00000000-0000-7000-8000-000000000000")
+        decode.failure(invalid, expected: "UUID")
+      }
+    }
+  })
 }
 
 fn status_decoder() {
@@ -142,7 +135,6 @@ fn date_override_decoder() {
 fn interval_decoder() {
   use from <- decode.field("from", decode.int)
   use to <- decode.field("to", decode.int)
-  // AppState aggregate validation owns interval and ordering invariants.
   decode.success(Interval(from, to))
 }
 
@@ -151,20 +143,14 @@ fn weekday_decoder() {
   |> decode.then(fn(value) {
     case availability.parse_day(value) {
       Ok(day) -> decode.success(day)
-      Error(_) -> decode.failure(Mon, expected: "weekday")
+      Error(_) -> decode.failure(Monday, expected: "weekday")
     }
   })
 }
 
 fn schedule_decoder() {
-  use generated_at <- decode.field(
-    "generated_at",
-    decode.int |> decode.map(timestamp.from_unix_seconds),
-  )
-  use planning_start <- decode.field(
-    "planning_start",
-    decode.int |> decode.map(timestamp.from_unix_seconds),
-  )
+  use generated_at <- decode.field("generated_at", decode.int)
+  use planning_start <- decode.field("planning_start", decode.int)
   use utc_offset_seconds <- decode.field("utc_offset_seconds", decode.int)
   use blocks <- decode.field(
     "blocks",
@@ -179,21 +165,19 @@ fn schedule_decoder() {
 }
 
 fn schedule_block_decoder() {
-  use task_id <- decode.field("task_id", decode.int)
+  use id <- decode.field("task_id", task_id_decoder())
   use start <- decode.field("start", decode.int)
   use end <- decode.field("end", decode.int)
-  decode.success(scheduling_model.ScheduleBlock(task_id, start, end))
+  decode.success(scheduling_model.SavedScheduleBlock(id, start, end))
 }
 
 pub fn encode(state: AppState) -> String {
-  // The version belongs to this storage envelope, not to the domain state.
   let AppState(tasks, availability, current_schedule) = state
   json.object([
-    #("version", json.int(1)),
     #(
       "tasks",
       json.array(
-        list.sort(tasks, by: fn(a, b) { int.compare(a.id, b.id) }),
+        list.sort(tasks, by: fn(a, b) { task_id.compare(a.id, b.id) }),
         of: task_json,
       ),
     ),
@@ -205,7 +189,7 @@ pub fn encode(state: AppState) -> String {
 
 fn task_json(task: Todo) -> json.Json {
   json.object([
-    #("id", json.int(task.id)),
+    #("id", json.string(task_id.to_string(task.id))),
     #("title", json.string(task.title)),
     #("estimate_minutes", json.int(task.estimate_minutes)),
     #("priority", json.int(task.priority)),
@@ -276,21 +260,21 @@ fn intervals_json(values: List(Interval)) -> json.Json {
 
 fn schedule_json(value: scheduling_model.SavedSchedule) -> json.Json {
   json.object([
-    #("generated_at", instant_json(value.generated_at)),
-    #("planning_start", instant_json(value.planning_start)),
+    #("generated_at", json.int(value.generated_at_seconds)),
+    #("planning_start", json.int(value.planning_start_seconds)),
     #("utc_offset_seconds", json.int(value.utc_offset_seconds)),
     #(
       "blocks",
       json.array(
         list.sort(value.blocks, by: fn(a, b) {
           case int.compare(a.start_seconds, b.start_seconds) {
-            order.Eq -> int.compare(a.task_id, b.task_id)
+            order.Eq -> task_id.compare(a.task_id, b.task_id)
             other -> other
           }
         }),
         of: fn(block) {
           json.object([
-            #("task_id", json.int(block.task_id)),
+            #("task_id", json.string(task_id.to_string(block.task_id))),
             #("start", json.int(block.start_seconds)),
             #("end", json.int(block.end_seconds)),
           ])
@@ -298,11 +282,6 @@ fn schedule_json(value: scheduling_model.SavedSchedule) -> json.Json {
       ),
     ),
   ])
-}
-
-fn instant_json(value) -> json.Json {
-  let #(seconds, _) = timestamp.to_unix_seconds_and_nanoseconds(value)
-  json.int(seconds)
 }
 
 fn due_json(value) -> json.Json {

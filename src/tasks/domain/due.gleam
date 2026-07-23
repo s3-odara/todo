@@ -1,9 +1,9 @@
+import gleam/int
 import gleam/result
 import gleam/string
 import gleam/time/calendar
 import gleam/time/duration.{type Duration}
 import gleam/time/timestamp.{type Timestamp}
-import tasks/domain/ascii
 import tasks/domain/local_time
 
 /// A task deadline as an absolute instant, distinct from other scheduled times.
@@ -29,7 +29,7 @@ pub fn input(value: String, offset: Duration) -> Result(Due, Nil) {
   }
 }
 
-/// Parse an RFC 3339 full-date with an exact, zero-padded Gregorian shape.
+/// Parse a fixed-width Gregorian date, delegating numeric spelling to `int.parse`.
 pub fn parse_date(value: String) -> Result(calendar.Date, Nil) {
   case date_shape(value) {
     False -> Error(Nil)
@@ -85,21 +85,18 @@ fn parse_datetime(value: String, offset: Duration) -> Result(Due, Nil) {
 
 fn date_shape(value: String) -> Bool {
   case string.to_graphemes(value) {
-    [a, b, c, d, "-", e, f, "-", g, h] -> ascii.digits([a, b, c, d, e, f, g, h])
+    [_, _, _, _, "-", _, _, "-", _, _] -> True
     _ -> False
   }
 }
 
 fn datetime_shape(value: String) -> Bool {
   case string.to_graphemes(value) {
-    [a, b, c, d, "-", e, f, "-", g, h, "T", i, j, ":", k, l] ->
-      ascii.digits([a, b, c, d, e, f, g, h, i, j, k, l])
+    [_, _, _, _, "-", _, _, "-", _, _, "T", _, _, ":", _, _] -> True
     _ -> False
   }
 }
 
 fn slice_int(s: String, start: Int, length: Int) -> Result(Int, Nil) {
-  string.slice(s, start, length)
-  |> string.to_graphemes
-  |> ascii.parse_digits
+  string.slice(s, start, length) |> int.parse
 }

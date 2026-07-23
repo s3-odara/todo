@@ -1,13 +1,14 @@
+import gleam/int
 import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/result
 import gleam/string
-import tasks/domain/ascii
 import tasks/domain/due.{type Due}
 import tasks/domain/model.{
-  type Status, type Todo, type ValidatedAdd, Todo, ValidatedAdd,
+  type AddValues, type UpdateValues, AddValues, UpdateValues,
 }
-import tasks/domain/policy.{type SchedulingPolicy, parse as parse_policy}
+import tasks/domain/policy.{parse as parse_policy}
+import tasks/domain/task_id
 
 pub fn add(
   raw_title: String,
@@ -17,7 +18,7 @@ pub fn add(
   raw_policy: String,
   raw_minimum_split: String,
   due_parser: fn(String) -> Result(Due, Nil),
-) -> Result(ValidatedAdd, Nil) {
+) -> Result(AddValues, Nil) {
   case
     title(raw_title),
     estimate(raw_estimate),
@@ -27,48 +28,51 @@ pub fn add(
     positive_duration(raw_minimum_split)
   {
     Ok(clean), Ok(minutes), Ok(rank), Ok(due_value), Ok(policy), Ok(split) ->
-      Ok(ValidatedAdd(clean, minutes, rank, due_value, policy, split))
+      Ok(AddValues(clean, minutes, rank, due_value, policy, split))
     _, _, _, _, _, _ -> Error(Nil)
   }
 }
 
-pub fn persisted_task(
-  id_value: Int,
-  title_value: String,
-  estimate_minutes: Int,
-  priority_value: Int,
-  due_value: Option(Due),
-  status: Status,
-  scheduling_policy: SchedulingPolicy,
-  minimum_split_minutes: Int,
-) -> Result(Todo, Nil) {
-  case title(title_value) {
-    Ok(clean)
-      if clean == title_value
-      && id_value > 0
-      && estimate_minutes >= 0
-      && estimate_minutes <= 525_600
-      && priority_value >= 1
-      && priority_value <= 5
-      && minimum_split_minutes >= 1
-      && minimum_split_minutes <= 525_600
-    ->
-      Ok(Todo(
-        id_value,
-        title_value,
-        estimate_minutes,
-        priority_value,
-        due_value,
-        status,
-        scheduling_policy,
-        minimum_split_minutes,
-      ))
-    _ -> Error(Nil)
+pub fn selector(raw_id: String) -> Result(String, Nil) {
+  task_id.selector(raw_id)
+}
+
+pub fn update(
+  raw_title: Option(String),
+  raw_estimate: Option(String),
+  raw_priority: Option(String),
+  raw_due: Option(String),
+  raw_policy: Option(String),
+  raw_minimum_split: Option(String),
+  due_parser: fn(String) -> Result(Due, Nil),
+) -> Result(UpdateValues, Nil) {
+  case
+    optional_parsed(raw_title, title),
+    optional_parsed(raw_estimate, estimate),
+    optional_parsed(raw_priority, priority),
+    update_due(raw_due, due_parser),
+    optional_parsed(raw_policy, parse_policy),
+    optional_parsed(raw_minimum_split, positive_duration)
+  {
+    Ok(title), Ok(estimate), Ok(priority), Ok(due), Ok(policy), Ok(split) ->
+      Ok(UpdateValues(title, estimate, priority, due, policy, split))
+    _, _, _, _, _, _ -> Error(Nil)
   }
 }
 
-pub fn done(raw_id: String) -> Result(Int, Nil) {
-  id(raw_id)
+fn optional_parsed(raw: Option(a), parser: fn(a) -> Result(b, Nil)) {
+  case raw {
+    None -> Ok(None)
+    Some(value) -> parser(value) |> result.map(Some)
+  }
+}
+
+fn update_due(raw, due_parser) {
+  case raw {
+    None -> Ok(None)
+    Some("none") -> Ok(Some(None))
+    Some(value) -> due_parser(value) |> result.map(fn(due) { Some(Some(due)) })
+  }
 }
 
 fn title(value: String) -> Result(String, Nil) {
@@ -86,13 +90,6 @@ fn title(value: String) -> Result(String, Nil) {
   {
     True -> Ok(clean)
     False -> Error(Nil)
-  }
-}
-
-fn id(value: String) -> Result(Int, Nil) {
-  case strict_number(value) {
-    Ok(n) if n > 0 -> Ok(n)
-    _ -> Error(Nil)
   }
 }
 
@@ -140,21 +137,9 @@ fn number_between(
   minimum: Int,
   maximum: Int,
 ) -> Result(Int, Nil) {
-  case strict_number(value) {
+  // Range validation is sufficient; alternate integer spellings need no custom parser.
+  case int.parse(value) {
     Ok(number) if number >= minimum && number <= maximum -> Ok(number)
     _ -> Error(Nil)
-  }
-}
-
-fn strict_number(value: String) -> Result(Int, Nil) {
-  case value {
-    "0" -> Ok(0)
-    _ -> {
-      let digits = string.to_graphemes(value)
-      case string.starts_with(value, "0") || !ascii.digits(digits) {
-        True -> Error(Nil)
-        False -> ascii.parse_digits(digits)
-      }
-    }
   }
 }

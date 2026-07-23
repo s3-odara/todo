@@ -43,6 +43,33 @@ pub fn contributions(
   })
 }
 
+pub fn total(values: List(Contribution)) -> Score {
+  list.fold(values, Score(0, 0.0), fn(total, contribution) {
+    Score(
+      total.weighted_unscheduled_minutes
+        + contribution.score.weighted_unscheduled_minutes,
+      total.weighted_policy_error +. contribution.score.weighted_policy_error,
+    )
+  })
+}
+
+/// Replace one task's contribution in an aggregate without summing every task.
+/// Float addition order may change, but candidate ordering tolerates that drift.
+pub fn replace_total(
+  total: Score,
+  previous: Score,
+  replacement: Score,
+) -> Score {
+  Score(
+    total.weighted_unscheduled_minutes
+      - previous.weighted_unscheduled_minutes
+      + replacement.weighted_unscheduled_minutes,
+    total.weighted_policy_error
+      -. previous.weighted_policy_error
+      +. replacement.weighted_policy_error,
+  )
+}
+
 /// Score one task from only that task's canonical blocks.
 pub fn evaluate_task(
   task: SchedulingTask,
@@ -55,35 +82,6 @@ pub fn evaluate_task(
     int.to_float(weight)
       *. policy_error_for_blocks(task, own_blocks, planning_start),
   )
-}
-
-pub fn total(values: List(Contribution)) -> Score {
-  list.fold(values, Score(0, 0.0), fn(total, contribution) {
-    Score(
-      total.weighted_unscheduled_minutes
-        + contribution.score.weighted_unscheduled_minutes,
-      total.weighted_policy_error +. contribution.score.weighted_policy_error,
-    )
-  })
-}
-
-pub fn replace_contributions(
-  current: List(Contribution),
-  replacements: List(Contribution),
-) -> List(Contribution) {
-  // Preserve task order so Float addition and deterministic tie-breaking stay stable.
-  list.map(current, fn(contribution) { replacement(contribution, replacements) })
-}
-
-fn replacement(current: Contribution, replacements: List(Contribution)) {
-  case replacements {
-    [] -> current
-    [candidate, ..rest] ->
-      case candidate.task_id == current.task_id {
-        True -> candidate
-        False -> replacement(current, rest)
-      }
-  }
 }
 
 /// Integrate squared policy error from one task's canonical blocks.
@@ -237,8 +235,8 @@ pub fn priority_weight(priority: Int) -> Int {
 
 /// Total ordering used to rank candidates deterministically.
 ///
-/// Epsilon is deliberately excluded: approximate equality is not transitive,
-/// so it cannot be composed safely by the parallel candidate reduction.
+/// Epsilon is deliberately excluded because approximate equality is not
+/// transitive and therefore cannot define a total ordering.
 pub fn compare(a: Score, b: Score) -> order.Order {
   case
     int.compare(a.weighted_unscheduled_minutes, b.weighted_unscheduled_minutes)

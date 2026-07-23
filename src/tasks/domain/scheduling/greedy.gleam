@@ -1,3 +1,4 @@
+import gleam/dict.{type Dict}
 import gleam/float
 import gleam/int
 import gleam/list
@@ -16,6 +17,7 @@ const placement_candidate_limit = 20_000
 type Candidate {
   Candidate(
     block: scheduling_model.ScheduleBlock,
+    own_blocks: List(scheduling_model.ScheduleBlock),
     score: scheduling_model.Score,
   )
 }
@@ -29,18 +31,25 @@ pub fn build(
   |> list.fold([], fn(blocks, task) { place_task(blocks, task, space) })
 }
 
+/// Rebuild selected tasks and return their blocks while they are already in
+/// hand. This avoids rediscovering them by scanning the whole schedule again.
 pub fn rebuild(
   blocks: List(scheduling_model.ScheduleBlock),
   selected: List(scheduling_model.SchedulingTask),
   space: SearchSpace,
-) -> List(scheduling_model.ScheduleBlock) {
+) -> #(
+  List(scheduling_model.ScheduleBlock),
+  Dict(Int, List(scheduling_model.ScheduleBlock)),
+) {
   let selected_ids = list.map(selected, fn(task) { task.id })
   // Filtering positive, non-overlapping blocks preserves canonical order.
   let base =
     blocks
     |> list.filter(fn(block) { !list.contains(selected_ids, block.task_id) })
-  list.fold(selected, base, fn(current, task) {
-    place_task(current, task, space)
+  list.fold(selected, #(base, dict.new()), fn(state, task) {
+    let #(blocks, index) = state
+    let #(next, own) = place_task_indexed(blocks, task, space)
+    #(next, dict.insert(index, task.id, own))
   })
 }
 
@@ -55,13 +64,37 @@ fn place_task(
   task: scheduling_model.SchedulingTask,
   space: SearchSpace,
 ) -> List(scheduling_model.ScheduleBlock) {
+  place_task_indexed(blocks, task, space).0
+}
+
+fn place_task_indexed(
+  blocks: List(scheduling_model.ScheduleBlock),
+  task: scheduling_model.SchedulingTask,
+  space: SearchSpace,
+) -> #(
+  List(scheduling_model.ScheduleBlock),
+  List(scheduling_model.ScheduleBlock),
+) {
   let own_blocks =
     list.filter(blocks, fn(existing) { existing.task_id == task.id })
+  place_remaining(blocks, own_blocks, task, space)
+}
+
+fn place_remaining(
+  blocks: List(scheduling_model.ScheduleBlock),
+  own_blocks: List(scheduling_model.ScheduleBlock),
+  task: scheduling_model.SchedulingTask,
+  space: SearchSpace,
+) -> #(
+  List(scheduling_model.ScheduleBlock),
+  List(scheduling_model.ScheduleBlock),
+) {
   case best_placement(blocks, own_blocks, task, space) {
-    option.None -> blocks
+    option.None -> #(blocks, own_blocks)
     option.Some(candidate) ->
-      place_task(
+      place_remaining(
         invariant.insert_canonical(blocks, candidate.block),
+        candidate.own_blocks,
         task,
         space,
       )
@@ -98,61 +131,42 @@ fn best_placement(
         False ->
           // Choose the global maximum before applying the candidate budget so
           // fragmentation cannot hide a longer, primary-score-winning block.
-          fold_flat_map_up_to(
-            intervals,
-            placement_candidate_limit,
-            option.None,
-            fn(interval) {
-              let capacity = { interval.end - interval.start } / 60
-              case capacity < block_length {
-                True -> []
-                False ->
-                  anchors(
-                    task,
-                    placed,
-                    interval,
-                    block_length,
-                    planning_start,
-                    offset,
-                  )
-              }
-            },
-            fn(best, start) {
-              let block =
-                scheduling_model.ScheduleBlock(
-                  task.id,
-                  start,
-                  start + block_length * 60,
+          intervals
+          |> list.flat_map(fn(interval) {
+            let capacity = { interval.end - interval.start } / 60
+            case capacity < block_length {
+              True -> []
+              False ->
+                anchors(
+                  task,
+                  placed,
+                  interval,
+                  block_length,
+                  planning_start,
+                  offset,
                 )
-              let next_own = invariant.insert_canonical(own_blocks, block)
-              // Other tasks are unchanged, so their scores cancel.
-              choose_better(
-                best,
-                Candidate(
-                  block,
-                  score.evaluate_task(task, next_own, planning_start),
-                ),
+            }
+          })
+          |> list.take(placement_candidate_limit)
+          |> list.fold(option.None, fn(best, start) {
+            let block =
+              scheduling_model.ScheduleBlock(
+                task.id,
+                start,
+                start + block_length * 60,
               )
-            },
-          )
+            let next_own = invariant.insert_canonical(own_blocks, block)
+            // Other tasks are unchanged, so their scores cancel.
+            choose_better(
+              best,
+              Candidate(
+                block,
+                next_own,
+                score.evaluate_task(task, next_own, planning_start),
+              ),
+            )
+          })
       }
-    }
-  }
-}
-
-// Fold the first limit values of a flattened expansion without building it.
-fn fold_flat_map_up_to(items, limit, initial, expand, reduce) {
-  case items, limit <= 0 {
-    [], _ | _, True -> initial
-    [item, ..rest], False -> {
-      let values = expand(item) |> list.take(limit)
-      fold_flat_map_up_to(
-        rest,
-        limit - list.length(values),
-        list.fold(values, initial, reduce),
-        expand,
-        reduce,
-      )
     }
   }
 }

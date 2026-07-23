@@ -1,7 +1,7 @@
+import datebook/weekday.{Thursday}
 import gleam/list
 import gleeunit/should
 import tasks/domain/availability
-import tasks/domain/local_time
 import tasks/domain/scheduling/model.{ScheduleBlock}
 import tasks/domain/scheduling/timeline.{AbsoluteInterval}
 
@@ -11,7 +11,7 @@ fn block(task_id, start, end) {
 
 fn thursday_with(intervals) {
   availability.Availability(
-    [availability.WeeklyAvailability(local_time.Thu, intervals)],
+    [availability.WeeklyAvailability(Thursday, intervals)],
     [],
   )
 }

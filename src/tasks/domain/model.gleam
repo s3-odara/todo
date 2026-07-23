@@ -1,6 +1,7 @@
 import gleam/option.{type Option}
 import tasks/domain/due.{type Due}
 import tasks/domain/policy.{type SchedulingPolicy}
+import tasks/domain/task_id.{type TaskId}
 
 pub type Status {
   Pending
@@ -24,7 +25,7 @@ pub fn status_to_string(status: Status) -> String {
 
 pub type Todo {
   Todo(
-    id: Int,
+    id: TaskId,
     title: String,
     estimate_minutes: Int,
     priority: Int,
@@ -35,9 +36,9 @@ pub type Todo {
   )
 }
 
-/// Values accepted by domain validation and ready for a pure task transition.
-pub type ValidatedAdd {
-  ValidatedAdd(
+/// Values needed to create a task before its ID and status are assigned.
+pub type AddValues {
+  AddValues(
     title: String,
     estimate_minutes: Int,
     priority: Int,
@@ -47,7 +48,22 @@ pub type ValidatedAdd {
   )
 }
 
+/// Optional fields supplied by `update`. The nested due option distinguishes
+/// an omitted `--due` from `--due none`, which explicitly clears a deadline.
+pub type UpdateValues {
+  UpdateValues(
+    title: Option(String),
+    estimate_minutes: Option(Int),
+    priority: Option(Int),
+    due: Option(Option(Due)),
+    scheduling_policy: Option(SchedulingPolicy),
+    minimum_split_minutes: Option(Int),
+  )
+}
+
 pub type TaskError {
   NotFound
+  AmbiguousId
   AlreadyDone
+  AlreadyPending
 }

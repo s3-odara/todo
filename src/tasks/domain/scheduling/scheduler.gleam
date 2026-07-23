@@ -6,19 +6,20 @@ import gleam/time/timestamp.{type Timestamp}
 import tasks/domain/app_state.{type AppState, AppState}
 import tasks/domain/local_time
 import tasks/domain/scheduling/eligibility
-import tasks/domain/scheduling/greedy
-import tasks/domain/scheduling/hill_climb
 import tasks/domain/scheduling/invariant
 import tasks/domain/scheduling/model.{
   type GenerationResult, type PlanningContext, GenerationReport,
-  GenerationResult, PlanningContext, SavedSchedule, UnscheduledTask,
+  GenerationResult, PlanningContext, SavedSchedule, SavedScheduleBlock,
+  UnscheduledTask,
 }
 import tasks/domain/scheduling/score
+import tasks/domain/scheduling/simple_sa
 import tasks/domain/scheduling/timeline.{SearchSpace}
+
+const production_seed = 101
 
 pub type SchedulingError {
   SearchSpaceTooLarge
-  InvalidCalendarRange
   InvalidGeneratedSchedule
 }
 
@@ -35,22 +36,18 @@ pub fn context(now: Timestamp, utc_offset: Duration) -> PlanningContext {
     False -> local_nanoseconds + minute_nanoseconds - remainder
   }
   let planning_seconds = rounded / 1_000_000_000 - offset_seconds
-  PlanningContext(
-    timestamp.from_unix_seconds(seconds),
-    timestamp.from_unix_seconds(planning_seconds),
-    offset_seconds,
-  )
+  PlanningContext(seconds, planning_seconds, offset_seconds)
 }
 
-/// Pure deterministic generation. This function performs no clock or store IO.
+/// Pure deterministic adaptive generation. This function performs no clock,
+/// store, or entropy IO. Search randomness comes from the fixed production seed.
 pub fn generate(
   state: AppState,
   context: PlanningContext,
 ) -> Result(GenerationResult, SchedulingError) {
   let AppState(tasks: all_tasks, availability: availability, ..) = state
-  let PlanningContext(generated_at, planning_timestamp, offset) = context
-  let planning_start = timestamp_seconds(planning_timestamp)
-  let eligibility.Classification(eligible, excluded) =
+  let PlanningContext(generated_at, planning_start, offset) = context
+  let eligibility.Classification(eligible, excluded, identities) =
     eligibility.classify(all_tasks, planning_start)
   let horizon =
     list.fold(eligible, planning_start, fn(value, task) {
@@ -61,34 +58,40 @@ pub fn generate(
     |> result.map_error(fn(error) {
       case error {
         timeline.SearchSpaceTooLarge -> SearchSpaceTooLarge
-        timeline.InvalidCalendarRange -> InvalidCalendarRange
       }
     }),
   )
   let space = SearchSpace(projected, planning_start, offset)
-  let initial = greedy.build(eligible, space)
-  let blocks = hill_climb.improve(initial, eligible, space).blocks
+  let blocks = simple_sa.improve(eligible, space, production_seed).blocks
   use _ <- result.try(
     invariant.validate_generation(blocks, eligible, space)
     |> result.map_error(fn(_) { InvalidGeneratedSchedule }),
   )
   let unscheduled =
-    eligible
-    |> list.map(fn(task) {
+    list.filter_map(eligible, fn(task) {
       let own = list.filter(blocks, fn(block) { block.task_id == task.id })
-      UnscheduledTask(
-        task.id,
-        task.estimate_minutes - score.placed_minutes(own),
+      let minutes = task.estimate_minutes - score.placed_minutes(own)
+      case minutes > 0 {
+        True -> Ok(UnscheduledTask(external_id(identities, task.id), minutes))
+        False -> Error(Nil)
+      }
+    })
+  let saved_blocks =
+    list.map(blocks, fn(block) {
+      SavedScheduleBlock(
+        external_id(identities, block.task_id),
+        block.start_seconds,
+        block.end_seconds,
       )
     })
-    |> list.filter(fn(entry) { entry.minutes > 0 })
   Ok(GenerationResult(
-    SavedSchedule(generated_at, planning_timestamp, offset, blocks),
+    SavedSchedule(generated_at, planning_start, offset, saved_blocks),
     GenerationReport(unscheduled, excluded),
   ))
 }
 
-fn timestamp_seconds(value: Timestamp) -> Int {
-  let #(seconds, _) = timestamp.to_unix_seconds_and_nanoseconds(value)
-  seconds
+fn external_id(identities, index) {
+  // Every search task is inserted into this table by eligibility.classify.
+  let assert Ok(id) = list.key_find(identities, index)
+  id
 }

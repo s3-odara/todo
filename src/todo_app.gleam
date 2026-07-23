@@ -9,8 +9,7 @@ import tasks/domain/due
 import tasks/runtime as process
 import tasks/store/file
 import todo_app/cli.{type Command, type Outcome, Help, Outcome}
-import todo_app/runtime
-import todo_app/store.{Store}
+import todo_app/runtime.{type Execution, Execution}
 import todo_app/store/path
 
 pub fn main() -> Nil {
@@ -33,13 +32,26 @@ fn run_with_path(command: Command) -> Nil {
   {
     Error(message) -> emit(cli.persistence_error(message))
     Ok(filename) ->
-      emit(runtime.run(
-        command,
-        Store(fn() { file.load(filename) }, fn(state) {
-          file.save(filename, state)
-        }),
-        local_clock,
-      ))
+      case file.load(filename) {
+        Error(message) -> emit(cli.persistence_error(message))
+        Ok(state) -> {
+          let #(now, offset) = local_clock()
+          finish(filename, runtime.execute(command, state, now, offset))
+        }
+      }
+  }
+}
+
+fn finish(filename: String, execution: Execution) -> Nil {
+  let Execution(state, outcome, changed) = execution
+  case changed {
+    False -> emit(outcome)
+    // Mutation success is emitted only after persistence succeeds.
+    True ->
+      case file.save(filename, state) {
+        Ok(_) -> emit(outcome)
+        Error(message) -> emit(cli.persistence_error(message))
+      }
   }
 }
 

@@ -10,26 +10,29 @@ import gleam/time/timestamp
 import tasks/domain/availability.{type Availability, type Mutation}
 import tasks/domain/due.{type Due}
 import tasks/domain/filter.{
-  type DueFilter, type ListQuery, type StatusFilter, AllScheduled, AllStatuses,
-  DoneOnly, Exact, ListFilter, Overdue, PendingOnly, Range, ScheduledDate,
-  ScheduledExact, ScheduledList, ScheduledRange, ScheduledToday, TaskList, Today,
+  type StatusFilter, type TimeFilter, AllStatuses, AnyTime, DateRange, DoneOnly,
+  On, Overdue, PendingOnly, Today,
 }
 import tasks/domain/local_time
 import tasks/domain/model.{
-  type TaskError, type Todo, type ValidatedAdd, AlreadyDone, NotFound,
-  status_to_string,
+  type AddValues, type TaskError, type Todo, type UpdateValues, AlreadyDone,
+  AlreadyPending, AmbiguousId, NotFound, status_to_string,
 }
 import tasks/domain/scheduling/model as scheduling_model
 import tasks/domain/scheduling/scheduler.{type SchedulingError}
+import tasks/domain/task_id.{type TaskId}
 import tasks/domain/validation
-import todo_app/service.{type ScheduledListing, ScheduledItem, ScheduledListing}
 
 pub type Command {
   Help
-  Add(ValidatedAdd)
-  List(ListQuery)
+  Add(id: TaskId, values: AddValues)
+  ListTasks(status: StatusFilter, filter: TimeFilter)
+  ListScheduled(status: StatusFilter, filter: TimeFilter)
   GenerateSchedule
-  RunDone(id: Int)
+  RunDone(selector: String)
+  RunReopen(selector: String)
+  RunUpdate(selector: String, values: UpdateValues)
+  RunDelete(selector: String)
   AvailabilityList
   MutateAvailability(Mutation)
 }
@@ -42,6 +45,16 @@ pub fn parse(
   args: List(String),
   due_parser: fn(String) -> Result(Due, Nil),
 ) -> Result(Command, String) {
+  parse_with_id(args, due_parser, task_id.generate)
+}
+
+/// ID generation is injected so parsing remains deterministic in tests while
+/// production creates the UUID at the CLI boundary, outside the pure runtime.
+pub fn parse_with_id(
+  args: List(String),
+  due_parser: fn(String) -> Result(Due, Nil),
+  generate_id: fn() -> TaskId,
+) -> Result(Command, String) {
   case args {
     []
     | ["--help"]
@@ -49,6 +62,9 @@ pub fn parse(
     | ["list", "--help"]
     | ["list", "scheduled", "--help"]
     | ["done", "--help"]
+    | ["reopen", "--help"]
+    | ["update", "--help"]
+    | ["delete", "--help"]
     | ["availability", "--help"]
     | ["availability", "list", "--help"]
     | ["availability", "weekly", "add", "--help"]
@@ -60,11 +76,12 @@ pub fn parse(
     | ["availability", "date", "reset", "--help"]
     | ["schedule", "--help"] -> Ok(Help)
     ["schedule"] -> Ok(GenerateSchedule)
-    ["done", id] ->
-      validation.done(id)
-      |> result.map(RunDone)
-      |> result.map_error(fn(_) { "invalid input" })
-    ["add", title, ..options] -> add_command(title, due_parser, options)
+    ["done", id] -> selector_command(id, RunDone)
+    ["reopen", id] -> selector_command(id, RunReopen)
+    ["delete", id] -> selector_command(id, RunDelete)
+    ["update", id, ..options] -> update_command(id, options, due_parser)
+    ["add", title, ..options] ->
+      add_command(title, due_parser, generate_id, options)
     ["list", "scheduled", ..options] -> scheduled_list_command(options)
     ["list", ..options] -> task_list_command(options)
     ["availability", "list"] -> Ok(AvailabilityList)
@@ -89,7 +106,7 @@ pub fn parse(
 type Options =
   List(#(String, String))
 
-fn add_command(title, due_parser, args) {
+fn add_command(title, due_parser, generate_id, args) {
   use options <- result.try(
     parse_options(args, [
       "estimate",
@@ -108,8 +125,44 @@ fn add_command(title, due_parser, args) {
     value_or(options, "minimum-split", "30m"),
     due_parser,
   )
-  |> result.map(Add)
+  |> result.map(fn(values) { Add(generate_id(), values) })
   |> invalid_input
+}
+
+fn selector_command(id, command) {
+  validation.selector(id)
+  |> result.map(command)
+  |> invalid_input
+}
+
+fn update_command(id, args, due_parser) {
+  use selector <- result.try(validation.selector(id) |> invalid_input)
+  case args {
+    [] -> Error("invalid input")
+    _ -> {
+      use options <- result.try(
+        parse_options(args, [
+          "title",
+          "estimate",
+          "priority",
+          "due",
+          "scheduling-policy",
+          "minimum-split",
+        ]),
+      )
+      validation.update(
+        optional_value(options, "title"),
+        optional_value(options, "estimate"),
+        optional_value(options, "priority"),
+        optional_value(options, "due"),
+        optional_value(options, "scheduling-policy"),
+        optional_value(options, "minimum-split"),
+        due_parser,
+      )
+      |> result.map(fn(values) { RunUpdate(selector, values) })
+      |> invalid_input
+    }
+  }
 }
 
 fn task_list_command(args) {
@@ -131,8 +184,8 @@ fn task_list_command(args) {
   use until <- result.try(
     optional_parsed(options, "due-until", due.parse_date) |> invalid_input,
   )
-  task_temporal_filter(exact, since, until)
-  |> result.map(fn(temporal) { List(TaskList(ListFilter(status, temporal))) })
+  temporal_filter(exact, since, until)
+  |> result.map(fn(temporal) { ListTasks(status, temporal) })
   |> invalid_input
 }
 
@@ -155,8 +208,8 @@ fn scheduled_list_command(args) {
   use until <- result.try(
     optional_parsed(options, "until", due.parse_date) |> invalid_input,
   )
-  scheduled_filter(exact, since, until)
-  |> result.map(fn(temporal) { List(ScheduledList(status, temporal)) })
+  temporal_filter(exact, since, until)
+  |> result.map(fn(temporal) { ListScheduled(status, temporal) })
   |> invalid_input
 }
 
@@ -209,6 +262,7 @@ fn option_pairs(args: List(String), reversed: Options) -> Result(Options, Nil) {
       let key = string.drop_start(name, 2)
       case
         string.starts_with(name, "--")
+        && !string.starts_with(value, "--")
         && key != ""
         && !list.any(reversed, fn(option) { option.0 == key })
       {
@@ -225,17 +279,11 @@ fn required_value(options: Options, name: String) -> Result(String, Nil) {
 }
 
 fn optional_value(options: Options, name: String) -> Option(String) {
-  case required_value(options, name) {
-    Ok(value) -> Some(value)
-    Error(_) -> None
-  }
+  required_value(options, name) |> option.from_result
 }
 
 fn value_or(options: Options, name: String, default: String) -> String {
-  case optional_value(options, name) {
-    Some(value) -> value
-    None -> default
-  }
+  optional_value(options, name) |> option.unwrap(default)
 }
 
 fn required_parsed(options, name, parser) {
@@ -270,39 +318,28 @@ fn parse_status_filter(value) {
   }
 }
 
-fn parse_due_filter(value: String) -> Result(DueFilter, Nil) {
+fn parse_due_filter(value: String) -> Result(TimeFilter, Nil) {
   case value {
     "today" -> Ok(Today)
     "overdue" -> Ok(Overdue)
-    value -> due.parse_date(value) |> result.map(Exact)
+    value -> due.parse_date(value) |> result.map(On)
   }
 }
 
-fn parse_scheduled_exact(value: String) {
+fn parse_scheduled_exact(value: String) -> Result(TimeFilter, Nil) {
   case value {
-    "today" -> Ok(ScheduledToday)
-    value -> due.parse_date(value) |> result.map(ScheduledDate)
+    "today" -> Ok(Today)
+    value -> due.parse_date(value) |> result.map(On)
   }
 }
 
-fn task_temporal_filter(exact, since, until) {
+fn temporal_filter(exact, since, until) {
   case exact, since, until {
-    None, None, None -> Ok(None)
-    Some(filter), None, None -> Ok(Some(filter))
+    None, None, None -> Ok(AnyTime)
+    Some(filter), None, None -> Ok(filter)
     None, _, _ ->
       validate_range(since, until)
-      |> result.map(fn(_) { Some(Range(since, until)) })
-    _, _, _ -> Error(Nil)
-  }
-}
-
-fn scheduled_filter(exact, since, until) {
-  case exact, since, until {
-    None, None, None -> Ok(AllScheduled)
-    Some(filter), None, None -> Ok(ScheduledExact(filter))
-    None, _, _ ->
-      validate_range(since, until)
-      |> result.map(fn(_) { ScheduledRange(since, until) })
+      |> result.map(fn(_) { DateRange(since, until) })
     _, _, _ -> Error(Nil)
   }
 }
@@ -322,29 +359,31 @@ pub fn help() -> Outcome {
   Outcome(
     0,
     [
-      "todo add TITLE [--estimate DURATION] [--priority PRIORITY] [--due DUE]",
-      "               [--scheduling-policy asap|spread|near_deadline]",
-      "               [--minimum-split DURATION]",
-      "todo list [--status pending|done|all] [--due today|overdue|YYYY-MM-DD]",
-      "          [--due-since YYYY-MM-DD] [--due-until YYYY-MM-DD]",
-      "todo list scheduled [--status pending|done|all]",
-      "                    [--on today|YYYY-MM-DD]",
-      "                    [--since YYYY-MM-DD] [--until YYYY-MM-DD]",
-      "  default status: pending; exact dates and ranges are mutually exclusive",
-      "  due dates use local time; overdue is before now; ranges are inclusive",
-      "  --due excludes undated tasks and cannot be combined with due ranges",
-      "todo done ID",
-      "todo availability weekly add|delete --day DAY[,DAY...] --from HH:MM --to HH:MM",
-      "todo availability date add|delete|set --date YYYY-MM-DD --from HH:MM --to HH:MM",
-      "todo availability date close|reset --date YYYY-MM-DD",
-      "todo availability list",
-      "todo schedule",
-      "  DURATION is an ASCII integer plus m or h; DAY is mon..sun",
-      "  dates are YYYY-MM-DD; due times are YYYY-MM-DD[THH:MM]",
-      "  availability times are HH:MM (00:00..24:00); date overrides replace weekly hours",
-      "  scheduling uses one fixed UTC offset; timezone databases and DST transitions are not modeled",
-      "  the saved snapshot survives edits and is replaced only by todo schedule",
-      "  storage is version 1 JSON AppState; current_schedule is null or metadata plus blocks",
+      "Usage:",
+      "  gleam run -- add TITLE [--estimate DURATION] [--priority 1|2|3|4|5] [--due DUE]",
+      "                         [--scheduling-policy asap|spread|near_deadline]",
+      "                         [--minimum-split DURATION]",
+      "  gleam run -- list [--status pending|done|all] [--due today|overdue|YYYY-MM-DD]",
+      "                      [--due-since YYYY-MM-DD] [--due-until YYYY-MM-DD]",
+      "  gleam run -- list scheduled [--status pending|done|all] [--on today|YYYY-MM-DD]",
+      "                                [--since YYYY-MM-DD] [--until YYYY-MM-DD]",
+      "  gleam run -- done TASK_ID",
+      "  gleam run -- reopen TASK_ID",
+      "  gleam run -- update TASK_ID [--title TITLE] [--estimate DURATION] [--priority 1|2|3|4|5]",
+      "                            [--due DUE|none] [--scheduling-policy asap|spread|near_deadline]",
+      "                            [--minimum-split DURATION]",
+      "  gleam run -- delete TASK_ID",
+      "  gleam run -- schedule",
+      "  gleam run -- availability weekly add|delete --day DAY[,DAY...] --from HH:MM --to HH:MM",
+      "  gleam run -- availability date add|delete|set --date YYYY-MM-DD --from HH:MM --to HH:MM",
+      "  gleam run -- availability date close|reset --date YYYY-MM-DD",
+      "  gleam run -- availability list",
+      "",
+      "Defaults: estimate 0m; priority 3; scheduling policy spread; minimum split 30m; list status pending.",
+      "DURATION is an integer followed by m or h. DUE is local YYYY-MM-DD[THH:MM].",
+      "TASK_ID is a full UUIDv7 or an unambiguous suffix of at least 8 hex digits.",
+      "DAY is mon..sun. Availability times are HH:MM from 00:00 through 24:00.",
+      "Exact date filters and date ranges are mutually exclusive; ranges are inclusive.",
     ],
     [],
   )
@@ -362,8 +401,6 @@ pub fn scheduling_error(error: SchedulingError) -> Outcome {
   case error {
     scheduler.SearchSpaceTooLarge ->
       grammar_error("schedule search space is too large")
-    scheduler.InvalidCalendarRange ->
-      persistence_error("invalid scheduling calendar range")
     scheduler.InvalidGeneratedSchedule ->
       persistence_error("invalid generated schedule")
   }
@@ -372,24 +409,31 @@ pub fn scheduling_error(error: SchedulingError) -> Outcome {
 pub fn domain_error(error: TaskError) -> Outcome {
   case error {
     AlreadyDone -> grammar_error("task is already completed")
+    AlreadyPending -> grammar_error("task is already pending")
+    AmbiguousId ->
+      grammar_error("task ID is ambiguous; use more trailing characters")
     NotFound -> grammar_error("task not found")
   }
 }
 
 pub fn added(task: Todo) -> Outcome {
-  Outcome(
-    0,
-    ["Added task " <> int.to_string(task.id) <> ": " <> task.title],
-    [],
-  )
+  Outcome(0, ["Added task " <> short_id(task) <> ": " <> task.title], [])
 }
 
 pub fn completed(task: Todo) -> Outcome {
-  Outcome(
-    0,
-    ["Completed task " <> int.to_string(task.id) <> ": " <> task.title],
-    [],
-  )
+  Outcome(0, ["Completed task " <> short_id(task) <> ": " <> task.title], [])
+}
+
+pub fn reopened(task: Todo) -> Outcome {
+  Outcome(0, ["Reopened task " <> short_id(task) <> ": " <> task.title], [])
+}
+
+pub fn updated(task: Todo) -> Outcome {
+  Outcome(0, ["Updated task " <> short_id(task) <> ": " <> task.title], [])
+}
+
+pub fn deleted(task: Todo) -> Outcome {
+  Outcome(0, ["Deleted task " <> short_id(task) <> ": " <> task.title], [])
 }
 
 pub fn availability_listed(value: Availability) -> Outcome {
@@ -455,8 +499,10 @@ pub fn listed(
   )
 }
 
-pub fn scheduled_listed(listing: ScheduledListing) -> Outcome {
-  let ScheduledListing(offset_seconds, items) = listing
+pub fn scheduled_listed(
+  offset_seconds: Int,
+  items: List(#(scheduling_model.SavedScheduleBlock, Todo)),
+) -> Outcome {
   let offset = duration.seconds(offset_seconds)
   Outcome(
     0,
@@ -465,11 +511,11 @@ pub fn scheduled_listed(listing: ScheduledListing) -> Outcome {
       "No scheduled tasks.",
       "START\tEND\tID\tSTATUS\tTITLE",
       fn(item) {
-        let ScheduledItem(block, task) = item
+        let #(block, task) = item
         tab_row([
           format_unix_minute(block.start_seconds, offset),
           format_unix_minute(block.end_seconds, offset),
-          int.to_string(task.id),
+          short_id(task),
           status_to_string(task.status),
           task.title,
         ])
@@ -496,8 +542,8 @@ pub fn schedule_generated(
 ) -> Outcome {
   let scheduling_model.GenerationResult(saved, report) = generated
   let scheduling_model.SavedSchedule(
-    generated_at,
-    planning_start,
+    generated_at_seconds,
+    planning_start_seconds,
     offset_seconds,
     blocks,
   ) = saved
@@ -508,25 +554,25 @@ pub fn schedule_generated(
       tab_row([
         format_unix_minute(block.start_seconds, offset),
         format_unix_minute(block.end_seconds, offset),
-        int.to_string(block.task_id),
+        task_id.short(block.task_id),
       ])
     })
   let unscheduled_lines =
     table_lines(unscheduled, "none", "TASK_ID\tMINUTES", fn(entry) {
-      int.to_string(entry.task_id) <> "\t" <> int.to_string(entry.minutes)
+      task_id.short(entry.task_id) <> "\t" <> int.to_string(entry.minutes)
     })
   let excluded_lines =
     table_lines(excluded, "none", "TASK_ID\tREASON", fn(entry) {
-      int.to_string(entry.task_id) <> "\t" <> excluded_reason(entry.reason)
+      task_id.short(entry.task_id) <> "\t" <> excluded_reason(entry.reason)
     })
   Outcome(
     0,
     list.flatten([
       [
         "SCHEDULE\tGENERATED_AT\t"
-          <> local_time.format_timestamp(generated_at, offset)
+          <> format_unix_minute(generated_at_seconds, offset)
           <> "\tPLANNING_START\t"
-          <> local_time.format_timestamp(planning_start, offset),
+          <> format_unix_minute(planning_start_seconds, offset),
         "BLOCKS",
       ],
       block_lines,
@@ -550,13 +596,17 @@ fn excluded_reason(reason: scheduling_model.ExcludedReason) -> String {
 
 fn task_line(task: Todo, offset: Duration) -> String {
   tab_row([
-    int.to_string(task.id),
+    short_id(task),
     status_to_string(task.status),
     int.to_string(task.priority),
     int.to_string(task.estimate_minutes) <> "m",
     due_text(task.due, offset),
     task.title,
   ])
+}
+
+fn short_id(task: Todo) -> String {
+  task_id.short(task.id)
 }
 
 fn tab_row(fields: List(String)) -> String {
