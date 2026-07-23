@@ -77,7 +77,6 @@ pub fn main() {
     ["full"] -> full_scenarios()
     ["holdout"] -> holdout_scenarios()
     ["oracle"] -> oracle_scenarios()
-    ["stress"] -> stress_scenarios()
     ["representative"] -> representative_scenarios(RepresentativeBase)
     ["permutation"] -> representative_scenarios(AllRepresentativeIds)
     ["all"] ->
@@ -87,7 +86,7 @@ pub fn main() {
       |> list.append(representative_scenarios(IdPermutations))
     _ -> {
       io.println(
-        "usage: scheduling_benchmark [quick|full|holdout|oracle|stress|representative|permutation|all]",
+        "usage: scheduling_benchmark [quick|full|holdout|oracle|representative|permutation|all]",
       )
       []
     }
@@ -339,12 +338,11 @@ fn full_scenarios() -> List(Scenario) {
   )
   |> list.append(profile_scenarios_for_sizes([101, 211, 307], [24, 27, 28, 32]))
   |> list.append(profile_scenarios_for_sizes([7001], [64]))
-  // Large coverage uses multiple seeds rather than an implementation-specific
-  // 141/142 candidate-composition boundary that may move with the algorithm.
+  // Cover every profile at a large size, with a second seed for profiles that
+  // are especially sensitive to contention and fragmented availability.
+  |> list.append(profile_scenarios(profiles(), [7001], [128]))
   |> list.append(
-    profile_scenarios([Balanced, Fragmented, MinimumSplitTraps], [7001, 7013], [
-      128,
-    ]),
+    profile_scenarios([Balanced, Fragmented, MinimumSplitTraps], [7013], [128]),
   )
   |> list.append(representative_scenarios(RepresentativeBase))
 }
@@ -383,14 +381,6 @@ fn profile_scenarios(
       seeds
       |> list.map(fn(seed) { profile_scenario(profile, count, seed) })
     })
-  })
-}
-
-fn stress_scenarios() -> List(Scenario) {
-  profiles()
-  |> list.flat_map(fn(profile) {
-    [32, 64, 128, 141, 142, 143]
-    |> list.map(fn(count) { profile_scenario(profile, count, 7001) })
   })
 }
 

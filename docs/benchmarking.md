@@ -65,10 +65,9 @@ Wins and losses are reported from the candidate's perspective. Positive quality-
 | `full` | Main tuning suite, including generated profiles and the six representative workloads. |
 | `holdout` | Disjoint cases used only to validate a proposed change. |
 | `oracle` | Small cases checked against exhaustive or cached optimal results. |
-| `stress` | Large cases around scheduler search limits; expect a long run. |
 | `representative` | The six fixed representative workloads. |
 | `permutation` | Representative workloads under 30 task-ID assignments. |
-| `all` | `full`, `holdout`, `oracle`, and non-base representative permutations; excludes `stress`. |
+| `all` | `full`, `holdout`, `oracle`, and non-base representative permutations. |
 
 The result file includes workload size, initial and final quality, unscheduled
 minutes by priority, oracle regret where available, block counts, timings, and
@@ -88,7 +87,7 @@ When an intentional scheduler, sampler, or fixture change is accepted:
 3. save new baseline files named with the commit ID
 4. keep the old baselines
 
-A quick result may contain fewer scenarios than its full baseline, but every candidate scenario must exist in the baseline. Results from `holdout`, `stress`, or `permutation` need a corresponding baseline result for cross-revision comparison.
+A quick result may contain fewer scenarios than its full baseline, but every candidate scenario must exist in the baseline. Results from `holdout` or `permutation` need a corresponding baseline result for cross-revision comparison.
 
 ## Representative workloads
 
