@@ -1,3 +1,4 @@
+import gleam/dict.{type Dict}
 import gleam/float
 import gleam/int
 import gleam/list
@@ -30,18 +31,25 @@ pub fn build(
   |> list.fold([], fn(blocks, task) { place_task(blocks, task, space) })
 }
 
+/// Rebuild selected tasks and return their blocks while they are already in
+/// hand. This avoids rediscovering them by scanning the whole schedule again.
 pub fn rebuild(
   blocks: List(scheduling_model.ScheduleBlock),
   selected: List(scheduling_model.SchedulingTask),
   space: SearchSpace,
-) -> List(scheduling_model.ScheduleBlock) {
+) -> #(
+  List(scheduling_model.ScheduleBlock),
+  Dict(Int, List(scheduling_model.ScheduleBlock)),
+) {
   let selected_ids = list.map(selected, fn(task) { task.id })
   // Filtering positive, non-overlapping blocks preserves canonical order.
   let base =
     blocks
     |> list.filter(fn(block) { !list.contains(selected_ids, block.task_id) })
-  list.fold(selected, base, fn(current, task) {
-    place_task(current, task, space)
+  list.fold(selected, #(base, dict.new()), fn(state, task) {
+    let #(blocks, index) = state
+    let #(next, own) = place_task_indexed(blocks, task, space)
+    #(next, dict.insert(index, task.id, own))
   })
 }
 
@@ -56,6 +64,17 @@ fn place_task(
   task: scheduling_model.SchedulingTask,
   space: SearchSpace,
 ) -> List(scheduling_model.ScheduleBlock) {
+  place_task_indexed(blocks, task, space).0
+}
+
+fn place_task_indexed(
+  blocks: List(scheduling_model.ScheduleBlock),
+  task: scheduling_model.SchedulingTask,
+  space: SearchSpace,
+) -> #(
+  List(scheduling_model.ScheduleBlock),
+  List(scheduling_model.ScheduleBlock),
+) {
   let own_blocks =
     list.filter(blocks, fn(existing) { existing.task_id == task.id })
   place_remaining(blocks, own_blocks, task, space)
@@ -66,9 +85,12 @@ fn place_remaining(
   own_blocks: List(scheduling_model.ScheduleBlock),
   task: scheduling_model.SchedulingTask,
   space: SearchSpace,
-) -> List(scheduling_model.ScheduleBlock) {
+) -> #(
+  List(scheduling_model.ScheduleBlock),
+  List(scheduling_model.ScheduleBlock),
+) {
   case best_placement(blocks, own_blocks, task, space) {
-    option.None -> blocks
+    option.None -> #(blocks, own_blocks)
     option.Some(candidate) ->
       place_remaining(
         invariant.insert_canonical(blocks, candidate.block),

@@ -1,3 +1,5 @@
+import gleam/dict
+import gleam/list
 import gleam/order
 import gleeunit/should
 import tasks/domain/policy.{Asap, NearDeadline, Spread}
@@ -34,6 +36,21 @@ fn contended_workload() {
 
 fn search_seed101(tasks, space) {
   simple_sa.improve(tasks, space, 101)
+}
+
+pub fn rebuild_returns_selected_blocks_test() {
+  let #(tasks, space) = contended_workload()
+  let assert [first, second, ..] = tasks
+  let selected = [first, second]
+  let initial = greedy.build(tasks, space)
+  let #(rebuilt, selected_blocks) = greedy.rebuild(initial, selected, space)
+
+  invariant.validate_generation(rebuilt, tasks, space) |> should.be_ok
+  use task <- list.each(selected)
+  dict.get(selected_blocks, task.id)
+  |> should.equal(
+    Ok(list.filter(rebuilt, fn(block) { block.task_id == task.id })),
+  )
 }
 
 pub fn same_seed_returns_same_search_result_test() {

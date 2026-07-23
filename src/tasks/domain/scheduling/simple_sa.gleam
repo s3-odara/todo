@@ -1,4 +1,4 @@
-import gleam/dict
+import gleam/dict.{type Dict}
 import gleam/float
 import gleam/int
 import gleam/list
@@ -6,7 +6,7 @@ import gleam/order
 import tasks/domain/scheduling/deterministic_rng.{type Rng}
 import tasks/domain/scheduling/greedy
 import tasks/domain/scheduling/model as scheduling_model
-import tasks/domain/scheduling/score.{type Contribution}
+import tasks/domain/scheduling/score
 import tasks/domain/scheduling/timeline.{type SearchSpace, SearchSpace}
 
 /// Maximum deterministic search-chain budget.
@@ -23,7 +23,7 @@ type Solution {
   Solution(
     blocks: List(scheduling_model.ScheduleBlock),
     score: scheduling_model.Score,
-    contributions: List(Contribution),
+    contributions: Dict(Int, scheduling_model.Score),
   )
 }
 
@@ -52,11 +52,15 @@ pub fn improve(
 ) -> SearchResult {
   let SearchSpace(_, planning_start, _) = space
   let greedy_blocks = greedy.build(tasks, space)
-  let greedy_contributions =
+  let greedy_contribution_list =
     score.contributions(tasks, greedy_blocks, planning_start)
-  let greedy_score = score.total(greedy_contributions)
+  let greedy_score = score.total(greedy_contribution_list)
   let greedy_solution =
-    Solution(greedy_blocks, greedy_score, greedy_contributions)
+    Solution(
+      greedy_blocks,
+      greedy_score,
+      index_contributions(greedy_contribution_list),
+    )
   let estimate = weighted_estimate(tasks)
   case tasks == [] || estimate <= 0 {
     True -> SearchResult(greedy_blocks, 0)
@@ -104,8 +108,8 @@ fn loop(tasks, space, estimate, iteration, limit, state: State) -> State {
     True -> state
     False -> {
       let Proposal(selected, proposal_rng) =
-        propose(tasks, state.current.blocks, state.rng)
-      let candidate_blocks =
+        propose(tasks, state.current.contributions, state.rng)
+      let #(candidate_blocks, selected_blocks) =
         greedy.rebuild(state.current.blocks, selected, space)
       case candidate_blocks == state.current.blocks {
         True ->
@@ -124,6 +128,7 @@ fn loop(tasks, space, estimate, iteration, limit, state: State) -> State {
               state.current,
               selected,
               candidate_blocks,
+              selected_blocks,
               planning_start,
             )
           let #(accepted, acceptance_rng) =
@@ -156,12 +161,31 @@ fn replace_solution(
   current: Solution,
   selected: List(scheduling_model.SchedulingTask),
   blocks: List(scheduling_model.ScheduleBlock),
+  selected_blocks: Dict(Int, List(scheduling_model.ScheduleBlock)),
   planning_start: Int,
 ) -> Solution {
-  let replacements = score.contributions(selected, blocks, planning_start)
-  let contributions =
-    score.replace_contributions(current.contributions, replacements)
-  Solution(blocks, score.total(contributions), contributions)
+  let #(total, contributions) =
+    list.fold(
+      selected,
+      #(current.score, current.contributions),
+      fn(state, task) {
+        let #(total, contributions) = state
+        let assert Ok(previous) = dict.get(contributions, task.id)
+        let assert Ok(own_blocks) = dict.get(selected_blocks, task.id)
+        let replacement = score.evaluate_task(task, own_blocks, planning_start)
+        #(
+          score.replace_total(total, previous, replacement),
+          dict.insert(contributions, task.id, replacement),
+        )
+      },
+    )
+  Solution(blocks, total, contributions)
+}
+
+fn index_contributions(values: List(score.Contribution)) {
+  list.fold(values, dict.new(), fn(index, contribution) {
+    dict.insert(index, contribution.task_id, contribution.score)
+  })
 }
 
 fn select_current(current: Solution, candidate: Solution, accepted: Bool) {
@@ -180,27 +204,25 @@ fn select_better(current: Solution, candidate: Solution) -> Solution {
 
 fn propose(
   tasks: List(scheduling_model.SchedulingTask),
-  blocks: List(scheduling_model.ScheduleBlock),
+  contributions: Dict(Int, scheduling_model.Score),
   rng: Rng,
 ) -> Proposal {
-  let #(target, rng) = choose_target(tasks, blocks, rng)
+  let #(target, rng) = choose_target(tasks, contributions, rng)
   propose_after_target(tasks, target, rng)
 }
 
 fn choose_target(
   tasks: List(scheduling_model.SchedulingTask),
-  blocks: List(scheduling_model.ScheduleBlock),
+  contributions: Dict(Int, scheduling_model.Score),
   rng: Rng,
 ) {
-  let placed = placed_index(blocks)
   let weighted =
     list.map(tasks, fn(task) {
-      let minutes = case dict.get(placed, task.id) {
-        Ok(value) -> value
+      let weight = case dict.get(contributions, task.id) {
+        Ok(value) -> value.weighted_unscheduled_minutes
         Error(_) -> 0
       }
-      let remaining = int.max(0, task.estimate_minutes - minutes)
-      #(task, score.priority_weight(task.priority) * remaining)
+      #(task, weight)
     })
   let total = list.fold(weighted, 0, fn(value, item) { value + item.1 })
   case total > 0 {

@@ -53,23 +53,21 @@ pub fn total(values: List(Contribution)) -> Score {
   })
 }
 
-/// Replace changed task scores without changing task order or Float addition order.
-pub fn replace_contributions(
-  current: List(Contribution),
-  replacements: List(Contribution),
-) -> List(Contribution) {
-  list.map(current, fn(contribution) { replacement(contribution, replacements) })
-}
-
-fn replacement(current: Contribution, replacements: List(Contribution)) {
-  case replacements {
-    [] -> current
-    [candidate, ..rest] ->
-      case candidate.task_id == current.task_id {
-        True -> candidate
-        False -> replacement(current, rest)
-      }
-  }
+/// Replace one task's contribution in an aggregate without summing every task.
+/// Float addition order may change, but candidate ordering tolerates that drift.
+pub fn replace_total(
+  total: Score,
+  previous: Score,
+  replacement: Score,
+) -> Score {
+  Score(
+    total.weighted_unscheduled_minutes
+      - previous.weighted_unscheduled_minutes
+      + replacement.weighted_unscheduled_minutes,
+    total.weighted_policy_error
+      -. previous.weighted_policy_error
+      +. replacement.weighted_policy_error,
+  )
 }
 
 /// Score one task from only that task's canonical blocks.

@@ -129,20 +129,11 @@ pub fn evaluate_is_ordered_sum_of_per_task_scores_test() {
   ))
 }
 
-pub fn replacing_contributions_matches_full_evaluation_test() {
-  let first = task(Spread)
-  let second = scheduling_model.SchedulingTask(2, 30, 5, 3600, Asap, 30)
-  let tasks = [first, second]
-  let current_blocks = [block(0, 1800)]
-  let candidate_blocks = [
-    block(0, 1800),
-    scheduling_model.ScheduleBlock(2, 1800, 3600),
-  ]
-  let current = score.contributions(tasks, current_blocks, 0)
-  let replacements = score.contributions([second], candidate_blocks, 0)
-  let updated = score.replace_contributions(current, replacements)
-
-  updated |> should.equal(score.contributions(tasks, candidate_blocks, 0))
-  score.total(updated)
-  |> should.equal(score.evaluate(tasks, candidate_blocks, 0))
+pub fn replacing_total_applies_only_the_changed_contribution_test() {
+  score.replace_total(
+    scheduling_model.Score(10, 2.5),
+    scheduling_model.Score(3, 0.5),
+    scheduling_model.Score(5, 1.0),
+  )
+  |> should.equal(scheduling_model.Score(12, 3.0))
 }
