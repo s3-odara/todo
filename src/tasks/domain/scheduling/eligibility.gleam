@@ -1,38 +1,52 @@
-import gleam/int
 import gleam/list
 import gleam/option.{None, Some}
 import tasks/domain/due
 import tasks/domain/model.{type Todo, Done}
 import tasks/domain/scheduling/model as scheduling_model
+import tasks/domain/task_id.{type TaskId}
 
 pub type Classification {
   Classification(
     eligible: List(scheduling_model.SchedulingTask),
     excluded: List(scheduling_model.ExcludedTask),
+    identities: List(#(Int, TaskId)),
   )
 }
 
-/// Classify in the specified reason precedence, returning stable task-id order.
+/// Classify in stable UUIDv7 order and assign dense integer IDs only for the
+/// search. String UUID comparisons in the optimizer's hot loops are measurably
+/// more expensive, while these temporary IDs never cross the scheduler boundary.
 pub fn classify(
   tasks: List(Todo),
   planning_start_seconds: Int,
 ) -> Classification {
-  let ordered = list.sort(tasks, by: fn(a, b) { int.compare(a.id, b.id) })
-  let #(eligible, excluded) =
-    list.fold(ordered, #([], []), fn(acc, task) {
-      case scheduling_task(task, planning_start_seconds) {
-        Ok(eligible) -> #([eligible, ..acc.0], acc.1)
-        Error(reason) -> #(acc.0, [
-          scheduling_model.ExcludedTask(task.id, reason),
-          ..acc.1
+  let ordered = list.sort(tasks, by: fn(a, b) { task_id.compare(a.id, b.id) })
+  let #(_, eligible, excluded, identities) =
+    list.fold(ordered, #(0, [], [], []), fn(acc, task) {
+      let #(next_index, eligible, excluded, identities) = acc
+      case scheduling_task(task, next_index, planning_start_seconds) {
+        Ok(projected) -> #(next_index + 1, [projected, ..eligible], excluded, [
+          #(next_index, task.id),
+          ..identities
         ])
+        Error(reason) -> #(
+          next_index,
+          eligible,
+          [scheduling_model.ExcludedTask(task.id, reason), ..excluded],
+          identities,
+        )
       }
     })
-  Classification(list.reverse(eligible), list.reverse(excluded))
+  Classification(
+    list.reverse(eligible),
+    list.reverse(excluded),
+    list.reverse(identities),
+  )
 }
 
 fn scheduling_task(
   task: Todo,
+  index: Int,
   planning_start_seconds: Int,
 ) -> Result(scheduling_model.SchedulingTask, scheduling_model.ExcludedReason) {
   case task.status, task.estimate_minutes, task.due {
@@ -45,7 +59,7 @@ fn scheduling_task(
         True -> Error(scheduling_model.DeadlineNotAfterStart)
         False ->
           Ok(scheduling_model.SchedulingTask(
-            task.id,
+            index,
             task.estimate_minutes,
             task.priority,
             deadline_seconds,

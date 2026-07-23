@@ -9,7 +9,8 @@ import tasks/domain/scheduling/eligibility
 import tasks/domain/scheduling/invariant
 import tasks/domain/scheduling/model.{
   type GenerationResult, type PlanningContext, GenerationReport,
-  GenerationResult, PlanningContext, SavedSchedule, UnscheduledTask,
+  GenerationResult, PlanningContext, SavedSchedule, SavedScheduleBlock,
+  UnscheduledTask,
 }
 import tasks/domain/scheduling/score
 import tasks/domain/scheduling/simple_sa
@@ -46,7 +47,7 @@ pub fn generate(
 ) -> Result(GenerationResult, SchedulingError) {
   let AppState(tasks: all_tasks, availability: availability, ..) = state
   let PlanningContext(generated_at, planning_start, offset) = context
-  let eligibility.Classification(eligible, excluded) =
+  let eligibility.Classification(eligible, excluded, identities) =
     eligibility.classify(all_tasks, planning_start)
   let horizon =
     list.fold(eligible, planning_start, fn(value, task) {
@@ -71,12 +72,26 @@ pub fn generate(
       let own = list.filter(blocks, fn(block) { block.task_id == task.id })
       let minutes = task.estimate_minutes - score.placed_minutes(own)
       case minutes > 0 {
-        True -> Ok(UnscheduledTask(task.id, minutes))
+        True -> Ok(UnscheduledTask(external_id(identities, task.id), minutes))
         False -> Error(Nil)
       }
     })
+  let saved_blocks =
+    list.map(blocks, fn(block) {
+      SavedScheduleBlock(
+        external_id(identities, block.task_id),
+        block.start_seconds,
+        block.end_seconds,
+      )
+    })
   Ok(GenerationResult(
-    SavedSchedule(generated_at, planning_start, offset, blocks),
+    SavedSchedule(generated_at, planning_start, offset, saved_blocks),
     GenerationReport(unscheduled, excluded),
   ))
+}
+
+fn external_id(identities, index) {
+  // Every search task is inserted into this table by eligibility.classify.
+  let assert Ok(id) = list.key_find(identities, index)
+  id
 }

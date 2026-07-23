@@ -10,6 +10,7 @@ import tasks/domain/model.{Done, Todo}
 import tasks/domain/policy.{Asap}
 import tasks/domain/scheduling/model as scheduling_model
 import tasks/store/json
+import test_support.{id}
 
 fn state_json(tasks: String) -> String {
   "{\"tasks\":"
@@ -21,7 +22,7 @@ pub fn app_state_round_trip_test() {
   let deadline = due.from_unix_seconds(1_768_173_540)
   let state =
     AppState(
-      [Todo(2, "日本語: # \\\"", 0, 5, Some(deadline), Done, Asap, 45)],
+      [Todo(id(2), "日本語: # \\\"", 0, 5, Some(deadline), Done, Asap, 45)],
       availability.empty(),
       None,
     )
@@ -29,14 +30,14 @@ pub fn app_state_round_trip_test() {
 }
 
 pub fn tasks_are_encoded_in_canonical_id_order_test() {
-  let first = Todo(1, "first", 0, 3, None, Done, Asap, 30)
-  let second = Todo(2, "second", 0, 3, None, Done, Asap, 30)
+  let first = Todo(id(1), "first", 0, 3, None, Done, Asap, 30)
+  let second = Todo(id(2), "second", 0, 3, None, Done, Asap, 30)
   let encoded =
     json.encode(AppState([second, first], availability.empty(), None))
 
   encoded
   |> should.equal(
-    "{\"tasks\":[{\"id\":1,\"title\":\"first\",\"estimate_minutes\":0,\"priority\":3,\"due\":null,\"status\":\"done\",\"scheduling_policy\":\"asap\",\"minimum_split_minutes\":30},{\"id\":2,\"title\":\"second\",\"estimate_minutes\":0,\"priority\":3,\"due\":null,\"status\":\"done\",\"scheduling_policy\":\"asap\",\"minimum_split_minutes\":30}],\"availability\":{\"weekly\":[],\"overrides\":[]},\"current_schedule\":null}",
+    "{\"tasks\":[{\"id\":\"00000000-0000-7000-8000-000000000001\",\"title\":\"first\",\"estimate_minutes\":0,\"priority\":3,\"due\":null,\"status\":\"done\",\"scheduling_policy\":\"asap\",\"minimum_split_minutes\":30},{\"id\":\"00000000-0000-7000-8000-000000000002\",\"title\":\"second\",\"estimate_minutes\":0,\"priority\":3,\"due\":null,\"status\":\"done\",\"scheduling_policy\":\"asap\",\"minimum_split_minutes\":30}],\"availability\":{\"weekly\":[],\"overrides\":[]},\"current_schedule\":null}",
   )
 }
 
@@ -80,13 +81,19 @@ pub fn availability_round_trip_is_canonical_and_preserves_closed_dates_test() {
 
 pub fn unknown_task_enums_are_rejected_test() {
   let invalid = [
-    "{\"id\":1,\"title\":\"x\",\"estimate_minutes\":0,\"priority\":3,\"due\":null,\"status\":\"unknown\",\"scheduling_policy\":\"spread\",\"minimum_split_minutes\":30}",
-    "{\"id\":1,\"title\":\"x\",\"estimate_minutes\":0,\"priority\":3,\"due\":null,\"status\":\"pending\",\"scheduling_policy\":\"unknown\",\"minimum_split_minutes\":30}",
+    "{\"id\":\"00000000-0000-7000-8000-000000000001\",\"title\":\"x\",\"estimate_minutes\":0,\"priority\":3,\"due\":null,\"status\":\"unknown\",\"scheduling_policy\":\"spread\",\"minimum_split_minutes\":30}",
+    "{\"id\":\"00000000-0000-7000-8000-000000000001\",\"title\":\"x\",\"estimate_minutes\":0,\"priority\":3,\"due\":null,\"status\":\"pending\",\"scheduling_policy\":\"unknown\",\"minimum_split_minutes\":30}",
   ]
   invalid
   |> list.each(fn(task) {
     let assert Error(_) = json.decode(state_json("[" <> task <> "]"))
   })
+}
+
+pub fn non_v7_task_ids_are_rejected_test() {
+  let task =
+    "{\"id\":\"00000000-0000-4000-8000-000000000001\",\"title\":\"x\",\"estimate_minutes\":0,\"priority\":3,\"due\":null,\"status\":\"pending\",\"scheduling_policy\":\"spread\",\"minimum_split_minutes\":30}"
+  let assert Error(_) = json.decode(state_json("[" <> task <> "]"))
 }
 
 pub fn malformed_non_null_schedule_is_rejected_test() {
@@ -96,10 +103,10 @@ pub fn malformed_non_null_schedule_is_rejected_test() {
 }
 
 pub fn persisted_schedule_round_trip_test() {
-  let task = Todo(1, "old snapshot", 0, 3, None, Done, Asap, 45)
+  let task = Todo(id(1), "old snapshot", 0, 3, None, Done, Asap, 45)
   let schedule =
     scheduling_model.SavedSchedule(1, 0, 0, [
-      scheduling_model.ScheduleBlock(1, 60, 120),
+      scheduling_model.SavedScheduleBlock(id(1), 60, 120),
     ])
   let state = AppState([task], availability.empty(), Some(schedule))
   json.decode(json.encode(state)) |> should.equal(Ok(state))
@@ -107,14 +114,14 @@ pub fn persisted_schedule_round_trip_test() {
 
 pub fn non_null_schedule_has_byte_exact_canonical_encoding_test() {
   let text =
-    "{\"tasks\":[{\"id\":1,\"title\":\"old snapshot\",\"estimate_minutes\":0,\"priority\":3,\"due\":null,\"status\":\"done\",\"scheduling_policy\":\"asap\",\"minimum_split_minutes\":45}],\"availability\":{\"weekly\":[],\"overrides\":[]},\"current_schedule\":{\"generated_at\":1,\"planning_start\":0,\"utc_offset_seconds\":0,\"blocks\":[{\"task_id\":1,\"start\":60,\"end\":120}]}}"
+    "{\"tasks\":[{\"id\":\"00000000-0000-7000-8000-000000000001\",\"title\":\"old snapshot\",\"estimate_minutes\":0,\"priority\":3,\"due\":null,\"status\":\"done\",\"scheduling_policy\":\"asap\",\"minimum_split_minutes\":45}],\"availability\":{\"weekly\":[],\"overrides\":[]},\"current_schedule\":{\"generated_at\":1,\"planning_start\":0,\"utc_offset_seconds\":0,\"blocks\":[{\"task_id\":\"00000000-0000-7000-8000-000000000001\",\"start\":60,\"end\":120}]}}"
   let assert Ok(value) = json.decode(text)
   json.encode(value) |> should.equal(text)
 }
 
 pub fn negative_seconds_non_null_schedule_round_trips_canonical_bytes_test() {
   let text =
-    "{\"tasks\":[{\"id\":1,\"title\":\"before epoch\",\"estimate_minutes\":1,\"priority\":3,\"due\":null,\"status\":\"done\",\"scheduling_policy\":\"asap\",\"minimum_split_minutes\":1}],\"availability\":{\"weekly\":[],\"overrides\":[]},\"current_schedule\":{\"generated_at\":-120,\"planning_start\":-60,\"utc_offset_seconds\":0,\"blocks\":[{\"task_id\":1,\"start\":-60,\"end\":0}]}}"
+    "{\"tasks\":[{\"id\":\"00000000-0000-7000-8000-000000000001\",\"title\":\"before epoch\",\"estimate_minutes\":1,\"priority\":3,\"due\":null,\"status\":\"done\",\"scheduling_policy\":\"asap\",\"minimum_split_minutes\":1}],\"availability\":{\"weekly\":[],\"overrides\":[]},\"current_schedule\":{\"generated_at\":-120,\"planning_start\":-60,\"utc_offset_seconds\":0,\"blocks\":[{\"task_id\":\"00000000-0000-7000-8000-000000000001\",\"start\":-60,\"end\":0}]}}"
   let assert Ok(value) = json.decode(text)
 
   json.encode(value) |> should.equal(text)

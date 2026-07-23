@@ -20,11 +20,7 @@ import tasks/domain/scheduling/timeline.{
 }
 
 @external(erlang, "scheduling_benchmark_ffi", "monotonic_microseconds")
-@external(
-  javascript,
-  "./scheduling_benchmark_ffi.mjs",
-  "monotonic_microseconds",
-)
+@external(javascript, "./scheduling_benchmark_ffi.mjs", "monotonic_microseconds")
 fn monotonic_microseconds() -> Int
 
 const representative_fixture_path = "benchmark/fixtures/representative-workloads-v1.json"

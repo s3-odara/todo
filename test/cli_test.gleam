@@ -14,6 +14,7 @@ import tasks/domain/filter.{
 import tasks/domain/model.{AddValues, Done, Pending, Todo}
 import tasks/domain/policy.{Asap, NearDeadline, Spread}
 import tasks/domain/scheduling/model as scheduling_model
+import test_support.{id}
 import todo_app/cli
 import todo_app/runtime
 
@@ -31,7 +32,11 @@ fn clock() {
 }
 
 fn parse(args) {
-  cli.parse(args, fn(value) { due.input(value, calendar.utc_offset) })
+  cli.parse_with_id(
+    args,
+    fn(value) { due.input(value, calendar.utc_offset) },
+    fn() { id(1) },
+  )
 }
 
 fn run(args, state) {
@@ -69,8 +74,11 @@ pub fn help_is_selected_when_no_command_or_a_help_flag_is_given_test() {
 pub fn commands_ignore_time_when_their_behavior_is_not_time_relative_test() {
   run_command(cli.Help, state_with([]))
   |> should.equal(cli.help())
-  run_command(cli.Add(AddValues("x", 0, 3, None, Spread, 30)), state_with([]))
-  |> should.equal(cli.Outcome(0, ["Added task 1: x"], []))
+  run_command(
+    cli.Add(id(1), AddValues("x", 0, 3, None, Spread, 30)),
+    state_with([]),
+  )
+  |> should.equal(cli.Outcome(0, ["Added task 00000001: x"], []))
 }
 
 pub fn help_lists_the_available_commands_test() {
@@ -80,7 +88,7 @@ pub fn help_lists_the_available_commands_test() {
   errors |> should.equal([])
   lines |> list.contains("Usage:") |> should.be_true
   lines
-  |> list.contains("  gleam run -- done ID")
+  |> list.contains("  gleam run -- done TASK_ID")
   |> should.be_true
   lines
   |> list.contains("  gleam run -- schedule")
@@ -92,7 +100,7 @@ pub fn help_lists_the_available_commands_test() {
 
 pub fn add_defaults_are_applied_test() {
   parse(["add", "x"])
-  |> should.equal(Ok(cli.Add(AddValues("x", 0, 3, None, Spread, 30))))
+  |> should.equal(Ok(cli.Add(id(1), AddValues("x", 0, 3, None, Spread, 30))))
 }
 
 pub fn add_scheduling_options_are_parsed_test() {
@@ -104,10 +112,12 @@ pub fn add_scheduling_options_are_parsed_test() {
     "--scheduling-policy",
     "asap",
   ])
-  |> should.equal(Ok(cli.Add(AddValues("x", 0, 3, None, Asap, 45))))
+  |> should.equal(Ok(cli.Add(id(1), AddValues("x", 0, 3, None, Asap, 45))))
 
   parse(["add", "x", "--scheduling-policy", "near_deadline"])
-  |> should.equal(Ok(cli.Add(AddValues("x", 0, 3, None, NearDeadline, 30))))
+  |> should.equal(
+    Ok(cli.Add(id(1), AddValues("x", 0, 3, None, NearDeadline, 30))),
+  )
 }
 
 pub fn invalid_scheduling_options_are_rejected_test() {
@@ -136,8 +146,12 @@ pub fn invalid_scheduling_options_are_rejected_test() {
 }
 
 pub fn due_parser_is_only_called_when_due_is_present_test() {
-  cli.parse(["add", "x"], fn(_) { panic as "due parser must not run" })
-  |> should.equal(Ok(cli.Add(AddValues("x", 0, 3, None, Spread, 30))))
+  cli.parse_with_id(
+    ["add", "x"],
+    fn(_) { panic as "due parser must not run" },
+    fn() { id(1) },
+  )
+  |> should.equal(Ok(cli.Add(id(1), AddValues("x", 0, 3, None, Spread, 30))))
 }
 
 pub fn add_options_can_be_given_in_any_order_test() {
@@ -152,16 +166,10 @@ pub fn add_options_can_be_given_in_any_order_test() {
     "2h",
   ])
   |> should.equal(
-    Ok(
-      cli.Add(AddValues(
-        "x",
-        120,
-        5,
-        Some(due_at("2026-01-01T23:59")),
-        Spread,
-        30,
-      )),
-    ),
+    Ok(cli.Add(
+      id(1),
+      AddValues("x", 120, 5, Some(due_at("2026-01-01T23:59")), Spread, 30),
+    )),
   )
 }
 
@@ -278,8 +286,8 @@ pub fn invalid_availability_shapes_are_rejected_test() {
 }
 
 pub fn done_parses_its_id_test() {
-  parse(["done", "1"])
-  |> should.equal(Ok(cli.RunDone(1)))
+  parse(["done", "00000001"])
+  |> should.equal(Ok(cli.RunDone("00000001")))
 }
 
 pub fn list_status_options_parse_to_typed_filters_test() {
@@ -478,13 +486,16 @@ pub fn an_empty_list_uses_the_status_specific_message_test() {
 }
 
 pub fn tasks_are_rendered_as_tab_separated_rows_test() {
-  let state = state_with([Todo(1, "x", 5, 3, None, Pending, Spread, 30)])
+  let state = state_with([Todo(id(1), "x", 5, 3, None, Pending, Spread, 30)])
 
   run(["list"], state)
   |> should.equal(
     cli.Outcome(
       0,
-      ["ID\tSTATUS\tPRIORITY\tESTIMATE\tDUE\tTITLE", "1\tpending\t3\t5m\t-\tx"],
+      [
+        "ID\tSTATUS\tPRIORITY\tESTIMATE\tDUE\tTITLE",
+        "00000001\tpending\t3\t5m\t-\tx",
+      ],
       [],
     ),
   )
@@ -495,10 +506,10 @@ pub fn scheduled_rows_use_the_saved_offset_and_current_task_test() {
   let end = timestamp.add(start, duration.minutes(30))
   let #(start_seconds, _) = timestamp.to_unix_seconds_and_nanoseconds(start)
   let #(end_seconds, _) = timestamp.to_unix_seconds_and_nanoseconds(end)
-  let task = Todo(1, "x", 30, 3, None, Done, Spread, 30)
+  let task = Todo(id(1), "x", 30, 3, None, Done, Spread, 30)
   let schedule =
     scheduling_model.SavedSchedule(start_seconds, start_seconds, 32_400, [
-      scheduling_model.ScheduleBlock(1, start_seconds, end_seconds),
+      scheduling_model.SavedScheduleBlock(id(1), start_seconds, end_seconds),
     ])
   let state = AppState([task], availability.empty(), Some(schedule))
   let #(now, offset) = clock()
@@ -509,7 +520,7 @@ pub fn scheduled_rows_use_the_saved_offset_and_current_task_test() {
       0,
       [
         "START\tEND\tID\tSTATUS\tTITLE",
-        "2026-07-24T09:00\t2026-07-24T09:30\t1\tdone\tx",
+        "2026-07-24T09:00\t2026-07-24T09:30\t00000001\tdone\tx",
       ],
       [],
     ),
@@ -523,7 +534,7 @@ pub fn stored_due_is_rendered_with_the_current_local_offset_test() {
 
   runtime.execute(
     command,
-    state_with([Todo(1, "x", 0, 3, Some(stored), Pending, Spread, 30)]),
+    state_with([Todo(id(1), "x", 0, 3, Some(stored), Pending, Spread, 30)]),
     due.instant(due_at("2026-07-24T12:00")),
     japan,
   ).outcome
@@ -532,7 +543,7 @@ pub fn stored_due_is_rendered_with_the_current_local_offset_test() {
       0,
       [
         "ID\tSTATUS\tPRIORITY\tESTIMATE\tDUE\tTITLE",
-        "1\tpending\t3\t0m\t2026-07-24T09:00\tx",
+        "00000001\tpending\t3\t0m\t2026-07-24T09:00\tx",
       ],
       [],
     ),
@@ -545,23 +556,23 @@ pub fn invalid_input_is_reported_on_stderr_test() {
 }
 
 pub fn an_unknown_task_is_reported_on_stderr_test() {
-  let state = state_with([Todo(1, "x", 5, 3, None, Pending, Spread, 30)])
+  let state = state_with([Todo(id(1), "x", 5, 3, None, Pending, Spread, 30)])
 
-  run(["done", "99"], state)
+  run(["done", "00000099"], state)
   |> should.equal(cli.Outcome(2, [], ["Error: task not found"]))
 }
 
 pub fn an_already_completed_task_is_reported_on_stderr_test() {
-  let state = state_with([Todo(1, "x", 5, 3, None, Done, Spread, 30)])
+  let state = state_with([Todo(id(1), "x", 5, 3, None, Done, Spread, 30)])
 
-  run(["done", "1"], state)
+  run(["done", "00000001"], state)
   |> should.equal(cli.Outcome(2, [], ["Error: task is already completed"]))
 }
 
 pub fn a_failed_command_does_not_mark_state_as_changed_test() {
-  let state = state_with([Todo(1, "x", 5, 3, None, Pending, Spread, 30)])
+  let state = state_with([Todo(id(1), "x", 5, 3, None, Pending, Spread, 30)])
   let #(now, offset) = clock()
-  let execution = runtime.execute(cli.RunDone(99), state, now, offset)
+  let execution = runtime.execute(cli.RunDone("00000099"), state, now, offset)
 
   execution.changed |> should.be_false
   execution.state |> should.equal(state)
@@ -572,7 +583,7 @@ pub fn mutations_mark_only_structural_changes_for_persistence_test() {
   let #(now, offset) = clock()
   let added =
     runtime.execute(
-      cli.Add(AddValues("x", 0, 3, None, Spread, 30)),
+      cli.Add(id(1), AddValues("x", 0, 3, None, Spread, 30)),
       state,
       now,
       offset,
@@ -588,26 +599,26 @@ pub fn mutations_mark_only_structural_changes_for_persistence_test() {
 
   added.changed |> should.be_true
   added.state.tasks
-  |> should.equal([Todo(1, "x", 0, 3, None, Pending, Spread, 30)])
+  |> should.equal([Todo(id(1), "x", 0, 3, None, Pending, Spread, 30)])
   reset.changed |> should.be_false
   reset.state |> should.equal(state)
 }
 
 pub fn adding_a_task_reports_its_id_and_title_test() {
   run(["add", "x"], state_with([]))
-  |> should.equal(cli.Outcome(0, ["Added task 1: x"], []))
+  |> should.equal(cli.Outcome(0, ["Added task 00000001: x"], []))
 }
 
 pub fn completing_a_task_updates_state_and_reports_the_task_test() {
-  let state = state_with([Todo(1, "x", 0, 3, None, Pending, Spread, 30)])
+  let state = state_with([Todo(id(1), "x", 0, 3, None, Pending, Spread, 30)])
   let #(now, offset) = clock()
-  let execution = runtime.execute(cli.RunDone(1), state, now, offset)
+  let execution = runtime.execute(cli.RunDone("00000001"), state, now, offset)
 
   execution.outcome
-  |> should.equal(cli.Outcome(0, ["Completed task 1: x"], []))
+  |> should.equal(cli.Outcome(0, ["Completed task 00000001: x"], []))
   execution.changed |> should.be_true
   execution.state.tasks
-  |> should.equal([Todo(1, "x", 0, 3, None, Done, Spread, 30)])
+  |> should.equal([Todo(id(1), "x", 0, 3, None, Done, Spread, 30)])
 }
 
 pub fn schedule_generation_updates_the_snapshot_test() {

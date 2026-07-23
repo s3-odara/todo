@@ -6,6 +6,7 @@ import gleam/string
 import tasks/domain/due.{type Due}
 import tasks/domain/model.{type AddValues, AddValues}
 import tasks/domain/policy.{parse as parse_policy}
+import tasks/domain/task_id
 
 pub fn add(
   raw_title: String,
@@ -30,8 +31,8 @@ pub fn add(
   }
 }
 
-pub fn done(raw_id: String) -> Result(Int, Nil) {
-  id(raw_id)
+pub fn done(raw_id: String) -> Result(String, Nil) {
+  task_id.selector(raw_id)
 }
 
 fn title(value: String) -> Result(String, Nil) {
@@ -49,13 +50,6 @@ fn title(value: String) -> Result(String, Nil) {
   {
     True -> Ok(clean)
     False -> Error(Nil)
-  }
-}
-
-fn id(value: String) -> Result(Int, Nil) {
-  case int.parse(value) {
-    Ok(n) if n > 0 -> Ok(n)
-    _ -> Error(Nil)
   }
 }
 

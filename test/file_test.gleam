@@ -7,6 +7,7 @@ import tasks/domain/availability
 import tasks/domain/model.{Pending, Todo}
 import tasks/domain/policy.{Spread}
 import tasks/store/file
+import test_support.{id}
 
 const root = "/tmp/todo-app-file-test"
 
@@ -21,7 +22,7 @@ pub fn save_creates_parent_and_round_trips_state_test() {
   let path = root <> "/nested/tasks.json"
   let state =
     AppState(
-      [Todo(1, "write report", 30, 3, None, Pending, Spread, 30)],
+      [Todo(id(1), "write report", 30, 3, None, Pending, Spread, 30)],
       availability.empty(),
       None,
     )

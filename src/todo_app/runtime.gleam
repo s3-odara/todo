@@ -1,14 +1,16 @@
+import gleam/int
 import gleam/list
 import gleam/option.{None, Some}
+import gleam/order
 import gleam/result
 import gleam/time/duration.{type Duration}
 import gleam/time/timestamp.{type Timestamp}
 import tasks/domain/app_state.{type AppState, AppState}
 import tasks/domain/availability
 import tasks/domain/filter.{type StatusFilter, type TimeFilter}
-import tasks/domain/scheduling/invariant
 import tasks/domain/scheduling/model as scheduling_model
 import tasks/domain/scheduling/scheduler
+import tasks/domain/task_id
 import tasks/domain/tasks
 import todo_app/cli.{
   type Command, type Outcome, Add, AvailabilityList, GenerateSchedule, Help,
@@ -29,8 +31,8 @@ pub fn execute(
 ) -> Execution {
   case command {
     Help -> unchanged(state, cli.help())
-    Add(values) -> {
-      let #(updated_tasks, added) = tasks.add(state.tasks, values)
+    Add(id, values) -> {
+      let #(updated_tasks, added) = tasks.add(state.tasks, id, values)
       changed(AppState(..state, tasks: updated_tasks), cli.added(added))
     }
     ListTasks(status, time_filter) -> {
@@ -56,14 +58,18 @@ pub fn execute(
         }
         Error(error) -> unchanged(state, cli.scheduling_error(error))
       }
-    RunDone(id) ->
-      case tasks.complete(state.tasks, id) {
-        Ok(#(updated_tasks, completed)) ->
-          changed(
-            AppState(..state, tasks: updated_tasks),
-            cli.completed(completed),
-          )
+    RunDone(selector) ->
+      case tasks.resolve_id(state.tasks, selector) {
         Error(error) -> unchanged(state, cli.domain_error(error))
+        Ok(id) ->
+          case tasks.complete(state.tasks, id) {
+            Ok(#(updated_tasks, completed)) ->
+              changed(
+                AppState(..state, tasks: updated_tasks),
+                cli.completed(completed),
+              )
+            Error(error) -> unchanged(state, cli.domain_error(error))
+          }
       }
     AvailabilityList ->
       unchanged(state, cli.availability_listed(state.availability))
@@ -108,9 +114,23 @@ fn scheduled_list(
             False -> Error(Nil)
           }
         })
-        |> list.sort(by: fn(a, b) { invariant.block_compare(a.0, b.0) })
+        |> list.sort(by: fn(a, b) { saved_block_compare(a.0, b.0) })
       #(saved.utc_offset_seconds, items)
     }
+  }
+}
+
+fn saved_block_compare(
+  a: scheduling_model.SavedScheduleBlock,
+  b: scheduling_model.SavedScheduleBlock,
+) {
+  case int.compare(a.start_seconds, b.start_seconds) {
+    order.Eq ->
+      case task_id.compare(a.task_id, b.task_id) {
+        order.Eq -> int.compare(a.end_seconds, b.end_seconds)
+        other -> other
+      }
+    other -> other
   }
 }
 

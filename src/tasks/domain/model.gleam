@@ -1,6 +1,7 @@
 import gleam/option.{type Option}
 import tasks/domain/due.{type Due}
 import tasks/domain/policy.{type SchedulingPolicy}
+import tasks/domain/task_id.{type TaskId}
 
 pub type Status {
   Pending
@@ -24,7 +25,7 @@ pub fn status_to_string(status: Status) -> String {
 
 pub type Todo {
   Todo(
-    id: Int,
+    id: TaskId,
     title: String,
     estimate_minutes: Int,
     priority: Int,
@@ -49,5 +50,6 @@ pub type AddValues {
 
 pub type TaskError {
   NotFound
+  AmbiguousId
   AlreadyDone
 }

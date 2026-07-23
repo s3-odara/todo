@@ -15,20 +15,21 @@ import tasks/domain/filter.{
 }
 import tasks/domain/local_time
 import tasks/domain/model.{
-  type AddValues, type TaskError, type Todo, AlreadyDone, NotFound,
+  type AddValues, type TaskError, type Todo, AlreadyDone, AmbiguousId, NotFound,
   status_to_string,
 }
 import tasks/domain/scheduling/model as scheduling_model
 import tasks/domain/scheduling/scheduler.{type SchedulingError}
+import tasks/domain/task_id.{type TaskId}
 import tasks/domain/validation
 
 pub type Command {
   Help
-  Add(AddValues)
+  Add(id: TaskId, values: AddValues)
   ListTasks(status: StatusFilter, filter: TimeFilter)
   ListScheduled(status: StatusFilter, filter: TimeFilter)
   GenerateSchedule
-  RunDone(id: Int)
+  RunDone(selector: String)
   AvailabilityList
   MutateAvailability(Mutation)
 }
@@ -40,6 +41,16 @@ pub type Outcome {
 pub fn parse(
   args: List(String),
   due_parser: fn(String) -> Result(Due, Nil),
+) -> Result(Command, String) {
+  parse_with_id(args, due_parser, task_id.generate)
+}
+
+/// ID generation is injected so parsing remains deterministic in tests while
+/// production creates the UUID at the CLI boundary, outside the pure runtime.
+pub fn parse_with_id(
+  args: List(String),
+  due_parser: fn(String) -> Result(Due, Nil),
+  generate_id: fn() -> TaskId,
 ) -> Result(Command, String) {
   case args {
     []
@@ -63,7 +74,8 @@ pub fn parse(
       validation.done(id)
       |> result.map(RunDone)
       |> result.map_error(fn(_) { "invalid input" })
-    ["add", title, ..options] -> add_command(title, due_parser, options)
+    ["add", title, ..options] ->
+      add_command(title, due_parser, generate_id, options)
     ["list", "scheduled", ..options] -> scheduled_list_command(options)
     ["list", ..options] -> task_list_command(options)
     ["availability", "list"] -> Ok(AvailabilityList)
@@ -88,7 +100,7 @@ pub fn parse(
 type Options =
   List(#(String, String))
 
-fn add_command(title, due_parser, args) {
+fn add_command(title, due_parser, generate_id, args) {
   use options <- result.try(
     parse_options(args, [
       "estimate",
@@ -107,7 +119,7 @@ fn add_command(title, due_parser, args) {
     value_or(options, "minimum-split", "30m"),
     due_parser,
   )
-  |> result.map(Add)
+  |> result.map(fn(values) { Add(generate_id(), values) })
   |> invalid_input
 }
 
@@ -312,7 +324,7 @@ pub fn help() -> Outcome {
       "                      [--due-since YYYY-MM-DD] [--due-until YYYY-MM-DD]",
       "  gleam run -- list scheduled [--status pending|done|all] [--on today|YYYY-MM-DD]",
       "                                [--since YYYY-MM-DD] [--until YYYY-MM-DD]",
-      "  gleam run -- done ID",
+      "  gleam run -- done TASK_ID",
       "  gleam run -- schedule",
       "  gleam run -- availability weekly add|delete --day DAY[,DAY...] --from HH:MM --to HH:MM",
       "  gleam run -- availability date add|delete|set --date YYYY-MM-DD --from HH:MM --to HH:MM",
@@ -321,6 +333,7 @@ pub fn help() -> Outcome {
       "",
       "Defaults: estimate 0m; priority 3; scheduling policy spread; minimum split 30m; list status pending.",
       "DURATION is an integer followed by m or h. DUE is local YYYY-MM-DD[THH:MM].",
+      "TASK_ID is a full UUIDv7 or an unambiguous suffix of at least 8 hex digits.",
       "DAY is mon..sun. Availability times are HH:MM from 00:00 through 24:00.",
       "Exact date filters and date ranges are mutually exclusive; ranges are inclusive.",
     ],
@@ -348,24 +361,18 @@ pub fn scheduling_error(error: SchedulingError) -> Outcome {
 pub fn domain_error(error: TaskError) -> Outcome {
   case error {
     AlreadyDone -> grammar_error("task is already completed")
+    AmbiguousId ->
+      grammar_error("task ID is ambiguous; use more trailing characters")
     NotFound -> grammar_error("task not found")
   }
 }
 
 pub fn added(task: Todo) -> Outcome {
-  Outcome(
-    0,
-    ["Added task " <> int.to_string(task.id) <> ": " <> task.title],
-    [],
-  )
+  Outcome(0, ["Added task " <> short_id(task) <> ": " <> task.title], [])
 }
 
 pub fn completed(task: Todo) -> Outcome {
-  Outcome(
-    0,
-    ["Completed task " <> int.to_string(task.id) <> ": " <> task.title],
-    [],
-  )
+  Outcome(0, ["Completed task " <> short_id(task) <> ": " <> task.title], [])
 }
 
 pub fn availability_listed(value: Availability) -> Outcome {
@@ -433,7 +440,7 @@ pub fn listed(
 
 pub fn scheduled_listed(
   offset_seconds: Int,
-  items: List(#(scheduling_model.ScheduleBlock, Todo)),
+  items: List(#(scheduling_model.SavedScheduleBlock, Todo)),
 ) -> Outcome {
   let offset = duration.seconds(offset_seconds)
   Outcome(
@@ -447,7 +454,7 @@ pub fn scheduled_listed(
         tab_row([
           format_unix_minute(block.start_seconds, offset),
           format_unix_minute(block.end_seconds, offset),
-          int.to_string(task.id),
+          short_id(task),
           status_to_string(task.status),
           task.title,
         ])
@@ -486,16 +493,16 @@ pub fn schedule_generated(
       tab_row([
         format_unix_minute(block.start_seconds, offset),
         format_unix_minute(block.end_seconds, offset),
-        int.to_string(block.task_id),
+        task_id.short(block.task_id),
       ])
     })
   let unscheduled_lines =
     table_lines(unscheduled, "none", "TASK_ID\tMINUTES", fn(entry) {
-      int.to_string(entry.task_id) <> "\t" <> int.to_string(entry.minutes)
+      task_id.short(entry.task_id) <> "\t" <> int.to_string(entry.minutes)
     })
   let excluded_lines =
     table_lines(excluded, "none", "TASK_ID\tREASON", fn(entry) {
-      int.to_string(entry.task_id) <> "\t" <> excluded_reason(entry.reason)
+      task_id.short(entry.task_id) <> "\t" <> excluded_reason(entry.reason)
     })
   Outcome(
     0,
@@ -528,13 +535,17 @@ fn excluded_reason(reason: scheduling_model.ExcludedReason) -> String {
 
 fn task_line(task: Todo, offset: Duration) -> String {
   tab_row([
-    int.to_string(task.id),
+    short_id(task),
     status_to_string(task.status),
     int.to_string(task.priority),
     int.to_string(task.estimate_minutes) <> "m",
     due_text(task.due, offset),
     task.title,
   ])
+}
+
+fn short_id(task: Todo) -> String {
+  task_id.short(task.id)
 }
 
 fn tab_row(fields: List(String)) -> String {

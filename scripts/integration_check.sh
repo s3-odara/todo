@@ -13,7 +13,7 @@ else
   code=$?
 fi
 [ "$code" -eq 0 ]
-[ "$(cat "$tmp/out")" = 'Added task 1: first' ]
+grep -Eq '^Added task [0-9a-f]{8}: first$' "$tmp/out"
 [ ! -s "$tmp/err" ]
 [ -f "$file" ]
 

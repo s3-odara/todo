@@ -15,6 +15,7 @@ import tasks/domain/model.{AddValues, AlreadyDone, Done, NotFound, Pending, Todo
 import tasks/domain/policy.{Asap, NearDeadline, Spread, parse as parse_policy}
 import tasks/domain/tasks
 import tasks/domain/validation
+import test_support.{id}
 
 fn due_at(value) {
   let assert Ok(value) = due.input(value, calendar.utc_offset)
@@ -51,8 +52,8 @@ fn visible_sorted(todos, status, time_filter) {
   |> tasks.sorted_by_id
 }
 
-fn pending_due(id, title, canonical) {
-  Todo(id, title, 0, 3, Some(due_at(canonical)), Pending, Spread, 30)
+fn pending_due(number, title, canonical) {
+  Todo(id(number), title, 0, 3, Some(due_at(canonical)), Pending, Spread, 30)
 }
 
 pub fn title_is_trimmed_test() {
@@ -144,15 +145,14 @@ pub fn minimum_split_must_be_a_positive_bounded_duration_test() {
   })
 }
 
-pub fn task_id_must_be_a_positive_integer_test() {
-  validation.done("1") |> should.equal(Ok(1))
-  validation.done("01") |> should.equal(Ok(1))
-  validation.done("+1") |> should.equal(Ok(1))
-  validation.done("2147483648")
-  |> should.equal(Ok(2_147_483_648))
+pub fn task_selector_requires_at_least_eight_hex_digits_test() {
+  validation.done("00000001") |> should.equal(Ok("00000001"))
+  validation.done("ABCDEF12") |> should.equal(Ok("abcdef12"))
+  validation.done("00000000-0000-7000-8000-000000000001")
+  |> should.equal(Ok("00000000000070008000000000000001"))
 
-  ["0", "1x"]
-  |> list.each(fn(id) { validation.done(id) |> should.equal(Error(Nil)) })
+  ["1", "1234567", "not-an-id"]
+  |> list.each(fn(value) { validation.done(value) |> should.equal(Error(Nil)) })
 }
 
 pub fn date_only_due_is_normalized_to_end_of_day_test() {
@@ -194,46 +194,43 @@ pub fn invalid_calendar_or_datetime_values_are_rejected_test() {
   })
 }
 
-pub fn adding_a_task_assigns_an_id_greater_than_every_existing_id_test() {
-  let lower = Todo(3, "lower", 0, 3, None, Pending, Spread, 30)
-  let highest = Todo(2_147_483_647, "highest", 0, 3, None, Done, Spread, 30)
-  let middle = Todo(10, "middle", 0, 3, None, Pending, Spread, 30)
-  let existing = [lower, highest, middle]
-  let added = Todo(2_147_483_648, "new", 0, 3, None, Pending, Spread, 30)
+pub fn adding_a_task_uses_the_id_supplied_by_the_application_boundary_test() {
+  let existing = [Todo(id(1), "existing", 0, 3, None, Pending, Spread, 30)]
+  let added = Todo(id(2), "new", 0, 3, None, Pending, Spread, 30)
 
-  tasks.add(existing, AddValues("new", 0, 3, None, Spread, 30))
+  tasks.add(existing, id(2), AddValues("new", 0, 3, None, Spread, 30))
   |> should.equal(#([added, ..existing], added))
 }
 
 pub fn visibility_filters_without_reordering_test() {
-  let first = Todo(1, "first", 0, 5, None, Pending, Spread, 30)
-  let second = Todo(2, "second", 0, 1, None, Pending, Spread, 30)
-  let completed = Todo(3, "completed", 0, 3, None, Done, Spread, 30)
+  let first = Todo(id(1), "first", 0, 5, None, Pending, Spread, 30)
+  let second = Todo(id(2), "second", 0, 1, None, Pending, Spread, 30)
+  let completed = Todo(id(3), "completed", 0, 3, None, Done, Spread, 30)
 
   tasks.visible([completed, second, first], PendingOnly, resolved(AnyTime))
   |> should.equal([second, first])
 }
 
 pub fn tasks_are_sorted_by_id_without_filtering_test() {
-  let first = Todo(1, "first", 0, 5, None, Pending, Spread, 30)
-  let second = Todo(2, "second", 0, 1, None, Pending, Spread, 30)
-  let completed = Todo(3, "completed", 0, 3, None, Done, Spread, 30)
+  let first = Todo(id(1), "first", 0, 5, None, Pending, Spread, 30)
+  let second = Todo(id(2), "second", 0, 1, None, Pending, Spread, 30)
+  let completed = Todo(id(3), "completed", 0, 3, None, Done, Spread, 30)
 
   tasks.sorted_by_id([completed, second, first])
   |> should.equal([first, second, completed])
 }
 
 pub fn completed_tasks_are_included_when_requested_test() {
-  let pending = Todo(1, "pending", 0, 3, None, Pending, Spread, 30)
-  let completed = Todo(2, "completed", 0, 3, None, Done, Spread, 30)
+  let pending = Todo(id(1), "pending", 0, 3, None, Pending, Spread, 30)
+  let completed = Todo(id(2), "completed", 0, 3, None, Done, Spread, 30)
 
   visible_sorted([completed, pending], AllStatuses, AnyTime)
   |> should.equal([pending, completed])
 }
 
 pub fn done_only_filters_completed_tasks_test() {
-  let pending = Todo(1, "pending", 0, 3, None, Pending, Spread, 30)
-  let completed = Todo(2, "completed", 0, 3, None, Done, Spread, 30)
+  let pending = Todo(id(1), "pending", 0, 3, None, Pending, Spread, 30)
+  let completed = Todo(id(2), "completed", 0, 3, None, Done, Spread, 30)
 
   visible_sorted([pending, completed], DoneOnly, AnyTime)
   |> should.equal([completed])
@@ -259,7 +256,7 @@ pub fn exact_due_filter_ignores_the_stored_time_test() {
 }
 
 pub fn today_due_filter_excludes_tasks_without_a_due_date_test() {
-  let undated = Todo(1, "undated", 0, 3, None, Pending, Spread, 30)
+  let undated = Todo(id(1), "undated", 0, 3, None, Pending, Spread, 30)
   let due_today = pending_due(2, "today", "2026-07-24T12:00")
 
   visible_sorted([undated, due_today], PendingOnly, Today)
@@ -269,7 +266,7 @@ pub fn today_due_filter_excludes_tasks_without_a_due_date_test() {
 pub fn date_filters_use_the_current_local_offset_test() {
   let japan = duration.hours(9)
   let assert Ok(stored) = due.input("2026-07-24T00:30", japan)
-  let task = Todo(1, "local date", 0, 3, Some(stored), Pending, Spread, 30)
+  let task = Todo(id(1), "local date", 0, 3, Some(stored), Pending, Spread, 30)
   let window = filter.resolve(On(today()), now(), japan)
 
   tasks.visible([task], PendingOnly, window) |> should.equal([task])
@@ -320,7 +317,16 @@ pub fn one_sided_due_ranges_are_inclusive_test() {
 pub fn status_and_due_filters_are_combined_with_and_test() {
   let pending = pending_due(1, "pending", "2026-07-23T00:00")
   let completed =
-    Todo(2, "done", 0, 3, Some(due_at("2026-07-23T00:00")), Done, Spread, 30)
+    Todo(
+      id(2),
+      "done",
+      0,
+      3,
+      Some(due_at("2026-07-23T00:00")),
+      Done,
+      Spread,
+      30,
+    )
 
   visible_sorted([pending, completed], DoneOnly, Overdue)
   |> should.equal([completed])
@@ -333,26 +339,26 @@ pub fn parse_date_requires_a_real_zero_padded_date_test() {
 }
 
 pub fn completing_a_pending_task_preserves_the_other_tasks_test() {
-  let selected = Todo(2, "selected", 0, 5, None, Pending, Spread, 30)
-  let other = Todo(1, "other", 0, 3, None, Pending, Spread, 30)
+  let selected = Todo(id(2), "selected", 0, 5, None, Pending, Spread, 30)
+  let other = Todo(id(1), "other", 0, 3, None, Pending, Spread, 30)
 
-  tasks.complete([selected, other], 2)
+  tasks.complete([selected, other], id(2))
   |> should.equal(
     Ok(#(
-      [Todo(2, "selected", 0, 5, None, Done, Spread, 30), other],
-      Todo(2, "selected", 0, 5, None, Done, Spread, 30),
+      [Todo(id(2), "selected", 0, 5, None, Done, Spread, 30), other],
+      Todo(id(2), "selected", 0, 5, None, Done, Spread, 30),
     )),
   )
 }
 
 pub fn a_completed_task_cannot_be_completed_again_test() {
-  let completed = Todo(1, "done", 0, 3, None, Done, Spread, 30)
+  let completed = Todo(id(1), "done", 0, 3, None, Done, Spread, 30)
 
-  tasks.complete([completed], 1) |> should.equal(Error(AlreadyDone))
+  tasks.complete([completed], id(1)) |> should.equal(Error(AlreadyDone))
 }
 
 pub fn an_unknown_task_cannot_be_completed_test() {
-  let task = Todo(1, "existing", 0, 3, None, Pending, Spread, 30)
+  let task = Todo(id(1), "existing", 0, 3, None, Pending, Spread, 30)
 
-  tasks.complete([task], 2) |> should.equal(Error(NotFound))
+  tasks.complete([task], id(2)) |> should.equal(Error(NotFound))
 }

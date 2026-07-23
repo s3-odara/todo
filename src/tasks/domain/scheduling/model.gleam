@@ -1,4 +1,5 @@
 import tasks/domain/policy.{type SchedulingPolicy}
+import tasks/domain/task_id.{type TaskId}
 
 pub type ExcludedReason {
   Completed
@@ -8,11 +9,11 @@ pub type ExcludedReason {
 }
 
 pub type ExcludedTask {
-  ExcludedTask(task_id: Int, reason: ExcludedReason)
+  ExcludedTask(task_id: TaskId, reason: ExcludedReason)
 }
 
 pub type UnscheduledTask {
-  UnscheduledTask(task_id: Int, minutes: Int)
+  UnscheduledTask(task_id: TaskId, minutes: Int)
 }
 
 // Scheduling calculations already use Unix seconds for deadlines and blocks.
@@ -45,8 +46,14 @@ pub fn effective_minimum_split(task: SchedulingTask) -> Int {
   }
 }
 
+/// Integer task IDs are intentionally confined to the hot scheduling search.
+/// Persisted blocks use UUIDs so they remain valid across devices and syncs.
 pub type ScheduleBlock {
   ScheduleBlock(task_id: Int, start_seconds: Int, end_seconds: Int)
+}
+
+pub type SavedScheduleBlock {
+  SavedScheduleBlock(task_id: TaskId, start_seconds: Int, end_seconds: Int)
 }
 
 pub type SavedSchedule {
@@ -54,7 +61,7 @@ pub type SavedSchedule {
     generated_at_seconds: Int,
     planning_start_seconds: Int,
     utc_offset_seconds: Int,
-    blocks: List(ScheduleBlock),
+    blocks: List(SavedScheduleBlock),
   )
 }
 

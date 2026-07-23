@@ -1,44 +1,46 @@
-import gleam/int
 import gleam/list
 import tasks/domain/filter.{type StatusFilter, type TimeWindow}
 import tasks/domain/model.{
-  type AddValues, type TaskError, type Todo, AddValues, AlreadyDone, Done,
-  NotFound, Pending, Todo,
+  type AddValues, type TaskError, type Todo, AddValues, AlreadyDone, AmbiguousId,
+  Done, NotFound, Pending, Todo,
 }
+import tasks/domain/task_id.{type TaskId}
 
-// BEAM integers are arbitrary precision, so max + 1 cannot overflow.
-fn next_id(todos: List(Todo)) -> Int {
-  todos
-  |> list.fold(0, fn(current, task) { int.max(current, task.id) })
-  |> int.add(1)
-}
-
-pub fn add(todos: List(Todo), values: AddValues) -> #(List(Todo), Todo) {
+pub fn add(
+  todos: List(Todo),
+  id: TaskId,
+  values: AddValues,
+) -> #(List(Todo), Todo) {
   let AddValues(title, estimate, priority, due, policy, minimum_split) = values
   let added =
-    Todo(
-      next_id(todos),
-      title,
-      estimate,
-      priority,
-      due,
-      Pending,
-      policy,
-      minimum_split,
-    )
+    Todo(id, title, estimate, priority, due, Pending, policy, minimum_split)
   #([added, ..todos], added)
+}
+
+pub fn resolve_id(
+  todos: List(Todo),
+  normalized_selector: String,
+) -> Result(TaskId, TaskError) {
+  let matches =
+    list.filter(todos, fn(task) {
+      task_id.matches_selector(task.id, normalized_selector)
+    })
+  case matches {
+    [] -> Error(NotFound)
+    [task] -> Ok(task.id)
+    _ -> Error(AmbiguousId)
+  }
 }
 
 pub fn complete(
   todos: List(Todo),
-  wanted: Int,
+  wanted: TaskId,
 ) -> Result(#(List(Todo), Todo), TaskError) {
   case list.find(todos, fn(task) { task.id == wanted }) {
     Error(_) -> Error(NotFound)
     Ok(Todo(status: Done, ..)) -> Error(AlreadyDone)
     Ok(task) -> {
       let completed = Todo(..task, status: Done)
-      // IDs created by the app are unique; replacing by ID keeps the update clear.
       let updated =
         list.map(todos, fn(current) {
           case current.id == wanted {
@@ -62,6 +64,5 @@ pub fn visible(
 }
 
 pub fn sorted_by_id(todos: List(Todo)) -> List(Todo) {
-  // Keep display order independent of mutable task metadata.
-  list.sort(todos, by: fn(a, b) { int.compare(a.id, b.id) })
+  list.sort(todos, by: fn(a, b) { task_id.compare(a.id, b.id) })
 }

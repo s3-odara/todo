@@ -39,6 +39,8 @@ Run `gleam run -- --help` for the complete command syntax.
 
 Durations use an integer followed by `m` or `h`. Due values use local time in `YYYY-MM-DD` or `YYYY-MM-DDTHH:MM` form. Priorities range from 1 to 5.
 
+Tasks use UUIDv7 IDs. Human-readable output shows the final eight hexadecimal characters; `done` accepts that suffix, a longer suffix, or the full UUID. If a short suffix is ambiguous, use more trailing characters.
+
 Weekly availability uses `mon` through `sun`. A date override replaces that date's weekly hours: `set` replaces the date with one interval, `add` and `delete` edit its effective intervals, `close` marks it unavailable, and `reset` removes the override.
 
 ## Scheduling
@@ -63,7 +65,7 @@ The data file is selected in this order:
 2. `$XDG_DATA_HOME/todo/tasks.json`
 3. `$HOME/.local/share/todo/tasks.json`
 
-A missing file starts an empty task list. Writes replace the file through a sibling temporary file. Concurrent writers are not supported.
+A missing file starts an empty task list. Writes replace the file through a sibling temporary file. Concurrent writers are not supported. Task IDs and saved schedule references are stored as full UUIDv7 strings; older integer-ID files are not supported.
 
 ## Development
 

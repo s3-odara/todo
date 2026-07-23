@@ -19,6 +19,7 @@ import tasks/domain/model.{
 }
 import tasks/domain/policy.{Spread}
 import tasks/domain/scheduling/model as scheduling_model
+import tasks/domain/task_id
 
 pub fn decode(text: String) -> Result(AppState, String) {
   json.parse(from: text, using: state_decoder())
@@ -36,7 +37,7 @@ fn state_decoder() {
 }
 
 fn task_decoder() {
-  use id <- decode.field("id", decode.int)
+  use id <- decode.field("id", task_id_decoder())
   use title <- decode.field("title", decode.string)
   use estimate <- decode.field("estimate_minutes", decode.int)
   use priority <- decode.field("priority", decode.int)
@@ -58,6 +59,20 @@ fn task_decoder() {
     scheduling_policy,
     minimum_split,
   ))
+}
+
+fn task_id_decoder() {
+  decode.string
+  |> decode.then(fn(value) {
+    case task_id.parse(value) {
+      Ok(id) -> decode.success(id)
+      Error(_) -> {
+        let assert Ok(invalid) =
+          task_id.parse("00000000-0000-7000-8000-000000000000")
+        decode.failure(invalid, expected: "UUID")
+      }
+    }
+  })
 }
 
 fn status_decoder() {
@@ -150,10 +165,10 @@ fn schedule_decoder() {
 }
 
 fn schedule_block_decoder() {
-  use task_id <- decode.field("task_id", decode.int)
+  use id <- decode.field("task_id", task_id_decoder())
   use start <- decode.field("start", decode.int)
   use end <- decode.field("end", decode.int)
-  decode.success(scheduling_model.ScheduleBlock(task_id, start, end))
+  decode.success(scheduling_model.SavedScheduleBlock(id, start, end))
 }
 
 pub fn encode(state: AppState) -> String {
@@ -162,7 +177,7 @@ pub fn encode(state: AppState) -> String {
     #(
       "tasks",
       json.array(
-        list.sort(tasks, by: fn(a, b) { int.compare(a.id, b.id) }),
+        list.sort(tasks, by: fn(a, b) { task_id.compare(a.id, b.id) }),
         of: task_json,
       ),
     ),
@@ -174,7 +189,7 @@ pub fn encode(state: AppState) -> String {
 
 fn task_json(task: Todo) -> json.Json {
   json.object([
-    #("id", json.int(task.id)),
+    #("id", json.string(task_id.to_string(task.id))),
     #("title", json.string(task.title)),
     #("estimate_minutes", json.int(task.estimate_minutes)),
     #("priority", json.int(task.priority)),
@@ -253,13 +268,13 @@ fn schedule_json(value: scheduling_model.SavedSchedule) -> json.Json {
       json.array(
         list.sort(value.blocks, by: fn(a, b) {
           case int.compare(a.start_seconds, b.start_seconds) {
-            order.Eq -> int.compare(a.task_id, b.task_id)
+            order.Eq -> task_id.compare(a.task_id, b.task_id)
             other -> other
           }
         }),
         of: fn(block) {
           json.object([
-            #("task_id", json.int(block.task_id)),
+            #("task_id", json.string(task_id.to_string(block.task_id))),
             #("start", json.int(block.start_seconds)),
             #("end", json.int(block.end_seconds)),
           ])

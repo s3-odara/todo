@@ -12,14 +12,15 @@ import tasks/domain/policy.{Asap, NearDeadline, Spread}
 import tasks/domain/scheduling/model as scheduling_model
 import tasks/domain/scheduling/scheduler
 import tasks/domain/scheduling/timeline
+import test_support.{id}
 
 fn state(tasks, availability) {
   AppState(tasks, availability, None)
 }
 
-fn task(id, estimate, priority) {
+fn task(number, estimate, priority) {
   Todo(
-    id,
+    id(number),
     "task",
     estimate,
     priority,
@@ -84,7 +85,7 @@ pub fn generation_places_work_before_deadline_test() {
   let deadline = 3600
   let input =
     Todo(
-      1,
+      id(1),
       "task",
       30,
       3,
@@ -113,18 +114,27 @@ pub fn priority_is_the_primary_objective_test() {
       epoch_context(),
     )
 
-  only.task_id |> should.equal(2)
+  only.task_id |> should.equal(id(2))
   report.unscheduled
-  |> should.equal([scheduling_model.UnscheduledTask(1, 60)])
+  |> should.equal([scheduling_model.UnscheduledTask(id(1), 60)])
 }
 
 pub fn policy_is_the_secondary_objective_test() {
   let availability = thursday_availability([Interval(0, 120)])
   let asap =
-    Todo(1, "asap", 30, 3, Some(due.from_unix_seconds(7200)), Pending, Asap, 30)
+    Todo(
+      id(1),
+      "asap",
+      30,
+      3,
+      Some(due.from_unix_seconds(7200)),
+      Pending,
+      Asap,
+      30,
+    )
   let near =
     Todo(
-      1,
+      id(1),
       "near",
       30,
       3,
@@ -158,8 +168,8 @@ pub fn empty_availability_reports_unscheduled_tasks_in_stable_order_test() {
 
   report.unscheduled
   |> should.equal([
-    scheduling_model.UnscheduledTask(1, 60),
-    scheduling_model.UnscheduledTask(2, 30),
+    scheduling_model.UnscheduledTask(id(1), 60),
+    scheduling_model.UnscheduledTask(id(2), 30),
   ])
 }
 
