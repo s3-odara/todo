@@ -15,8 +15,8 @@ import tasks/domain/filter.{
 }
 import tasks/domain/local_time
 import tasks/domain/model.{
-  type AddValues, type TaskError, type Todo, AlreadyDone, AmbiguousId, NotFound,
-  status_to_string,
+  type AddValues, type TaskError, type Todo, type UpdateValues, AlreadyDone,
+  AlreadyPending, AmbiguousId, NotFound, status_to_string,
 }
 import tasks/domain/scheduling/model as scheduling_model
 import tasks/domain/scheduling/scheduler.{type SchedulingError}
@@ -30,6 +30,9 @@ pub type Command {
   ListScheduled(status: StatusFilter, filter: TimeFilter)
   GenerateSchedule
   RunDone(selector: String)
+  RunReopen(selector: String)
+  RunUpdate(selector: String, values: UpdateValues)
+  RunDelete(selector: String)
   AvailabilityList
   MutateAvailability(Mutation)
 }
@@ -59,6 +62,9 @@ pub fn parse_with_id(
     | ["list", "--help"]
     | ["list", "scheduled", "--help"]
     | ["done", "--help"]
+    | ["reopen", "--help"]
+    | ["update", "--help"]
+    | ["delete", "--help"]
     | ["availability", "--help"]
     | ["availability", "list", "--help"]
     | ["availability", "weekly", "add", "--help"]
@@ -70,10 +76,10 @@ pub fn parse_with_id(
     | ["availability", "date", "reset", "--help"]
     | ["schedule", "--help"] -> Ok(Help)
     ["schedule"] -> Ok(GenerateSchedule)
-    ["done", id] ->
-      validation.done(id)
-      |> result.map(RunDone)
-      |> result.map_error(fn(_) { "invalid input" })
+    ["done", id] -> selector_command(id, RunDone)
+    ["reopen", id] -> selector_command(id, RunReopen)
+    ["delete", id] -> selector_command(id, RunDelete)
+    ["update", id, ..options] -> update_command(id, options, due_parser)
     ["add", title, ..options] ->
       add_command(title, due_parser, generate_id, options)
     ["list", "scheduled", ..options] -> scheduled_list_command(options)
@@ -121,6 +127,42 @@ fn add_command(title, due_parser, generate_id, args) {
   )
   |> result.map(fn(values) { Add(generate_id(), values) })
   |> invalid_input
+}
+
+fn selector_command(id, command) {
+  validation.selector(id)
+  |> result.map(command)
+  |> invalid_input
+}
+
+fn update_command(id, args, due_parser) {
+  use selector <- result.try(validation.selector(id) |> invalid_input)
+  case args {
+    [] -> Error("invalid input")
+    _ -> {
+      use options <- result.try(
+        parse_options(args, [
+          "title",
+          "estimate",
+          "priority",
+          "due",
+          "scheduling-policy",
+          "minimum-split",
+        ]),
+      )
+      validation.update(
+        optional_value(options, "title"),
+        optional_value(options, "estimate"),
+        optional_value(options, "priority"),
+        optional_value(options, "due"),
+        optional_value(options, "scheduling-policy"),
+        optional_value(options, "minimum-split"),
+        due_parser,
+      )
+      |> result.map(fn(values) { RunUpdate(selector, values) })
+      |> invalid_input
+    }
+  }
 }
 
 fn task_list_command(args) {
@@ -220,6 +262,7 @@ fn option_pairs(args: List(String), reversed: Options) -> Result(Options, Nil) {
       let key = string.drop_start(name, 2)
       case
         string.starts_with(name, "--")
+        && !string.starts_with(value, "--")
         && key != ""
         && !list.any(reversed, fn(option) { option.0 == key })
       {
@@ -325,6 +368,11 @@ pub fn help() -> Outcome {
       "  gleam run -- list scheduled [--status pending|done|all] [--on today|YYYY-MM-DD]",
       "                                [--since YYYY-MM-DD] [--until YYYY-MM-DD]",
       "  gleam run -- done TASK_ID",
+      "  gleam run -- reopen TASK_ID",
+      "  gleam run -- update TASK_ID [--title TITLE] [--estimate DURATION] [--priority 1|2|3|4|5]",
+      "                            [--due DUE|none] [--scheduling-policy asap|spread|near_deadline]",
+      "                            [--minimum-split DURATION]",
+      "  gleam run -- delete TASK_ID",
       "  gleam run -- schedule",
       "  gleam run -- availability weekly add|delete --day DAY[,DAY...] --from HH:MM --to HH:MM",
       "  gleam run -- availability date add|delete|set --date YYYY-MM-DD --from HH:MM --to HH:MM",
@@ -361,6 +409,7 @@ pub fn scheduling_error(error: SchedulingError) -> Outcome {
 pub fn domain_error(error: TaskError) -> Outcome {
   case error {
     AlreadyDone -> grammar_error("task is already completed")
+    AlreadyPending -> grammar_error("task is already pending")
     AmbiguousId ->
       grammar_error("task ID is ambiguous; use more trailing characters")
     NotFound -> grammar_error("task not found")
@@ -373,6 +422,18 @@ pub fn added(task: Todo) -> Outcome {
 
 pub fn completed(task: Todo) -> Outcome {
   Outcome(0, ["Completed task " <> short_id(task) <> ": " <> task.title], [])
+}
+
+pub fn reopened(task: Todo) -> Outcome {
+  Outcome(0, ["Reopened task " <> short_id(task) <> ": " <> task.title], [])
+}
+
+pub fn updated(task: Todo) -> Outcome {
+  Outcome(0, ["Updated task " <> short_id(task) <> ": " <> task.title], [])
+}
+
+pub fn deleted(task: Todo) -> Outcome {
+  Outcome(0, ["Deleted task " <> short_id(task) <> ": " <> task.title], [])
 }
 
 pub fn availability_listed(value: Availability) -> Outcome {

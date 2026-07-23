@@ -48,8 +48,22 @@ pub type AddValues {
   )
 }
 
+/// Optional fields supplied by `update`. The nested due option distinguishes
+/// an omitted `--due` from `--due none`, which explicitly clears a deadline.
+pub type UpdateValues {
+  UpdateValues(
+    title: Option(String),
+    estimate_minutes: Option(Int),
+    priority: Option(Int),
+    due: Option(Option(Due)),
+    scheduling_policy: Option(SchedulingPolicy),
+    minimum_split_minutes: Option(Int),
+  )
+}
+
 pub type TaskError {
   NotFound
   AmbiguousId
   AlreadyDone
+  AlreadyPending
 }

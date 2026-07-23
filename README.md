@@ -33,13 +33,18 @@ Run `gleam run -- --help` for the complete command syntax.
 | `add` | Add a task with an optional estimate, priority, due time, scheduling policy, and minimum block length. |
 | `list` | List tasks, optionally filtered by status or due date. |
 | `done` | Mark a task as completed. |
+| `reopen` | Return a completed task to pending. |
+| `update` | Change selected task fields without changing its ID or status. Use `--due none` to clear its deadline. |
+| `delete` | Permanently delete a task. |
 | `availability` | Manage weekly working hours and date-specific overrides. |
 | `schedule` | Replace the saved schedule with a newly generated one. |
 | `list scheduled` | Read the saved schedule, optionally filtered by status or date. |
 
 Durations use an integer followed by `m` or `h`. Due values use local time in `YYYY-MM-DD` or `YYYY-MM-DDTHH:MM` form. Priorities range from 1 to 5.
 
-Tasks use UUIDv7 IDs. Human-readable output shows the final eight hexadecimal characters; `done` accepts that suffix, a longer suffix, or the full UUID. If a short suffix is ambiguous, use more trailing characters.
+Tasks use UUIDv7 IDs. Human-readable output shows the final eight hexadecimal characters; `done`, `reopen`, `update`, and `delete` accept that suffix, a longer suffix, or the full UUID. If a short suffix is ambiguous, use more trailing characters.
+
+`update` accepts `--title`, `--estimate`, `--priority`, `--due`, `--scheduling-policy`, and `--minimum-split`; only supplied fields change. At least one field is required. Status changes remain explicit through `done` and `reopen`.
 
 Weekly availability uses `mon` through `sun`. A date override replaces that date's weekly hours: `set` replaces the date with one interval, `add` and `delete` edit its effective intervals, `close` marks it unavailable, and `reset` removes the override.
 
@@ -53,7 +58,7 @@ Scheduling policies control where work is placed before the deadline:
 - `spread`: distribute work across the available period (default)
 - `near_deadline`: prefer later work
 
-`schedule` regenerates the complete saved schedule. Adding or completing tasks and changing availability do not update an existing schedule; run `schedule` again after those changes.
+`schedule` regenerates the complete saved schedule. Adding, completing, reopening, updating, or deleting tasks and changing availability do not update an existing schedule; run `schedule` again after those changes.
 
 Times are interpreted with the machine's current UTC offset. The generated schedule keeps that fixed offset and does not model timezone database or daylight-saving transitions.
 

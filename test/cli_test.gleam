@@ -11,7 +11,7 @@ import tasks/domain/due
 import tasks/domain/filter.{
   AllStatuses, AnyTime, DateRange, DoneOnly, On, Overdue, PendingOnly, Today,
 }
-import tasks/domain/model.{AddValues, Done, Pending, Todo}
+import tasks/domain/model.{AddValues, Done, Pending, Todo, UpdateValues}
 import tasks/domain/policy.{Asap, NearDeadline, Spread}
 import tasks/domain/scheduling/model as scheduling_model
 import test_support.{id}
@@ -67,6 +67,9 @@ pub fn help_is_selected_when_no_command_or_a_help_flag_is_given_test() {
     ["list", "scheduled", "--help"],
     ["availability", "weekly", "add", "--help"],
     ["done", "--help"],
+    ["reopen", "--help"],
+    ["update", "--help"],
+    ["delete", "--help"],
   ]
   |> list.each(fn(args) { parse(args) |> should.equal(Ok(cli.Help)) })
 }
@@ -285,9 +288,62 @@ pub fn invalid_availability_shapes_are_rejected_test() {
   |> should.equal(Error("invalid command or arguments"))
 }
 
-pub fn done_parses_its_id_test() {
+pub fn task_mutation_commands_parse_their_ids_and_updates_test() {
   parse(["done", "00000001"])
   |> should.equal(Ok(cli.RunDone("00000001")))
+  parse(["reopen", "00000001"])
+  |> should.equal(Ok(cli.RunReopen("00000001")))
+  parse(["delete", "00000001"])
+  |> should.equal(Ok(cli.RunDelete("00000001")))
+  parse([
+    "update",
+    "00000001",
+    "--title",
+    "new",
+    "--estimate",
+    "2h",
+    "--priority",
+    "5",
+    "--due",
+    "2026-07-25",
+    "--scheduling-policy",
+    "asap",
+    "--minimum-split",
+    "15m",
+  ])
+  |> should.equal(
+    Ok(cli.RunUpdate(
+      "00000001",
+      UpdateValues(
+        Some("new"),
+        Some(120),
+        Some(5),
+        Some(Some(due_at("2026-07-25T23:59"))),
+        Some(Asap),
+        Some(15),
+      ),
+    )),
+  )
+  parse(["update", "00000001", "--due", "none"])
+  |> should.equal(
+    Ok(cli.RunUpdate(
+      "00000001",
+      UpdateValues(None, None, None, Some(None), None, None),
+    )),
+  )
+}
+
+pub fn invalid_or_empty_updates_are_rejected_test() {
+  [
+    ["update", "00000001"],
+    ["update", "00000001", "--priority", "9"],
+    ["update", "00000001", "--due", "NONE"],
+    ["update", "00000001", "--title", "x", "--title", "y"],
+    ["update", "00000001", "--title", "--unknown"],
+    ["update", "00000001", "--title", "--priority", "5"],
+    ["update", "00000001", "--unknown", "x"],
+  ]
+  |> list.each(fn(args) { parse(args) |> should.equal(Error("invalid input")) })
 }
 
 pub fn list_status_options_parse_to_typed_filters_test() {
@@ -619,6 +675,52 @@ pub fn completing_a_task_updates_state_and_reports_the_task_test() {
   execution.changed |> should.be_true
   execution.state.tasks
   |> should.equal([Todo(id(1), "x", 0, 3, None, Done, Spread, 30)])
+}
+
+pub fn reopen_update_and_delete_change_the_selected_task_test() {
+  let completed =
+    Todo(id(1), "old", 30, 3, Some(due_at("2026-07-25")), Done, Spread, 30)
+  let state = state_with([completed])
+  let #(now, offset) = clock()
+  let reopened = runtime.execute(cli.RunReopen("00000001"), state, now, offset)
+
+  reopened.outcome
+  |> should.equal(cli.Outcome(0, ["Reopened task 00000001: old"], []))
+  reopened.state.tasks
+  |> should.equal([Todo(..completed, status: Pending)])
+
+  let updated =
+    runtime.execute(
+      cli.RunUpdate(
+        "00000001",
+        UpdateValues(Some("new"), None, None, Some(None), None, None),
+      ),
+      reopened.state,
+      now,
+      offset,
+    )
+  updated.outcome
+  |> should.equal(cli.Outcome(0, ["Updated task 00000001: new"], []))
+  updated.state.tasks
+  |> should.equal([Todo(..completed, title: "new", due: None, status: Pending)])
+
+  let deleted =
+    runtime.execute(cli.RunDelete("00000001"), updated.state, now, offset)
+  deleted.outcome
+  |> should.equal(cli.Outcome(0, ["Deleted task 00000001: new"], []))
+  deleted.state.tasks |> should.equal([])
+  deleted.changed |> should.be_true
+}
+
+pub fn reopening_a_pending_task_is_reported_without_changing_state_test() {
+  let state = state_with([Todo(id(1), "x", 0, 3, None, Pending, Spread, 30)])
+  let #(now, offset) = clock()
+  let execution = runtime.execute(cli.RunReopen("00000001"), state, now, offset)
+
+  execution.outcome
+  |> should.equal(cli.Outcome(2, [], ["Error: task is already pending"]))
+  execution.state |> should.equal(state)
+  execution.changed |> should.be_false
 }
 
 pub fn schedule_generation_updates_the_snapshot_test() {

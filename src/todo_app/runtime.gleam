@@ -8,13 +8,15 @@ import gleam/time/timestamp.{type Timestamp}
 import tasks/domain/app_state.{type AppState, AppState}
 import tasks/domain/availability
 import tasks/domain/filter.{type StatusFilter, type TimeFilter}
+import tasks/domain/model.{type TaskError, type Todo}
 import tasks/domain/scheduling/model as scheduling_model
 import tasks/domain/scheduling/scheduler
-import tasks/domain/task_id
+import tasks/domain/task_id.{type TaskId}
 import tasks/domain/tasks
 import todo_app/cli.{
   type Command, type Outcome, Add, AvailabilityList, GenerateSchedule, Help,
-  ListScheduled, ListTasks, MutateAvailability, RunDone,
+  ListScheduled, ListTasks, MutateAvailability, RunDelete, RunDone, RunReopen,
+  RunUpdate,
 }
 
 /// A pure command result. Persistence stays in the outer shell so command
@@ -59,18 +61,18 @@ pub fn execute(
         Error(error) -> unchanged(state, cli.scheduling_error(error))
       }
     RunDone(selector) ->
-      case tasks.resolve_id(state.tasks, selector) {
-        Error(error) -> unchanged(state, cli.domain_error(error))
-        Ok(id) ->
-          case tasks.complete(state.tasks, id) {
-            Ok(#(updated_tasks, completed)) ->
-              changed(
-                AppState(..state, tasks: updated_tasks),
-                cli.completed(completed),
-              )
-            Error(error) -> unchanged(state, cli.domain_error(error))
-          }
-      }
+      mutate_selected(state, selector, tasks.complete, cli.completed)
+    RunReopen(selector) ->
+      mutate_selected(state, selector, tasks.reopen, cli.reopened)
+    RunUpdate(selector, values) ->
+      mutate_selected(
+        state,
+        selector,
+        fn(items, id) { tasks.update(items, id, values) },
+        cli.updated,
+      )
+    RunDelete(selector) ->
+      mutate_selected(state, selector, tasks.delete, cli.deleted)
     AvailabilityList ->
       unchanged(state, cli.availability_listed(state.availability))
     MutateAvailability(mutation) -> {
@@ -81,6 +83,26 @@ pub fn execute(
         )
       Execution(updated, cli.availability_updated(), updated != state)
     }
+  }
+}
+
+fn mutate_selected(
+  state: AppState,
+  selector: String,
+  mutation: fn(List(Todo), TaskId) -> Result(#(List(Todo), Todo), TaskError),
+  outcome: fn(Todo) -> Outcome,
+) -> Execution {
+  case tasks.resolve_id(state.tasks, selector) {
+    Error(error) -> unchanged(state, cli.domain_error(error))
+    Ok(id) ->
+      case mutation(state.tasks, id) {
+        Error(error) -> unchanged(state, cli.domain_error(error))
+        Ok(#(updated_tasks, selected)) -> {
+          let updated = AppState(..state, tasks: updated_tasks)
+          // Updating a field to its existing value should not cause a needless write.
+          Execution(updated, outcome(selected), updated != state)
+        }
+      }
   }
 }
 

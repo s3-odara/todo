@@ -11,7 +11,10 @@ import tasks/domain/filter.{
   AllStatuses, AnyTime, DateRange, DoneOnly, On, Overdue, PendingOnly, Today,
   Window,
 }
-import tasks/domain/model.{AddValues, AlreadyDone, Done, NotFound, Pending, Todo}
+import tasks/domain/model.{
+  AddValues, AlreadyDone, AlreadyPending, Done, NotFound, Pending, Todo,
+  UpdateValues,
+}
 import tasks/domain/policy.{Asap, NearDeadline, Spread, parse as parse_policy}
 import tasks/domain/tasks
 import tasks/domain/validation
@@ -146,13 +149,15 @@ pub fn minimum_split_must_be_a_positive_bounded_duration_test() {
 }
 
 pub fn task_selector_requires_at_least_eight_hex_digits_test() {
-  validation.done("00000001") |> should.equal(Ok("00000001"))
-  validation.done("ABCDEF12") |> should.equal(Ok("abcdef12"))
-  validation.done("00000000-0000-7000-8000-000000000001")
+  validation.selector("00000001") |> should.equal(Ok("00000001"))
+  validation.selector("ABCDEF12") |> should.equal(Ok("abcdef12"))
+  validation.selector("00000000-0000-7000-8000-000000000001")
   |> should.equal(Ok("00000000000070008000000000000001"))
 
   ["1", "1234567", "not-an-id"]
-  |> list.each(fn(value) { validation.done(value) |> should.equal(Error(Nil)) })
+  |> list.each(fn(value) {
+    validation.selector(value) |> should.equal(Error(Nil))
+  })
 }
 
 pub fn date_only_due_is_normalized_to_end_of_day_test() {
@@ -361,4 +366,66 @@ pub fn an_unknown_task_cannot_be_completed_test() {
   let task = Todo(id(1), "existing", 0, 3, None, Pending, Spread, 30)
 
   tasks.complete([task], id(2)) |> should.equal(Error(NotFound))
+}
+
+pub fn reopening_a_completed_task_uses_the_shared_status_transition_test() {
+  let completed = Todo(id(1), "done", 10, 4, None, Done, Asap, 5)
+  let reopened = Todo(id(1), "done", 10, 4, None, Pending, Asap, 5)
+
+  tasks.reopen([completed], id(1))
+  |> should.equal(Ok(#([reopened], reopened)))
+  tasks.reopen([reopened], id(1)) |> should.equal(Error(AlreadyPending))
+}
+
+pub fn updating_selected_fields_preserves_id_status_and_other_values_test() {
+  let original = Todo(id(1), "old", 10, 2, None, Done, Spread, 30)
+  let expected =
+    Todo(
+      id(1),
+      "new",
+      10,
+      5,
+      Some(due_at("2026-07-25T23:59")),
+      Done,
+      Spread,
+      30,
+    )
+  let values =
+    UpdateValues(
+      Some("new"),
+      None,
+      Some(5),
+      Some(Some(due_at("2026-07-25T23:59"))),
+      None,
+      None,
+    )
+
+  tasks.update([original], id(1), values)
+  |> should.equal(Ok(#([expected], expected)))
+}
+
+pub fn update_can_clear_due_and_delete_preserves_other_task_order_test() {
+  let selected =
+    Todo(
+      id(2),
+      "selected",
+      0,
+      3,
+      Some(due_at("2026-07-25")),
+      Pending,
+      Spread,
+      30,
+    )
+  let first = Todo(id(1), "first", 0, 3, None, Pending, Spread, 30)
+  let last = Todo(id(3), "last", 0, 3, None, Pending, Spread, 30)
+  let assert Ok(#(updated, cleared)) =
+    tasks.update(
+      [first, selected, last],
+      id(2),
+      UpdateValues(None, None, None, Some(None), None, None),
+    )
+
+  cleared.due |> should.equal(None)
+  tasks.delete(updated, id(2))
+  |> should.equal(Ok(#([first, last], cleared)))
 }

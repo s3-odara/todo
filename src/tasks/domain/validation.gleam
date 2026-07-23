@@ -4,7 +4,9 @@ import gleam/option.{type Option, None, Some}
 import gleam/result
 import gleam/string
 import tasks/domain/due.{type Due}
-import tasks/domain/model.{type AddValues, AddValues}
+import tasks/domain/model.{
+  type AddValues, type UpdateValues, AddValues, UpdateValues,
+}
 import tasks/domain/policy.{parse as parse_policy}
 import tasks/domain/task_id
 
@@ -31,8 +33,46 @@ pub fn add(
   }
 }
 
-pub fn done(raw_id: String) -> Result(String, Nil) {
+pub fn selector(raw_id: String) -> Result(String, Nil) {
   task_id.selector(raw_id)
+}
+
+pub fn update(
+  raw_title: Option(String),
+  raw_estimate: Option(String),
+  raw_priority: Option(String),
+  raw_due: Option(String),
+  raw_policy: Option(String),
+  raw_minimum_split: Option(String),
+  due_parser: fn(String) -> Result(Due, Nil),
+) -> Result(UpdateValues, Nil) {
+  case
+    optional_parsed(raw_title, title),
+    optional_parsed(raw_estimate, estimate),
+    optional_parsed(raw_priority, priority),
+    update_due(raw_due, due_parser),
+    optional_parsed(raw_policy, parse_policy),
+    optional_parsed(raw_minimum_split, positive_duration)
+  {
+    Ok(title), Ok(estimate), Ok(priority), Ok(due), Ok(policy), Ok(split) ->
+      Ok(UpdateValues(title, estimate, priority, due, policy, split))
+    _, _, _, _, _, _ -> Error(Nil)
+  }
+}
+
+fn optional_parsed(raw: Option(a), parser: fn(a) -> Result(b, Nil)) {
+  case raw {
+    None -> Ok(None)
+    Some(value) -> parser(value) |> result.map(Some)
+  }
+}
+
+fn update_due(raw, due_parser) {
+  case raw {
+    None -> Ok(None)
+    Some("none") -> Ok(Some(None))
+    Some(value) -> due_parser(value) |> result.map(fn(due) { Some(Some(due)) })
+  }
 }
 
 fn title(value: String) -> Result(String, Nil) {
